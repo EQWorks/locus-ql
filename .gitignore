@@ -69,3 +69,6 @@ config.js
 # Temp Ignores (Can be removed after refactoring)
 import_data
 old
+
+# settings for vscode
+.vscode
