@@ -8,31 +8,17 @@
     "serve": "node dist/index.js"
   },
   "dependencies": {
-    "axios": "^0.17.1",
-    "bluebird": "^3.5.0",
-    "body-parser": "~1.17.1",
-    "capitalize": "^1.0.0",
-    "cookie-parser": "~1.4.3",
+    "axios": "^0.18.0",
+    "body-parser": "^1.18.2",
+    "cookie-parser": "^1.4.3",
     "cors": "^2.8.4",
-    "csv": "^1.1.1",
-    "debug": "~2.6.3",
-    "express": "~4.15.2",
-    "jade": "~1.11.0",
-    "jsonwebtoken": "^8.1.1",
-    "lodash": "^4.17.4",
-    "mapbox": "^1.0.0-beta9",
-    "moment": "^2.19.1",
-    "morgan": "~1.8.1",
-    "node-postal": "^1.0.0",
-    "pg": "^7.3.0",
-    "pg-escape": "^0.2.0",
-    "pg-native": "^2.2.0",
-    "phone": "^2.0.0-rc.1",
-    "request": "^2.83.0",
-    "request-promise": "^4.2.2",
-    "serve-favicon": "~2.4.2",
-    "serverless-http": "^1.5.3",
-    "sqlstring": "^2.3.0"
+    "debug": "^3.1.0",
+    "express": "^4.16.3",
+    "jade": "^1.11.0",
+    "jsonwebtoken": "^8.2.0",
+    "morgan": "^1.9.0",
+    "pg": "^7.4.1",
+    "serve-favicon": "^2.5.0"
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",
@@ -42,7 +28,8 @@
     "babel-preset-stage-2": "^6.24.1",
     "nodemon": "^1.12.1",
     "serverless-domain-manager": "^2.2.2",
-    "serverless-webpack": "^4.2.0",
+    "serverless-http": "^1.5.5",
+    "serverless-webpack": "^4.4.0",
     "webpack": "^3.10.0"
   }
 }
