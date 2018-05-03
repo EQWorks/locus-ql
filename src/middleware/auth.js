@@ -19,15 +19,22 @@ function jwtMiddleware(req, res, next) {
   const decoded = jwt.decode(uJWT)
   // console.log('token payload middleware', decoded)
 
+  let access = {}
   // default whitelabel
-  req.whitelabel = 0
+  access.whitelabel = 0
   if (decoded.api_access && decoded.api_access.wl)
-    req.whitelabel = parseInt(decoded.api_access.wl)
+    access.whitelabel = decoded.api_access.wl
 
   // default customers
-  req.customers = 0
+  access.customers = 0
   if (decoded.api_access && decoded.api_access.customers)
-    req.customers = parseInt(decoded.api_access.customers)
+    access.customers = decoded.api_access.customers
+
+  access.email = ''
+  if (decoded.email)
+    access.email = decoded.email
+
+  req.access = access
 
   axios({
     url: `${KEY_WARDEN_BASE}/confirm`,
