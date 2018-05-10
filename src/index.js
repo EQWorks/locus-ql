@@ -1,9 +1,9 @@
 /**
  * Module dependencies.
  */
-import app from './app'
-import http from 'http'
-import debugLib from 'debug'
+const app = require('./app')
+const http = require('http')
+const debugLib = require('debug')
 
 var debug = debugLib('firstorder:server')
 

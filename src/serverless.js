@@ -1,10 +1,10 @@
 /**
  * Module dependencies.
  */
-import serverless from 'serverless-http'
+const serverless = require('serverless-http')
 
 // app
-import app from './app'
+const app = require('./app')
 
 /**
  * Create HTTP server.

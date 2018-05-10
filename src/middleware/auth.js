@@ -1,8 +1,7 @@
+const jwt = require('jsonwebtoken')
+const axios = require('axios')
 
-import jwt from 'jsonwebtoken'
-import axios from 'axios'
-
-import config from '../../config'
+const config = require('../../config')
 
 
 const KEY_WARDEN_HOST = config.keyWarden.host

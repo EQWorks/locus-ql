@@ -18,7 +18,8 @@
     "jsonwebtoken": "^8.2.0",
     "morgan": "^1.9.0",
     "pg": "^7.4.1",
-    "serve-favicon": "^2.5.0"
+    "serve-favicon": "^2.5.0",
+    "serverless-http": "^1.5.5"
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",
@@ -28,7 +29,6 @@
     "babel-preset-stage-2": "^6.24.1",
     "nodemon": "^1.12.1",
     "serverless-domain-manager": "^2.2.2",
-    "serverless-http": "^1.5.5",
     "serverless-webpack": "^4.4.0",
     "webpack": "^3.10.0"
   }

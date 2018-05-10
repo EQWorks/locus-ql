@@ -1,4 +1,4 @@
-import auth from './auth'
+const auth = require('./auth')
 
 module.exports = {
   auth: auth
