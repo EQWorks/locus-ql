@@ -1,8 +1,16 @@
 const jwt = require('jsonwebtoken')
 const axios = require('axios')
+const pg = require('pg')
 
 const config = require('../../config')
 
+const pool = new pg.Pool(config.pg)
+// the pool with emit an error on behalf of any idle clients
+// it contains if a backend error or network partition happens
+pool.on('error', (err, client) => {
+  console.error('Unexpected error on idle client', err)
+  process.exit(-1)
+})
 
 const KEY_WARDEN_HOST = config.keyWarden.host
 const KEY_WARDEN_STAGE = config.keyWarden.stage
@@ -53,10 +61,54 @@ function jwtMiddleware(req, res, next) {
       console.log('error', error.response.data)
     res.sendStatus(401)
   })
-
 }
 
+// assumes req.access exist
+const layerAuth = async (req, res, next) => {
+  const layerAccess = await haveLayerAccess(req.access, req.params.id)
+  if (layerAccess) {
+    next()
+  } else {
+    res.status(403).json('Access to layer not allowed')
+    return
+  }
+}
+
+const haveLayerAccess = async (access, layerID) => {
+  const wl = access.whitelabel
+  const cu = access.customers
+  const email = access.email
+
+  let where = 'WHERE layer_id = $1'
+  let values = [layerID]
+
+  if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
+    where += " AND whitelabel = ANY ($2) AND account in ('0', '-1'))"
+    values = [...values, wl]
+  } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
+    where += " AND whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4))"
+    values = [...values, wl, cu, email]
+  } else if (!(wl === -1 && cu === -1)) {
+    return false
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM layer
+      ${where}
+      `,
+      values
+    )
+    return result.rows.length === 1
+  } catch (error) {
+    console.log(error)
+    return false
+  }
+}
 
 module.exports = {
-  jwt: jwtMiddleware
+  jwt: jwtMiddleware,
+  layer: layerAuth,
 };
