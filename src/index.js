@@ -1,6 +1,7 @@
 /**
  * Module dependencies.
  */
+require('dotenv').config()
 const app = require('./app')
 const http = require('http')
 const debugLib = require('debug')
