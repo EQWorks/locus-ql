@@ -1,5 +1,4 @@
-var api = require('./api');
+const api = require('./api')
 
-module.exports = {
-  api: api
-};
+
+module.exports = { api }

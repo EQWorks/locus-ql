@@ -61,7 +61,7 @@ typings/
 .next
 
 # Config File
-config.js
+# config.js
 
 # Serverless directories
 .serverless
