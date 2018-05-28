@@ -48,6 +48,6 @@
     "nodemon": "^1.12.1",
     "serverless-domain-manager": "^2.2.2",
     "serverless-webpack": "^4.4.0",
-    "webpack": "^3.10.0"
+    "webpack": "^3.12.0"
   }
 }

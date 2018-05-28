@@ -46,6 +46,9 @@ function jwtMiddleware(req, res, next) {
   access.email = ''
   if (decoded.email) { access.email = decoded.email }
 
+  access.write = 0
+  if (decoded.api_access && decoded.api_access.write) { access.write = decoded.api_access.write }
+
   req.access = access
 
   axios({
