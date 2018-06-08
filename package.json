@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "start": "env $(./print-env) nodemon src/index.js --exec babel-node",
+    "deploy": "env $(./print-env) sls deploy",
     "build": "babel src -d dist",
     "serve": "node dist/index.js",
     "test": "npm install && npm run unit:test && npm run lint",
