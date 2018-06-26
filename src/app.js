@@ -28,7 +28,10 @@ app.use(bodyParser.urlencoded({ extended: false }))
 app.use(cookieParser())
 app.use(express.static(path.join(__dirname, 'public')))
 
-// app.use('/', index);
+app.get('/', (_, res) => {
+  res.json({ API_VER: process.env.COMMIT_SHORT_HASH || 'unknown' })
+})
+
 app.use('', api)
 
 // catch 404 and forward to error handler
