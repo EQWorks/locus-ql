@@ -75,10 +75,11 @@ const haveLayerAccess = async (access, layerID) => {
   let values = [layerID]
 
   if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
-    where += " AND whitelabel = ANY ($2) AND account in ('0', '-1'))"
+    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in ('0', '-1')))"
     values = [...values, wl]
   } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
-    where += " AND whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4))"
+    // eslint-disable-next-line max-len
+    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4)))"
     values = [...values, wl, cu, email]
   } else if (!(wl === -1 && cu === -1)) {
     return false
