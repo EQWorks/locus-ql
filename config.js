@@ -27,6 +27,9 @@ const keyWardenConfig = {
   stage: process.env.KEY_WARDEN_STAGE,
 }
 
+const googleMapConfig = {
+  apiKey: process.env.GOOGLE_MAP_API_KEY,
+}
 
 module.exports = {
   pg: pgConfig,
@@ -34,4 +37,5 @@ module.exports = {
   mapbox: mapboxConfig,
   graphhopper: graphhopperConfig,
   keyWarden: keyWardenConfig,
+  googleMap: googleMapConfig,
 }
