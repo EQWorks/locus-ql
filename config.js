@@ -15,6 +15,7 @@ const mapboxConfig = {
   geocodeURL: process.env.MAP_BOX_GEOCODE_URL,
   appId: process.env.MAP_BOX_APP_ID,
   appCode: process.env.MAP_BOX_APP_CODE,
+  token: process.env.MAP_BOX_TOKEN,
 }
 
 const graphhopperConfig = {
