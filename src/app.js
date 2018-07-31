@@ -6,6 +6,7 @@ const bodyParser = require('body-parser')
 const cors = require('cors')
 
 const api = require('./routes/api')
+const config = require('../config')
 // var users = require('./routes/users');
 
 const app = express()
@@ -28,15 +29,18 @@ app.use(bodyParser.urlencoded({ extended: false }))
 app.use(cookieParser())
 app.use(express.static(path.join(__dirname, 'public')))
 
-app.get('/', (_, res) => {
-  res.json({ API_VER: process.env.COMMIT_SHORT_HASH || 'unknown' })
+app.get(`/${config.basePath}`, (_, res) => {
+  res.json({
+    API_VER: config.commitHash,
+    STAGE: config.basePath,
+  })
 })
 
-app.use('', api)
+app.use(`/${config.basePath}`, api)
 
 // catch 404 and forward to error handler
 app.use((req, res, next) => {
-  const err = new Error('Not Found')
+  const err = new Error('ERROR: Path Not Found')
   err.status = 404
   next(err)
 })

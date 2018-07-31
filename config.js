@@ -28,6 +28,10 @@ const keyWardenConfig = {
   stage: process.env.KEY_WARDEN_STAGE,
 }
 
+const basePath = process.env.API_GATEWAY_BASE_PATH || ''
+
+const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
+
 const googleMapConfig = {
   apiKey: process.env.GOOGLE_MAP_API_KEY,
 }
@@ -38,5 +42,7 @@ module.exports = {
   mapbox: mapboxConfig,
   graphhopper: graphhopperConfig,
   keyWarden: keyWardenConfig,
+  basePath,
+  commitHash,
   googleMap: googleMapConfig,
 }
