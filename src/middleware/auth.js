@@ -66,11 +66,7 @@ function jwtMiddleware(req, res, next) {
     })
 }
 
-const haveLayerAccess = async (access, layerID) => {
-  const wl = access.whitelabel
-  const cu = access.customers
-  const { email } = access
-
+const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerID) => {
   let where = 'WHERE layer_id = $1'
   let values = [layerID]
 
@@ -101,17 +97,67 @@ const haveLayerAccess = async (access, layerID) => {
   }
 }
 
+const haveMapAccess = async ({ whitelabel: wl, customers: cu, email }, MapID) => {
+  let where = 'WHERE map_id = $1'
+  let values = [MapID]
+
+  if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
+    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in ('0', '-1')))"
+    values = [...values, wl]
+  } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
+    // eslint-disable-next-line max-len
+    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4)))"
+    values = [...values, wl, cu, email]
+  } else if (!(wl === -1 && cu === -1)) {
+    return false
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM map
+      ${where}
+      `,
+      values,
+    )
+    return result.rows.length === 1
+  } catch (error) {
+    console.log(error)
+    return false
+  }
+}
+
 // assumes req.access exist
 const layerAuth = async (req, res, next) => {
   const layerAccess = await haveLayerAccess(req.access, req.params.id)
   if (layerAccess) {
     next()
   } else {
-    res.status(403).json('Access to layer not allowed')
+    res.status(403).json({ message: 'Access to layer not allowed' })
+  }
+}
+
+const mapAuth = async (req, res, next) => {
+  const mapAccess = await haveMapAccess(req.access, req.params.id)
+  if (mapAccess) {
+    next()
+  } else {
+    res.status(403).json({ message: 'Access to map not allowed' })
+  }
+}
+
+const hasWrite = requiredWrite => ({ access: { write } }, res, next) => {
+  if (write === -1 || write >= requiredWrite) {
+    next()
+  } else {
+    res.status(403).json({ message: 'Insufficient write access' })
   }
 }
 
 module.exports = {
   jwt: jwtMiddleware,
   layer: layerAuth,
+  map: mapAuth,
+  write: hasWrite,
 }
