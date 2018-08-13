@@ -6,6 +6,14 @@ const pgConfig = {
   password: process.env.PG_PW,
 }
 
+const mappingPgConfig = {
+  host: process.env.MAPPING_PG_HOST,
+  port: process.env.MAPPING_PG_PORT,
+  database: process.env.MAPPING_PG_DB,
+  user: process.env.MAPPING_PG_USER,
+  password: process.env.MAPPING_PG_PW,
+}
+
 const mapZenConfig = {
   baseURL: process.env.MAP_ZEN_BASE_URL,
   apikey: process.env.API_KEY,
@@ -35,12 +43,11 @@ const basePath = process.env.API_GATEWAY_BASE_PATH || ''
 
 const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
 
-const googleMapConfig = {
-  apiKey: process.env.GOOGLE_MAP_API_KEY,
-}
+const googleMapConfig = { apiKey: process.env.GOOGLE_MAP_API_KEY }
 
 module.exports = {
   pg: pgConfig,
+  mappingPg: mappingPgConfig,
   mapzen: mapZenConfig,
   mapbox: mapboxConfig,
   graphhopper: graphhopperConfig,
