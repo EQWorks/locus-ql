@@ -43,8 +43,6 @@ const basePath = process.env.API_GATEWAY_BASE_PATH || ''
 
 const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
 
-const googleMapConfig = { apiKey: process.env.GOOGLE_MAP_API_KEY }
-
 module.exports = {
   pg: pgConfig,
   mappingPg: mappingPgConfig,
@@ -54,5 +52,4 @@ module.exports = {
   keyWarden: keyWardenConfig,
   basePath,
   commitHash,
-  googleMap: googleMapConfig,
 }
