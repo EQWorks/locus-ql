@@ -1,6 +1,6 @@
 {
   "name": "firstorder",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "scripts": {
     "start": "env $(./print-env) nodemon src/index.js --exec babel-node",
