@@ -72,3 +72,6 @@ old
 
 # settings for vscode
 .vscode
+
+# settings for WebStorm
+.idea
