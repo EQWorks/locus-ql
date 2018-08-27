@@ -52,6 +52,7 @@ module.exports = {
           }
         }, {
           "enforceForRenamedProperties": false
-        }]
+        }],
+        "consistent-return": "off"
     }
 };

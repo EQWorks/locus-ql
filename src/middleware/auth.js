@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken')
 const axios = require('axios')
 const pg = require('pg')
+const { get } = require('lodash')
 
 const config = require('../../config')
 
@@ -66,9 +67,9 @@ function jwtMiddleware(req, res, next) {
     })
 }
 
-const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerID) => {
-  let where = 'WHERE layer_id = $1'
-  let values = [layerID]
+const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerIDs) => {
+  let where = 'WHERE layer_id = ANY ($1)'
+  let values = [layerIDs]
 
   if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
     where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in ('0', '-1')))"
@@ -90,7 +91,7 @@ const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerID
       `,
       values,
     )
-    return result.rows.length === 1
+    return result.rows.length === layerIDs.length
   } catch (error) {
     console.log(error)
     return false
@@ -129,8 +130,11 @@ const haveMapAccess = async ({ whitelabel: wl, customers: cu, email }, MapID) =>
 }
 
 // assumes req.access exist
-const layerAuth = async (req, res, next) => {
-  const layerAccess = await haveLayerAccess(req.access, req.params.id)
+// pathToID should lead to either a layerID or an array of layerID
+const layerAuth = (pathToID = 'params.id') => async (req, res, next) => {
+  const layer = get(req, pathToID)
+  const layers = Array.isArray(layer) ? layer : [layer]
+  const layerAccess = await haveLayerAccess(req.access, layers)
   if (layerAccess) {
     next()
   } else {
@@ -138,8 +142,8 @@ const layerAuth = async (req, res, next) => {
   }
 }
 
-const mapAuth = async (req, res, next) => {
-  const mapAccess = await haveMapAccess(req.access, req.params.id)
+const mapAuth = (pathToID = 'params.id') => async (req, res, next) => {
+  const mapAccess = await haveMapAccess(req.access, get(req, pathToID))
   if (mapAccess) {
     next()
   } else {
