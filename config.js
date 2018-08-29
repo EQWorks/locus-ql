@@ -26,7 +26,7 @@ const mapboxConfig = {
   token: process.env.MAP_BOX_TOKEN,
   mblimit: process.env.MAP_BOX_LIMIT_PER_BATCH,
   folimit: process.env.MAX_POI_PER_POI_LIST,
-  breaktime: process.env.MAP_BOX_BREAK_BETWEEN_BATCH
+  breaktime: process.env.MAP_BOX_BREAK_BETWEEN_BATCH,
 }
 
 const graphhopperConfig = {
