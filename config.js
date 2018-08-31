@@ -6,6 +6,14 @@ const pgConfig = {
   password: process.env.PG_PW,
 }
 
+const pgAtomConfig = {
+  host: process.env.PG_ATOM_HOST,
+  port: process.env.PG_ATOM_PORT,
+  database: process.env.PG_ATOM_DB,
+  user: process.env.PG_ATOM_USER,
+  password: process.env.PG_ATOM_PW,
+}
+
 const mappingPgConfig = {
   host: process.env.MAPPING_PG_HOST,
   port: process.env.MAPPING_PG_PORT,
@@ -45,6 +53,7 @@ const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
 
 module.exports = {
   pg: pgConfig,
+  pgAtom: pgAtomConfig,
   mappingPg: mappingPgConfig,
   mapzen: mapZenConfig,
   mapbox: mapboxConfig,
