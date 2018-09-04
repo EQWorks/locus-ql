@@ -36,7 +36,9 @@ function jwtMiddleware(req, res, next) {
   const access = {}
   // default whitelabel
   access.whitelabel = 0
-  if (decoded.api_access && decoded.api_access.wl) { access.whitelabel = decoded.api_access.wl }
+  if (decoded.api_access && decoded.api_access.wl) {
+    access.whitelabel = decoded.api_access.wl
+  }
 
   // default customers
   access.customers = 0
@@ -45,10 +47,14 @@ function jwtMiddleware(req, res, next) {
   }
 
   access.email = ''
-  if (decoded.email) { access.email = decoded.email }
+  if (decoded.email) {
+    access.email = decoded.email
+  }
 
   access.write = 0
-  if (decoded.api_access && decoded.api_access.write) { access.write = decoded.api_access.write }
+  if (decoded.api_access && decoded.api_access.write) {
+    access.write = decoded.api_access.write
+  }
 
   req.access = access
 
@@ -62,7 +68,9 @@ function jwtMiddleware(req, res, next) {
       next()
     })
     .catch((error) => {
-      if (error.response) { console.log('error', error.response.data) }
+      if (error.response) {
+        console.log('error', error.response.data)
+      }
       res.sendStatus(401)
     })
 }
@@ -72,11 +80,11 @@ const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerID
   let values = [layerIDs]
 
   if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
-    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in ('0', '-1')))"
+    where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
     values = [...values, wl]
   } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
     // eslint-disable-next-line max-len
-    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4)))"
+    where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in (\'0\', \'-1\', $4)))'
     values = [...values, wl, cu, email]
   } else if (!(wl === -1 && cu === -1)) {
     return false
@@ -103,11 +111,11 @@ const haveMapAccess = async ({ whitelabel: wl, customers: cu, email }, MapID) =>
   let values = [MapID]
 
   if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
-    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in ('0', '-1')))"
+    where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
     values = [...values, wl]
   } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
     // eslint-disable-next-line max-len
-    where += " AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4)))"
+    where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in (\'0\', \'-1\', $4)))'
     values = [...values, wl, cu, email]
   } else if (!(wl === -1 && cu === -1)) {
     return false
@@ -138,7 +146,18 @@ const layerAuth = (pathToID = 'params.id') => async (req, res, next) => {
   if (layerAccess) {
     next()
   } else {
-    res.status(403).json({ message: 'Access to layer not allowed' })
+    res.status(403)
+      .json({ message: 'Access to layer not allowed' })
+  }
+}
+
+const internalAuth = (req, res, next) => {
+  const { whitelabel, customers } = req.access
+  if (whitelabel === -1 && customers === -1) {
+    next()
+  } else {
+    res.status(403)
+      .json({ message: 'Only internal are allowed' })
   }
 }
 
@@ -147,7 +166,8 @@ const mapAuth = (pathToID = 'params.id') => async (req, res, next) => {
   if (mapAccess) {
     next()
   } else {
-    res.status(403).json({ message: 'Access to map not allowed' })
+    res.status(403)
+      .json({ message: 'Access to map not allowed' })
   }
 }
 
@@ -155,13 +175,15 @@ const hasWrite = requiredWrite => ({ access: { write } }, res, next) => {
   if (write === -1 || write >= requiredWrite) {
     next()
   } else {
-    res.status(403).json({ message: 'Insufficient write access' })
+    res.status(403)
+      .json({ message: 'Insufficient write access' })
   }
 }
 
 module.exports = {
   jwt: jwtMiddleware,
   layer: layerAuth,
+  internal: internalAuth,
   map: mapAuth,
   write: hasWrite,
 }

@@ -26,6 +26,7 @@
   "dependencies": {
     "@google/maps": "^0.5.5",
     "@mapbox/mapbox-sdk": "^0.3.0",
+    "aws-sdk": "^2.293.0",
     "axios": "^0.18.0",
     "body-parser": "^1.18.2",
     "cookie-parser": "^1.4.3",
