@@ -9,7 +9,7 @@
     "deploy:prod": "env $(print-env) sls deploy --stage prod",
     "build": "babel src -d dist",
     "serve": "node dist/index.js",
-    "test": "npm install && npm run unit:test && npm run lint",
+    "test": "npm run unit:test && npm run lint",
     "unit:test": "echo \"no test runner specified\"",
     "lint": "./node_modules/.bin/eslint -c .eslintrc.js --ext .js ./src/.",
     "lint:fix": "./node_modules/.bin/eslint -c .eslintrc.js --ext .js ./src/. --fix",
@@ -21,7 +21,7 @@
   },
   "husky": {
     "hooks": {
-      "pre-push": "npm test && npm run lint"
+      "pre-push": "npm test"
     }
   },
   "dependencies": {
