@@ -47,6 +47,11 @@ const keyWardenConfig = {
   stage: process.env.KEY_WARDEN_STAGE,
 }
 
+const dataPipeLineTasksConfig = {
+  prefix: 'datapipeline-tasks',
+  stage: process.env.KEY_WARDEN_STAGE,
+}
+
 const basePath = process.env.API_GATEWAY_BASE_PATH || ''
 
 const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
@@ -59,6 +64,7 @@ module.exports = {
   mapbox: mapboxConfig,
   graphhopper: graphhopperConfig,
   keyWarden: keyWardenConfig,
+  dataPipeLine: dataPipeLineTasksConfig,
   basePath,
   commitHash,
 }
