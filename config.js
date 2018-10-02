@@ -50,6 +50,21 @@ const keyWardenConfig = {
 const dataPipeLineTasksConfig = {
   prefix: 'datapipeline-tasks',
   stage: process.env.KEY_WARDEN_STAGE,
+  dataOptsUsers: [
+    'stevenl@eqworks.com',
+    'qinglei.zhang@eqworks.com',
+    'riyad.parvez@eqworks.com',
+    'hao.zhang@eqworks.com',
+    'dhruv.thapar@eqworks.com',
+    'tom.wainas@eqworks.com',
+    'dilshank@eqworks.com',
+  ],
+  financialUsers: [
+    'dilshank@eqworks.com',
+    'peter.kanniah@eqworks.com',
+    'benjamun.ng@eqworks.com',
+    'leo.li@eqworks.com',
+  ],
 }
 
 const basePath = process.env.API_GATEWAY_BASE_PATH || ''
