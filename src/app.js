@@ -5,7 +5,7 @@ const cookieParser = require('cookie-parser')
 const bodyParser = require('body-parser')
 const cors = require('cors')
 
-const api = require('./routes/api')
+const rootRouter = require('./routes/')
 const config = require('../config')
 // var users = require('./routes/users');
 
@@ -31,7 +31,7 @@ app.get(`/${config.basePath}`, (_, res) => {
   })
 })
 
-app.use(`/${config.basePath}`, api)
+app.use(`/${config.basePath}`, rootRouter)
 
 // catch 404 and forward to error handler
 app.use((req, res, next) => {
