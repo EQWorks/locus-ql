@@ -13,6 +13,7 @@ const poi = require('./poi')
 const report = require('./report')
 const camp = require('./camp')
 const insights = require('./insights')
+const aoi = require('./aoi')
 const api = require('./api')
 
 
@@ -26,6 +27,7 @@ rootRouter.use('/poi', poi)
 rootRouter.use('/report', report)
 rootRouter.use('/camp', camp)
 rootRouter.use('/insights', insights)
+rootRouter.use('/aoi', aoi)
 rootRouter.use(api)
 
 

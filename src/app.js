@@ -33,22 +33,14 @@ app.get(`/${config.basePath}`, (_, res) => {
 
 app.use(`/${config.basePath}`, rootRouter)
 
-// catch 404 and forward to error handler
-app.use((req, res, next) => {
-  const err = new Error('ERROR: Path Not Found')
-  err.status = 404
-  next(err)
-})
-
-// error handler
-app.use((err, req, res) => {
+// catch-all error handler
+// eslint disable otherwise not able to catch errors
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
   // set locals, only providing error in development
-  res.locals.message = err.message
-  res.locals.error = req.app.get('env') === 'development' ? err : {}
-
-  // render the error page
-  res.status(err.status || 500)
-  res.render('error')
+  console.error(err)
+  const { message } = err
+  res.status(err.status || 500).json({ message })
 })
 
 module.exports = app
