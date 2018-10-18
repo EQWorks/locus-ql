@@ -24,6 +24,12 @@
   },
   "dependencies": {
     "@mapbox/mapbox-sdk": "^0.3.0",
+    "@turf/bbox": "^6.0.1",
+    "@turf/centroid": "^6.0.2",
+    "@turf/distance": "^6.0.1",
+    "@turf/envelope": "^5.1.5",
+    "@turf/helpers": "^6.1.4",
+    "@turf/invariant": "^6.1.2",
     "aws-sdk": "^2.293.0",
     "axios": "^0.18.0",
     "body-parser": "^1.18.2",
