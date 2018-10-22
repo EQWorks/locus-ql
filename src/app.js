@@ -1,28 +1,29 @@
 const express = require('express')
-const path = require('path')
 const logger = require('morgan')
-const cookieParser = require('cookie-parser')
 const bodyParser = require('body-parser')
 const cors = require('cors')
+const compression = require('compression')
 
 const rootRouter = require('./routes/')
 const config = require('../config')
-// var users = require('./routes/users');
+
 
 const app = express()
 
 // enable cors
 // this would enable Access-Control-Allow-Origin: *
 app.use(cors())
-
 app.options('*', cors())
-
-app.get('/favicon.ico', (req, res) => res.sendStatus(204))
+// enable gzip
+app.use(compression())
+// logger
 app.use(logger('dev'))
+// body parser
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: false }))
-app.use(cookieParser())
-app.use(express.static(path.join(__dirname, 'public')))
+
+// favicon 404 supression
+app.get('/favicon.ico', (req, res) => res.sendStatus(204))
 
 app.get(`/${config.basePath}`, (_, res) => {
   res.json({
