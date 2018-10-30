@@ -16,6 +16,7 @@ const insights = require('./insights')
 const aoi = require('./aoi')
 const api = require('./api')
 const expense = require('./expense')
+const segments = require('./segments')
 
 
 rootRouter.use(jwt)
@@ -30,6 +31,7 @@ rootRouter.use('/camp', camp)
 rootRouter.use('/insights', insights)
 rootRouter.use('/aoi', aoi)
 rootRouter.use('/expense', expense)
+rootRouter.use('/segment', segments)
 rootRouter.use(api)
 
 
