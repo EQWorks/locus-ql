@@ -47,6 +47,15 @@ const keyWardenConfig = {
   stage: process.env.KEY_WARDEN_STAGE,
 }
 
+const lotameConfig = {
+  auth_url: process.env.LOTAME_AUTH_URL,
+  api_url: process.env.LOTAME_API_URL,
+  username: process.env.LOTAME_USERNAME,
+  password: process.env.LOTAME_PASSWORD,
+  client_id: process.env.LOTAME_CLIENT_ID,
+}
+
+
 const dataPipeLineTasksConfig = {
   prefix: 'datapipeline-tasks',
   stage: process.env.KEY_WARDEN_STAGE,
@@ -79,6 +88,7 @@ module.exports = {
   mapbox: mapboxConfig,
   graphhopper: graphhopperConfig,
   keyWarden: keyWardenConfig,
+  lotame: lotameConfig,
   dataPipeLine: dataPipeLineTasksConfig,
   basePath,
   commitHash,
