@@ -30,6 +30,7 @@
     "@turf/envelope": "^5.1.5",
     "@turf/helpers": "^6.1.4",
     "@turf/invariant": "^6.1.2",
+    "algoliasearch": "^3.30.0",
     "aws-sdk": "^2.293.0",
     "axios": "^0.18.0",
     "body-parser": "^1.18.2",

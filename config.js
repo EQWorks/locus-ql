@@ -76,6 +76,12 @@ const dataPipeLineTasksConfig = {
   ],
 }
 
+const algolia = {
+  appID: process.env.ALGOLIA_APP_ID,
+  adminKey: process.env.ALGOLIA_ADMIN_KEY,
+  searchAPIKey: process.env.ALGOLIA_SEARCH_API_KEY,
+}
+
 const basePath = process.env.API_GATEWAY_BASE_PATH || ''
 
 const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
@@ -92,4 +98,5 @@ module.exports = {
   dataPipeLine: dataPipeLineTasksConfig,
   basePath,
   commitHash,
+  algolia,
 }
