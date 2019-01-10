@@ -75,7 +75,8 @@ function jwtMiddleware(req, res, next) {
     })
 }
 
-const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerIDs) => {
+const haveLayerAccess = async (req, layerIDs) => {
+  const { whitelabel: wl, customers: cu, email } = req.access
   let where = 'WHERE layer_id = ANY ($1)'
   let values = [layerIDs]
 
@@ -91,7 +92,7 @@ const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerID
   }
 
   try {
-    const result = await pool.query(
+    const { rows: layers } = await pool.query(
       `
       SELECT *
       FROM layer
@@ -99,7 +100,8 @@ const haveLayerAccess = async ({ whitelabel: wl, customers: cu, email }, layerID
       `,
       values,
     )
-    return result.rows.length === layerIDs.length
+    req.layers = layers
+    return layers.length === layerIDs.length
   } catch (error) {
     console.log(error)
     return false
@@ -142,7 +144,7 @@ const haveMapAccess = async ({ whitelabel: wl, customers: cu, email }, MapID) =>
 const layerAuth = (pathToID = 'params.id') => async (req, res, next) => {
   const layer = get(req, pathToID)
   const layers = Array.isArray(layer) ? layer : [layer]
-  const layerAccess = await haveLayerAccess(req.access, layers)
+  const layerAccess = await haveLayerAccess(req, layers)
   if (layerAccess) {
     next()
   } else {
