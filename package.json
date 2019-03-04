@@ -7,7 +7,7 @@
     "tag": "./scripts/tag",
     "deploy": "env $(print-env) sls deploy",
     "serve": "node src/index.js",
-    "test": "npm run unit:test && npm run lint",
+    "test": "yarn unit:test && yarn lint",
     "unit:test": "echo \"no test runner specified\"",
     "lint": "eslint -c .eslintrc.js --ext .js ./src/.",
     "lint:fix": "eslint -c .eslintrc.js --ext .js ./src/. --fix",
@@ -19,7 +19,7 @@
   },
   "husky": {
     "hooks": {
-      "pre-push": "npm test"
+      "pre-push": "yarn test"
     }
   },
   "dependencies": {
