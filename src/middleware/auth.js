@@ -4,6 +4,7 @@ const pg = require('pg')
 const { get } = require('lodash')
 
 const config = require('../../config')
+const apiError = require('../util/api-error')
 
 
 const pool = new pg.Pool(config.pg)
@@ -108,9 +109,32 @@ const haveLayerAccess = async (req, layerIDs) => {
   }
 }
 
-const haveMapAccess = async ({ whitelabel: wl, customers: cu, email }, MapID) => {
+// assumes req.access exist
+// pathToID should lead to either a layerID or an array of layerID
+const layerAuth = (pathToID = 'params.id') => async (req, res, next) => {
+  const layer = get(req, pathToID)
+  const layers = Array.isArray(layer) ? layer : [layer]
+  const layerAccess = await haveLayerAccess(req, layers)
+  if (layerAccess) {
+    next()
+  } else {
+    return next(apiError('Access to layer not allowed', 403))
+  }
+}
+
+const internalAuth = (req, res, next) => {
+  const { whitelabel, customers } = req.access
+  if (whitelabel === -1 && customers === -1) {
+    next()
+  } else {
+    return next(apiError('Only internal are allowed', 403))
+  }
+}
+
+const mapAuth = (pathToID = 'params.id') => async (req, res, next) => {
+  const { whitelabel: wl, customers: cu, email } = req.access
   let where = 'WHERE map_id = $1'
-  let values = [MapID]
+  let values = [get(req, pathToID)]
 
   if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
     where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
@@ -124,7 +148,7 @@ const haveMapAccess = async ({ whitelabel: wl, customers: cu, email }, MapID) =>
   }
 
   try {
-    const result = await pool.query(
+    const { rows: maps } = await pool.query(
       `
       SELECT *
       FROM map
@@ -132,44 +156,16 @@ const haveMapAccess = async ({ whitelabel: wl, customers: cu, email }, MapID) =>
       `,
       values,
     )
-    return result.rows.length === 1
+    req.map = maps[0]
+
+    if (maps.length === 1) {
+      return next()
+    }
+
+    return next(apiError('Access to map not allowed', 403))
   } catch (error) {
-    console.log(error)
-    return false
-  }
-}
-
-// assumes req.access exist
-// pathToID should lead to either a layerID or an array of layerID
-const layerAuth = (pathToID = 'params.id') => async (req, res, next) => {
-  const layer = get(req, pathToID)
-  const layers = Array.isArray(layer) ? layer : [layer]
-  const layerAccess = await haveLayerAccess(req, layers)
-  if (layerAccess) {
-    next()
-  } else {
-    res.status(403)
-      .json({ message: 'Access to layer not allowed' })
-  }
-}
-
-const internalAuth = (req, res, next) => {
-  const { whitelabel, customers } = req.access
-  if (whitelabel === -1 && customers === -1) {
-    next()
-  } else {
-    res.status(403)
-      .json({ message: 'Only internal are allowed' })
-  }
-}
-
-const mapAuth = (pathToID = 'params.id') => async (req, res, next) => {
-  const mapAccess = await haveMapAccess(req.access, get(req, pathToID))
-  if (mapAccess) {
-    next()
-  } else {
-    res.status(403)
-      .json({ message: 'Access to map not allowed' })
+    console.error(error)
+    return next(apiError(error, 400))
   }
 }
 
@@ -177,8 +173,7 @@ const hasWrite = requiredWrite => ({ access: { write } }, res, next) => {
   if (write === -1 || write >= requiredWrite) {
     next()
   } else {
-    res.status(403)
-      .json({ message: 'Insufficient write access' })
+    return next(apiError('Insufficient write access', 403))
   }
 }
 
