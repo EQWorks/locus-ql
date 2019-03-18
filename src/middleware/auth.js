@@ -1,22 +1,12 @@
 const jwt = require('jsonwebtoken')
 const axios = require('axios')
-const pg = require('pg')
 const { get } = require('lodash')
 
-const config = require('../../config')
+const { keyWarden: { host: KEY_WARDEN_HOST, stage: KEY_WARDEN_STAGE } } = require('../../config')
 const apiError = require('../util/api-error')
+const pool = require('../util/db')
 
 
-const pool = new pg.Pool(config.pg)
-// the pool with emit an error on behalf of any idle clients
-// it contains if a backend error or network partition happens
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err)
-  process.exit(-1)
-})
-
-const KEY_WARDEN_HOST = config.keyWarden.host
-const KEY_WARDEN_STAGE = config.keyWarden.stage
 const KEY_WARDEN_BASE = `${KEY_WARDEN_HOST}/${KEY_WARDEN_STAGE}`
 
 function jwtMiddleware(req, res, next) {
@@ -131,6 +121,13 @@ const internalAuth = (req, res, next) => {
   }
 }
 
+const devAuth = ({ access }, res, next) => {
+  if (['whitelabel', 'customers', 'write'].every(key => access[key] === -1)) {
+    return next()
+  }
+  return next(apiError('Only devs are allowed', 403))
+}
+
 const mapAuth = (pathToID = 'params.id') => async (req, res, next) => {
   const { whitelabel: wl, customers: cu, email } = req.access
   let where = 'WHERE map_id = $1'
@@ -181,6 +178,7 @@ module.exports = {
   jwt: jwtMiddleware,
   layer: layerAuth,
   internal: internalAuth,
+  dev: devAuth,
   map: mapAuth,
   write: hasWrite,
 }

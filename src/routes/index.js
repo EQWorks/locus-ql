@@ -20,6 +20,7 @@ const segments = require('./segments')
 const market = require('./market')
 const search = require('./search')
 const loyaltyIndex = require('./loyalty-index')
+const connections = require('./connections')
 
 
 rootRouter.use(jwt)
@@ -38,6 +39,7 @@ rootRouter.use('/segment', segments)
 rootRouter.use('/market', market)
 rootRouter.use('/search', search)
 rootRouter.use('/loyalty-index', loyaltyIndex)
+rootRouter.use('/connections', connections)
 rootRouter.use(api)
 
 
