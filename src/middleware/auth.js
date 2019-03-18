@@ -4,7 +4,7 @@ const { get } = require('lodash')
 
 const { keyWarden: { host: KEY_WARDEN_HOST, stage: KEY_WARDEN_STAGE } } = require('../../config')
 const apiError = require('../util/api-error')
-const pool = require('../util/db')
+const { pool } = require('../util/db')
 
 
 const KEY_WARDEN_BASE = `${KEY_WARDEN_HOST}/${KEY_WARDEN_STAGE}`
