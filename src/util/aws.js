@@ -6,6 +6,8 @@ const lambda = new AWS.Lambda({
   region: 'us-east-1',
 })
 
+const s3 = new AWS.S3({ region: 'us-east-1' })
+
 async function invokeLambda(params) {
   const response = { statusCode: 200 }
 
@@ -29,5 +31,4 @@ async function invokeLambda(params) {
   return response
 }
 
-module.exports = { invokeLambda }
-
+module.exports = { invokeLambda, s3 }
