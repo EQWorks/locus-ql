@@ -38,7 +38,7 @@ rootRouter.use('/expense', expense)
 rootRouter.use('/segment', segments)
 rootRouter.use('/market', market)
 rootRouter.use('/search', search)
-rootRouter.use('/loyalty-index', loyaltyIndex)
+rootRouter.use('/loyalty(-index)?', loyaltyIndex)
 rootRouter.use('/connections', connections)
 rootRouter.use(api)
 
