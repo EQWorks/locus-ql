@@ -3,6 +3,7 @@ const express = require('express')
 
 const rootRouter = express.Router()
 const { jwt } = require('../middleware/auth')
+const { maintenance: { isMaint } } = require('../middleware')
 
 const map = require('./map')
 const layer = require('./layer')
@@ -23,6 +24,7 @@ const loyaltyIndex = require('./loyalty-index')
 const connections = require('./connections')
 
 
+rootRouter.use(isMaint)
 rootRouter.use(jwt)
 rootRouter.use('/map', map)
 rootRouter.use('/layer', layer)
