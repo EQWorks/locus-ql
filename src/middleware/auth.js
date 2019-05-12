@@ -117,14 +117,26 @@ const haveLayerAccess = async (req, layerIDs) => {
 
 // assumes req.access exist
 // pathToID should lead to either a layerID or an array of layerID
-const layerAuth = (pathToID = 'params.id') => async (req, res, next) => {
-  const layer = get(req, pathToID)
-  const layers = Array.isArray(layer) ? layer : [layer]
-  const layerAccess = await haveLayerAccess(req, layers)
-  if (layerAccess) {
-    next()
-  } else {
-    return next(apiError('Access to layer not allowed', 403))
+const layerAuth = (pathToID = 'params.id', pathToSecondaryID = false) => async (req, res, next) => {
+  try {
+    const layer = get(req, pathToID)
+    const layers = Array.isArray(layer) ? layer : [layer]
+    if (pathToSecondaryID) {
+      const layer2 = get(req, pathToSecondaryID)
+      if (Array.isArray(layer2)) {
+        layers.push(...layer2)
+      } else {
+        layers.push(layer2)
+      }
+    }
+    const layerAccess = await haveLayerAccess(req, layers)
+    if (layerAccess) {
+      next()
+    } else {
+      return next(apiError('Access to layer not allowed', 403))
+    }
+  } catch (error) {
+    return next(apiError('Invalid layer format', 403))
   }
 }
 
