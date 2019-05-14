@@ -80,8 +80,7 @@ const haveLayerAccess = async (req, layerIDs) => {
       const { rows } = await pool.query(`
         SELECT type_id
         FROM market_ownership_flat MO
-        LEFT JOIN customers CU on CU.customerid = MO.customer
-        WHERE MO.type = 'layer' AND MO.whitelabel = ${wl[0]} AND CU.agencyid = ${cu[0]}
+        WHERE MO.type = 'layer' AND MO.whitelabel = ${wl[0]} AND MO.customer = ${cu[0]}
       `)
       const subscribeLayerIDs = rows.map(layer => layer.type_id)
 
