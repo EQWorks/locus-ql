@@ -71,18 +71,34 @@ const haveLayerAccess = async (req, layerIDs) => {
   let where = 'WHERE layer_id = ANY ($1)'
   let values = [layerIDs]
 
-  if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
-    where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
-    values = [...values, wl]
-  } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
-    // eslint-disable-next-line max-len
-    where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in (\'0\', \'-1\', $4)))'
-    values = [...values, wl, cu, email]
-  } else if (!(wl === -1 && cu === -1)) {
-    return false
-  }
-
   try {
+    if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
+      where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
+      values = [...values, wl]
+    } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
+      // get subscribe layers
+      const { rows } = await pool.query(`
+        SELECT type_id
+        FROM market_ownership_flat MO
+        WHERE MO.type = 'layer' AND MO.whitelabel = ${wl[0]} AND MO.customer = ${cu[0]}
+      `)
+      const subscribeLayerIDs = rows.map(layer => layer.type_id)
+
+      where += `AND
+        (
+          whitelabel = -1
+          OR
+          (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4))
+          OR
+          layer_id = ANY ($5)
+        )
+      `
+      values = [...values, wl, cu, email, subscribeLayerIDs]
+    } else if (!(wl === -1 && cu === -1)) {
+      return false
+    }
+
+
     const { rows: layers } = await pool.query(
       `
       SELECT *
