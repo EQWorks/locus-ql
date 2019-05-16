@@ -131,10 +131,9 @@ const layerAuth = (pathToID = 'params.id', pathToSecondaryID = false) => async (
     }
     const layerAccess = await haveLayerAccess(req, layers)
     if (layerAccess) {
-      next()
-    } else {
-      return next(apiError('Access to layer not allowed', 403))
+      return next()
     }
+    return next(apiError('Access to layer not allowed', 403))
   } catch (error) {
     return next(apiError('Invalid layer format', 403))
   }
