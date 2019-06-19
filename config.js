@@ -88,6 +88,8 @@ const basePath = process.env.API_GATEWAY_BASE_PATH || ''
 
 const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
 
+const redisUrl = process.env.REDIS_URL || 'localhost'
+
 module.exports = {
   pg: pgConfig,
   pgAtom: pgAtomConfig,
@@ -101,4 +103,5 @@ module.exports = {
   basePath,
   commitHash,
   algolia,
+  redisUrl,
 }
