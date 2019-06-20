@@ -23,6 +23,7 @@ const loyaltyIndex = require('./loyalty-index')
 const connections = require('./connections')
 const geoQuery = require('./geo-query')
 const widgets = require('./widgets')
+const ml = require('./ml')
 
 
 rootRouter.use(isMaint)
@@ -44,6 +45,7 @@ rootRouter.use('/loyalty(-index)?', loyaltyIndex)
 rootRouter.use('/connections', connections)
 rootRouter.use('/geoquery', geoQuery)
 rootRouter.use('/widgets', widgets)
+rootRouter.use('/ml', ml)
 rootRouter.use(api)
 
 
