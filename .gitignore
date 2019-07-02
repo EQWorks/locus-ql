@@ -75,3 +75,6 @@ old
 
 # settings for WebStorm
 .idea
+
+# redis snapshot
+.rdb
