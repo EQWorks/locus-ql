@@ -148,6 +148,16 @@ const internalAuth = (req, res, next) => {
   }
 }
 
+const dataProviderAuth = (req, res, next) => {
+  const { whitelabel, customers, read, write } = req.access
+  if (whitelabel === -1 && customers === -1) {
+    return next()
+  } else if (whitelabel !== -1 && customers === -1 && read === 500 && write === 10) {
+    return next()
+  }
+  return next(apiError('Only data providers are allowed', 403))
+}
+
 const devAuth = ({ access }, res, next) => {
   if (['whitelabel', 'customers', 'write'].every(key => access[key] === -1)) {
     return next()
@@ -205,6 +215,7 @@ module.exports = {
   jwt: jwtMiddleware,
   layer: layerAuth,
   internal: internalAuth,
+  dataProvider: dataProviderAuth,
   dev: devAuth,
   map: mapAuth,
   write: hasWrite,
