@@ -88,7 +88,7 @@ const basePath = process.env.API_GATEWAY_BASE_PATH || ''
 
 const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
 
-const redisUrl = process.env.REDIS_URL || 'localhost'
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
 
 module.exports = {
   pg: pgConfig,
