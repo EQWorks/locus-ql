@@ -36,6 +36,22 @@ const functions = {
     category: 'Numeric',
     defaultCast: 'real',
   },
+
+  round: {
+    value: 'round',
+    category: 'Numeric',
+  },
+
+  // time/date functions
+  // field can be year, month, day, hour etc
+  date_part: { // date_part(field, timestamp)
+    value: 'date_part',
+    category: 'Numeric',
+  },
+  date_trunc: { // date_trunc(field, timestamp)
+    value: 'date_trunc',
+    category: 'Date',
+  },
 }
 
 const operators = {
@@ -61,6 +77,14 @@ const operators = {
   '-': { value: '-' },
   '*': { value: '*' },
   '/': { value: '/' },
+
+  // JSON operators
+  'json array element at': { value: '->' },
+  'json object field with key': { value: '->' },
+  'json array element as text at': { value: '->>' },
+  'json object field as text with key': { value: '->>' },
+  'json object at path': { value: '#>' },
+  'json object as text at path': { value: '#>>' },
 }
 
 const parseComplex = ({ type, ...exp }) => {
@@ -78,12 +102,13 @@ const parseComplex = ({ type, ...exp }) => {
     }
     const castTo = cast || func.defaultCast
 
-    const [argA] = args
     // const { category } = func // check argument with category
+
+    const argsString = args.map(parseExpression).join(', ')
 
     // e.g. SUM(visits)::real as visits
     // eslint-disable-next-line max-len
-    return knex.raw(`${func.value}(${parseExpression(argA)})${castTo ? `::${castTo}` : ''}${as ? ` as "${as}"` : ''}`)
+    return knex.raw(`${func.value}(${argsString})${castTo ? `::${castTo}` : ''}${as ? ` as "${as}"` : ''}`)
   }
 
   if (type === 'operator') {
@@ -93,7 +118,7 @@ const parseComplex = ({ type, ...exp }) => {
       throw apiError(`Invalid operator: ${opName}`, 403)
     }
 
-    const [argA, argB] = args.map(exp => parseExpression(exp))
+    const [argA, argB] = args.map(parseExpression)
 
     // eslint-disable-next-line max-len
     return knex.raw(`(${argA} ${op.value} ${argB})${cast ? `::${cast}` : ''}${as ? ` as "${as}"` : ''}`)

@@ -12,7 +12,7 @@ module.exports.getViews = async (req, res, next) => {
   await Promise.all(views.map(async (view) => {
     const { type, id, ...viewParams } = view
 
-    if (!['ext', 'report'].includes(type)) {
+    if (!['ext', 'report', 'geo'].includes(type)) {
       throw apiError(`Invalid view type: ${type}`, 403)
     }
 

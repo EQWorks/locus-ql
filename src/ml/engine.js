@@ -28,7 +28,7 @@ const parseView = (views, viewID) => {
   // }
 }
 
-const select = async (views, { columns, from, joins = [], where = [], groupBy }) => {
+const select = async (views, { distinct, columns, from, joins = [], where = [], groupBy, limit }) => {
   console.log('begining selection')
 
   let knexQuery = knex
@@ -50,6 +50,11 @@ const select = async (views, { columns, from, joins = [], where = [], groupBy })
       // handle complex conditions
       this.whereRaw(parseExpression(where))
     })
+
+  // Distinct Flag
+  if (distinct) {
+    knexQuery = knexQuery.distinct()
+  }
 
   // Group By
   if (groupBy && groupBy.length > 0) {
@@ -83,6 +88,17 @@ const select = async (views, { columns, from, joins = [], where = [], groupBy })
       // JOIN xxx ON name = 'abc' and (age = '13' or birth is null)
     })
   })
+
+  // LIMIT
+  if (limit || limit === 0) {
+    if (Number.isInteger(limit) && limit >= 0) {
+      knexQuery = knexQuery.limit(limit)
+    } else {
+      throw apiError(`Invalid limit: ${limit}`, 403)
+    }
+  }
+
+
   return knexQuery
 }
 

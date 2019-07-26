@@ -24,7 +24,7 @@ module.exports.getView = async (access, reqViews, { conn_id }) => {
     .whereRaw('? in (customer, -1)', customers)
 
   if (connections.length === 0) {
-    throw apiError('Connection not found ', 403)
+    throw apiError('Connection not found', 403)
   }
 
   const [{ dest: { table, schema } }] = connections
