@@ -1,9 +1,11 @@
+/* API Document for locus ML */
+/* https://github.com/EQWorks/firstorder/wiki/Locus-ML */
+
 const express = require('express')
 const apiError = require('../../util/api-error')
 
 const { execute } = require('../../ml/engine')
-const { getViews } = require('../../ml/view')
-const { getAllViews } = require('../../ml/views')
+const { listViews, getViews } = require('../../ml/views')
 
 const { dev } = require('../../middleware/auth')
 
@@ -26,14 +28,16 @@ const mlHandler = async (req, res, next) => {
 
 router.use(dev)
 
+// list out all accessible views with column data
 router.get('/', async (req, res, next) => {
   try {
-    return res.status(200).json(await getAllViews(req.access))
+    return res.status(200).json(await listViews(req.access))
   } catch (err) {
     return next(err)
   }
 })
 
+// main query endpoint
 router.post('/', getViews, mlHandler)
 
 module.exports = router

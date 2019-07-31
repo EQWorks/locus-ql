@@ -28,7 +28,10 @@ const parseView = (views, viewID) => {
   // }
 }
 
-const select = async (views, { distinct, columns, from, joins = [], where = [], groupBy, limit }) => {
+const select = async (
+  views,
+  { distinct, columns, from, joins = [], where = [], groupBy, limit },
+) => {
   console.log('begining selection')
 
   let knexQuery = knex
