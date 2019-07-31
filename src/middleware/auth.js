@@ -16,54 +16,28 @@ function jwtMiddleware(req, res, next) {
     req.headers['x-firstorder-token'] &&
     req.headers['x-firstorder-token'].length > 0
   )) {
-    res.sendStatus(401)
-    return
+    return next(apiError('Invalid JWT', 401))
   }
 
   const uJWT = req.headers['x-firstorder-token']
-  const decoded = jwt.decode(uJWT)
-  // console.log('token payload middleware', decoded)
+  const {
+    email = '',
+    api_access: {
+      wl: whitelabel = 0,
+      customers = 0,
+      write = 0,
+      read = 0,
+    } = {},
+  } = jwt.decode(uJWT)
 
-  const access = {}
-  // default whitelabel
-  access.whitelabel = 0
-  if (decoded.api_access && decoded.api_access.wl) {
-    access.whitelabel = decoded.api_access.wl
-  }
-
-  // default customers
-  access.customers = 0
-  if (decoded.api_access && decoded.api_access.customers) {
-    access.customers = decoded.api_access.customers
-  }
-
-  access.email = ''
-  if (decoded.email) {
-    access.email = decoded.email
-  }
-
-  access.write = 0
-  if (decoded.api_access && decoded.api_access.write) {
-    access.write = decoded.api_access.write
-  }
-
-  req.access = access
+  req.access = { whitelabel, customers, write, read, email }
 
   axios({
     url: `${KEY_WARDEN_BASE}/confirm`,
     method: 'get',
     headers: { 'eq-api-jwt': uJWT },
     params: { light: 1 },
-  })
-    .then(() => {
-      next()
-    })
-    .catch((error) => {
-      if (error.response) {
-        console.log('error', error.response.data)
-      }
-      res.sendStatus(401)
-    })
+  }).then(() => next()).catch(next)
 }
 
 const haveLayerAccess = async (req, layerIDs) => {
