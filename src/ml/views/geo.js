@@ -13,7 +13,7 @@ const GEO_TABLES = {
 }
 
 // public available
-module.exports.getView = async (_, reqViews, { tableKey }) => {
+const getView = async (_, reqViews, reqViewColumns, { tableKey }) => {
   const viewID = `geo_${tableKey}`
   const { schema, table } = GEO_TABLES[tableKey]
 
@@ -21,6 +21,11 @@ module.exports.getView = async (_, reqViews, { tableKey }) => {
     throw apiError('Invalid geo view', 403)
   }
 
+  // inject view columns
+  const viewMeta = await listViews(null, { tableKey })
+  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+
+  // inject view
   reqViews[viewID] = knex.raw(`
     (
       SELECT *
@@ -29,8 +34,17 @@ module.exports.getView = async (_, reqViews, { tableKey }) => {
   `)
 }
 
-module.exports.listViews = async () => {
-  const tablePromises = Object.entries(GEO_TABLES).map(async ([tableKey, { schema, table }]) => {
+const listViews = async (_, filter) => {
+  let geoTableList = []
+  if (filter && filter.tableKey) {
+    geoTableList = [
+      [filter.tableKey, GEO_TABLES[filter.tableKey]],
+    ]
+  } else {
+    geoTableList = Object.entries(GEO_TABLES)
+  }
+
+  const tablePromises = geoTableList.map(async ([tableKey, { schema, table }]) => {
     const tableColumns = await knex('information_schema.columns')
       .columns(['column_name', 'data_type', 'udt_name'])
       .where({ table_schema: schema, table_name: table })
@@ -57,4 +71,9 @@ module.exports.listViews = async () => {
   })
 
   return Promise.all(tablePromises)
+}
+
+module.exports = {
+  getView,
+  listViews,
 }

@@ -1,3 +1,5 @@
+/* eslint-disable no-use-before-define */
+
 const { knex } = require('../../util/db')
 const { typeToCatMap } = require('../type')
 const apiError = require('../../util/api-error')
@@ -6,7 +8,7 @@ const apiError = require('../../util/api-error')
 const CONNECTION_TABLE = 'ext_conn.connections'
 const SETS_TABLE = 'ext_conn.sets'
 
-module.exports.getView = async (access, reqViews, { conn_id }) => {
+const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   const viewID = `ext_${conn_id}`
 
   let { whitelabel, customers } = access
@@ -27,6 +29,12 @@ module.exports.getView = async (access, reqViews, { conn_id }) => {
     throw apiError('Connection not found', 403)
   }
 
+
+  // inject view columns
+  const viewMeta = await listViews(access, { conn_id })
+  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+
+  // inject view
   const [{ dest: { table, schema } }] = connections
   reqViews[viewID] = knex.raw(`
     (
@@ -36,7 +44,7 @@ module.exports.getView = async (access, reqViews, { conn_id }) => {
   `)
 }
 
-module.exports.listViews = async (access) => {
+const listViews = async (access, { conn_id } = {}) => {
   const { whitelabel, customers } = access
 
   const connQuery = knex(CONNECTION_TABLE)
@@ -48,6 +56,7 @@ module.exports.listViews = async (access) => {
     'columns',
   ])
   connQuery.innerJoin(SETS_TABLE, `${SETS_TABLE}.id`, 'set_id')
+  connQuery.where(conn_id ? { [`${CONNECTION_TABLE}.id`]: conn_id } : {})
   if (whitelabel !== -1) {
     connQuery.where({ whitelabel: whitelabel[0] })
     if (customers !== -1) {
@@ -76,4 +85,9 @@ module.exports.listViews = async (access) => {
       columns,
     }
   })
+}
+
+module.exports = {
+  getView,
+  listViews,
 }

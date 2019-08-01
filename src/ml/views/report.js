@@ -12,7 +12,7 @@ const {
 const apiError = require('../../util/api-error')
 
 
-module.exports.getView = async (access, reqViews, { layer_id, report_id }) => {
+const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
   const viewID = `report_${layer_id}_${report_id}`
 
   const [layer] = await listLayers(
@@ -25,6 +25,11 @@ module.exports.getView = async (access, reqViews, { layer_id, report_id }) => {
     throw apiError('Access to layer or report not allowed', 403)
   }
 
+  // inject view columns
+  const viewMeta = await listViews(access, { layer_id, report_id })
+  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+
+  // inject view
   reqViews[viewID] = knex.raw(`
     (SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
       poi.poi_id,
@@ -79,13 +84,14 @@ module.exports.getView = async (access, reqViews, { layer_id, report_id }) => {
   // TODO: missed applying factor to json columns, need to do on client side
 }
 
-module.exports.listViews = async (access) => {
+const listViews = async (access, filter = {}) => {
   const { whitelabel, customers } = access
   const reportLayerTypes = [1, 2, 16, 17]
 
   const layerQuery = knex('layer')
   layerQuery.column(['name', 'layer_id', 'report_id', 'layer_type_id'])
   layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
+  layerQuery.where(filter)
   layerQuery.whereIn('layer_type_id', reportLayerTypes)
   layerQuery.whereNull('parent_layer')
   if (whitelabel !== -1) {
@@ -195,4 +201,9 @@ const options = {
     'outlier',
   ],
 
+}
+
+module.exports = {
+  getView,
+  listViews,
 }

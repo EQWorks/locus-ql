@@ -4,7 +4,7 @@
 const apiError = require('../../util/api-error')
 
 
-const VIEW_LIST = ['report', 'ext', 'geo']
+const VIEW_LIST = ['ext', 'report', 'geo']
 
 // VIEWS structure:
 // VIEWS = {
@@ -35,7 +35,8 @@ module.exports.getViews = async (req, res, next) => {
   const { views } = req.body
   const { access } = req
 
-  req.locusMLViews = {}
+  req.mlViews = {}
+  req.mlViewColumns = {}
   await Promise.all(views.map(async (view) => {
     const { type, id, ...viewParams } = view
 
@@ -49,7 +50,7 @@ module.exports.getViews = async (req, res, next) => {
       throw apiError(`View type not found: ${type}`, 403)
     }
 
-    await viewModule.getView(access, req.locusMLViews, viewParams)
+    await viewModule.getView(access, req.mlViews, req.mlViewColumns, viewParams)
   }))
   return next()
 }

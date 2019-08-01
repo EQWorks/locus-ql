@@ -17,7 +17,7 @@ const mlHandler = async (req, res, next) => {
   // console.log('query', query);
 
   try {
-    const result = await execute(req.locusMLViews, query)
+    const result = await execute(req.mlViews, req.mlViewColumns, query)
     console.log('finshed')
     return res.status(200).json(result)
   } catch (error) {

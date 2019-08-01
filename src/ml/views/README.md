@@ -13,11 +13,11 @@ A view file requires two functions: `listViews()` and `getView()`
 
 See `views/report.js` and `views/ext.js` for example
 
-### listViews(access)
-This function accepts a user access object and should return an array of user accessible view metadata objects
+### listViews(access, filter)
+This function accepts a user access object and an optional filter object, and should return an array of user accessible view metadata objects
 
 The process of function:
-* Using the provided access, get a list of accessible views(most of the time by querying sql table)
+* Using the provided access and filter, get a list of accessible views(most of the time by querying sql table)
 * Process and format each view object into the **standrad format below**
 
 #### view id object
@@ -57,14 +57,16 @@ The standard format of a view meta object is:
 }
 ```
 
-### getView(access, reqViews, viewIDObject)
+### getView(access, reqViews, reqViewColumns, viewIDObject)
 * access: user access object
 * reqViews: an object under request, we need to inject the end result view into this object
+* reqViewColumns: an object under request, need to inject the view columns into it
 * viewIDObject: the view id object, but excluding `type` and `id`, contains only view specific ids
 
 
 The process of function:
 * Create the `viewID` constant by concatenating view type and other view specific id
 * If necessary, validate access to view using `access` (can be combined with the next step)
+* Using `listViews(access, filter)` with **filter** to get the columns for this view, and inject into `reqViewColumns` using `viewID` as key
 * Use `knex.raw()` to query the necessary tables with provided view specific ids, be sured to wrap the whole query and give it an alias name `viewID`, like: `` knex.raw(`(<query>) as ${viewID}`) ``
 * Assign the result from `knex.raw()` to `reqViews` using `viewID` as key
