@@ -9,17 +9,15 @@ const { pool } = require('../util/db')
 
 const KEY_WARDEN_BASE = `${KEY_WARDEN_HOST}/${KEY_WARDEN_STAGE}`
 
-function jwtMiddleware(req, res, next) {
+function jwtMiddleware(req, _, next) {
+  // DEPRECATED `x-firstorder-token`
+  const uJWT = req.get('eq-api-jwt') || req.get('x-firstorder-token')
+
   // quick validation
-  if (!(
-    req.headers &&
-    req.headers['x-firstorder-token'] &&
-    req.headers['x-firstorder-token'].length > 0
-  )) {
+  if (!(req.headers && uJWT && uJWT.length > 0)) {
     return next(apiError('Invalid JWT', 401))
   }
 
-  const uJWT = req.headers['x-firstorder-token']
   const {
     email = '',
     api_access: {
