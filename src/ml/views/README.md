@@ -25,7 +25,7 @@ the view id object identifies a view, and consist of a few required fields and s
 
 * type: [required] view type, same as file name
 * `<view specific id>`: can have one or more this type of fields, used for query the underlaying tables for a view. like: `reportID` and `layerID` for report or `connectionID` for external data
-* id: [required] view id string, uniquely identifies a view, must be string concatenation of view type and all view type specific ids.
+* id: [required] view id string, uniquely identifies a view, must be string concatenation of view type and all view type specific ids. When view type include dash: `-`, replace all dash with underscroll: `_`
 
 example:
 ```
@@ -65,7 +65,7 @@ The standard format of a view meta object is:
 
 
 The process of function:
-* Create the `viewID` constant by concatenating view type and other view specific id
+* Create the `viewID` constant by concatenating view type and other view specific id with `_`, replace all `-` with `_`
 * If necessary, validate access to view using `access` (can be combined with the next step)
 * Using `listViews(access, filter)` with **filter** to get the columns for this view, and inject into `reqViewColumns` using `viewID` as key
 * Use `knex.raw()` to query the necessary tables with provided view specific ids, be sured to wrap the whole query and give it an alias name `viewID`, like: `` knex.raw(`(<query>) as ${viewID}`) ``
