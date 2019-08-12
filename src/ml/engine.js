@@ -1,5 +1,6 @@
 /* eslint-disable valid-typeof */
 /* eslint-disable func-names */
+/* eslint-disable no-nested-ternary */
 
 const { knex } = require('../util/db')
 const { Expression } = require('./expressions')
@@ -37,7 +38,7 @@ const select = async (
 
   let knexQuery = knex
     // use bind() here to prevent exp instance from getting lost, same for other bind() usage below
-    .columns(columns.map(exp.parseExpression.bind(exp)))
+    .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
     .where(function () {
       // handle simple array form conditions
@@ -47,7 +48,7 @@ const select = async (
           // to avoid adding ' ' to argument
           typeof argA === 'object' ? exp.parseExpression(argA) : argA,
           operator,
-          typeof argB === 'object' ? exp.parseExpression(argB) : argB,
+          argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
         )) // validate where operator and columns?
         return
       }
@@ -84,7 +85,7 @@ const select = async (
           // to avoid adding ' ' to argument
           typeof argA === 'object' ? exp.parseExpression(argA) : argA,
           operator,
-          typeof argB === 'object' ? exp.parseExpression(argB) : argB,
+          argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
         )) // validate conditions filters?
       }
 

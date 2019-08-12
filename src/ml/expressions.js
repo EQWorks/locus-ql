@@ -36,6 +36,16 @@ const functions = {
     category: 'Numeric',
     defaultCast: 'real',
   },
+  minDate: {
+    value: 'min',
+    category: 'Numeric',
+    defaultCast: 'date',
+  },
+  maxDate: {
+    value: 'max',
+    category: 'Numeric',
+    defaultCast: 'date',
+  },
 
   round: {
     value: 'round',
@@ -69,8 +79,7 @@ const operators = {
   'not in': { value: 'not in' },
   like: { value: 'like' },
   'not like': { value: 'not like' },
-  'is null': { value: 'is null' },
-  'is not null': { value: 'is not null' },
+  is: { value: 'is' },
 
   // arithmatic operators
   '+': { value: '+' },
@@ -111,6 +120,10 @@ class Expression {
       console.log(exp)
 
       return this.constructColumn(exp.view, exp.column)
+    }
+
+    if (type === 'array') {
+      return exp.values
     }
 
     if (type === 'function') {

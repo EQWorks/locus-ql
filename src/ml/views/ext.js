@@ -39,7 +39,7 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   reqViews[viewID] = knex.raw(`
     (
       SELECT *
-      FROM ${schema}.${table}
+      FROM ${schema}."${table}"
     ) as ${viewID}
   `)
 }

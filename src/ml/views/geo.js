@@ -10,6 +10,10 @@ const GEO_TABLES = {
     schema: 'canada_geo',
     table: 'city_dev',
   },
+  ggid: {
+    schema: 'config',
+    table: 'ggid_map',
+  },
 }
 
 // public available
