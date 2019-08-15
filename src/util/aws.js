@@ -10,7 +10,7 @@ const s3 = new AWS.S3({ region: 'us-east-1' })
 
 async function invokeLambda(params) {
   const response = { statusCode: 200 }
-
+  // TODO: this function does not support `Event` invoke type
   try {
     const result = await lambda.invoke(params).promise()
     const payload = JSON.parse(result.Payload)
@@ -31,4 +31,4 @@ async function invokeLambda(params) {
   return response
 }
 
-module.exports = { invokeLambda, s3 }
+module.exports = { invokeLambda, s3, lambda }
