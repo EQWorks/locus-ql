@@ -20,13 +20,27 @@ function jwtMiddleware(req, _, next) {
 
   const {
     email = '',
-    api_access: {
-      wl: whitelabel = 0,
-      customers = 0,
-      write = 0,
-      read = 0,
-    } = {},
+    api_access = {},
   } = jwt.decode(uJWT)
+
+  const { write = 0, read = 0 } = api_access
+  let { wl: whitelabel = 0, customers = 0 } = api_access
+
+  // both are integers
+  const { _wl, _customer } = req.query
+  // validate _wl and _customer
+  if (_wl && parseInt(_wl) && (!_customer || parseInt(_customer))) {
+    const isInternal = whitelabel === -1 && customers === -1
+    if (isInternal || whitelabel.includes(_wl)) {
+      whitelabel = [_wl]
+    }
+
+    if (_customer && (isInternal ||
+        (whitelabel.includes(_wl) && (_customer === -1 || customers.includes(_customer)))
+    )) {
+      customers = [_customer]
+    }
+  }
 
   req.access = { whitelabel, customers, write, read, email }
 
