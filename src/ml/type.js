@@ -4,6 +4,7 @@ const CAT_NUMERIC = 'Numeric'
 const CAT_DATE = 'Date'
 const CAT_JSON = 'JSON'
 const CAT_BOOL = 'Boolean'
+const CAT_GEOMETRY = 'Geometry'
 
 const typeToCatMap = new Map([
   // CAT_STRING
@@ -29,6 +30,7 @@ const typeToCatMap = new Map([
   ['boolean', CAT_BOOL],
 
   // ...others like postgis stuff
+  ['geometry', CAT_GEOMETRY],
 
   // TODO:
   // 1) standarize these types:

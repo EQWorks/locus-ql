@@ -12,7 +12,7 @@ const {
 const apiError = require('../../util/api-error')
 
 
-module.exports.getView = async (access, reqViews, { layer_id, report_id }) => {
+const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
   const viewID = `report_${layer_id}_${report_id}`
 
   const [layer] = await listLayers(
@@ -25,6 +25,11 @@ module.exports.getView = async (access, reqViews, { layer_id, report_id }) => {
     throw apiError('Access to layer or report not allowed', 403)
   }
 
+  // inject view columns
+  const viewMeta = await listViews(access, { layer_id, 'report_wi.report_id': report_id })
+  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+
+  // inject view
   reqViews[viewID] = knex.raw(`
     (SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
       poi.poi_id,
@@ -44,6 +49,7 @@ module.exports.getView = async (access, reqViews, { layer_id, report_id }) => {
       poi.address_country,
 
       layer.wi_factor,
+
       report.report_id,
       report.date_type,
       report.start_date,
@@ -79,13 +85,26 @@ module.exports.getView = async (access, reqViews, { layer_id, report_id }) => {
   // TODO: missed applying factor to json columns, need to do on client side
 }
 
-module.exports.listViews = async (access) => {
+const listViews = async (access, filter = {}) => {
   const { whitelabel, customers } = access
-  const reportLayerTypes = [1, 2, 16, 17]
+  const reportLayerTypes = [1, 16, 17] // wi, xwi and xvwi
 
   const layerQuery = knex('layer')
-  layerQuery.column(['name', 'layer_id', 'report_id', 'layer_type_id'])
+  layerQuery.column(['name', 'layer_id', 'layer.report_id', 'layer_type_id'])
+  layerQuery.select(knex.raw(`
+    COALESCE(
+      ARRAY_AGG(DISTINCT ARRAY[
+        report_wi.start_date::varchar,
+        report_wi.end_date::varchar,
+        report_wi.date_type::varchar
+      ])
+      FILTER (WHERE report_wi.start_date IS NOT null),
+      '{}'
+    ) AS dates
+  `))
   layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
+  layerQuery.leftJoin('report_wi', 'report_wi.report_id', 'layer.report_id')
+  layerQuery.where(filter)
   layerQuery.whereIn('layer_type_id', reportLayerTypes)
   layerQuery.whereNull('parent_layer')
   if (whitelabel !== -1) {
@@ -94,17 +113,18 @@ module.exports.listViews = async (access) => {
       layerQuery.where({ agencyid: customers[0] })
     }
   }
+  layerQuery.groupBy(['name', 'layer_id', 'layer.report_id', 'layer_type_id'])
 
   const reportLayers = await layerQuery
 
-  return reportLayers.map(({ name, layer_id, report_id, layer_type_id }) => {
+  return reportLayers.map(({ name, layer_id, report_id, layer_type_id, dates }) => {
     Object.entries(options.columns).forEach(([key, column]) => {
       column.key = key
     })
 
     return {
+      // required
       name,
-      layer_type_id,
       view: {
         type: 'report',
         id: `report_${layer_id}_${report_id}`,
@@ -112,6 +132,9 @@ module.exports.listViews = async (access) => {
         layer_id,
       },
       columns: options.columns,
+      // meta
+      layer_type_id,
+      dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
   })
 }
@@ -135,6 +158,8 @@ const options = {
     address_postalcode: { category: CAT_STRING },
     address_country: { category: CAT_STRING },
 
+    wi_factor: { category: CAT_NUMERIC },
+
     report_id: { category: CAT_NUMERIC },
     date_type: { category: CAT_NUMERIC },
     start_date: { category: CAT_DATE },
@@ -155,44 +180,9 @@ const options = {
     repeat_visitors_hh: { category: CAT_NUMERIC },
     outlier: { category: CAT_BOOL },
   },
-  filters: [
-    'time_zone',
-    'poi_id',
-    'name',
-    'chain_id',
-    'type',
-    'category',
-    'lat',
-    'lon',
-    'address_label',
-    'address_line1',
-    'address_line2',
-    'address_unit',
-    'address_city',
-    'address_region',
-    'address_postalcode',
-    'address_country',
+}
 
-    'report_id',
-    'poi_id',
-    'date_type',
-    'start_date',
-    'end_date',
-    'repeat_type',
-    'visits',
-    'unique_visitors',
-    'repeat_visits',
-    'repeat_visitors',
-    'visits_hod',
-    'visits_dow',
-    'unique_visitors_hod',
-    'unique_visitors_dow',
-    'unique_visitors_single_visit',
-    'unique_visitors_multi_visit',
-    'unique_xdevice',
-    'unique_hh',
-    'repeat_visitors_hh',
-    'outlier',
-  ],
-
+module.exports = {
+  getView,
+  listViews,
 }
