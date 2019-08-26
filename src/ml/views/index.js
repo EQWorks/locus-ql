@@ -4,7 +4,7 @@
 const apiError = require('../../util/api-error')
 
 
-const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo']
+const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather']
 
 // VIEWS structure:
 // VIEWS = {
@@ -37,20 +37,25 @@ module.exports.getViews = async (req, res, next) => {
 
   req.mlViews = {}
   req.mlViewColumns = {}
-  await Promise.all(views.map(async (view) => {
-    const { type, id, ...viewParams } = view
+  try {
+    await Promise.all(views.map(async (view) => {
+      const { type, id, ...viewParams } = view
 
-    if (!VIEW_LIST.includes(type)) {
-      throw apiError(`Invalid view type: ${type}`, 403)
-    }
+      if (!VIEW_LIST.includes(type)) {
+        throw apiError(`Invalid view type: ${type}`, 403)
+      }
 
-    const viewModule = VIEWS[type]
+      const viewModule = VIEWS[type]
 
-    if (!viewModule) {
-      throw apiError(`View type not found: ${type}`, 403)
-    }
+      if (!viewModule) {
+        throw apiError(`View type not found: ${type}`, 403)
+      }
 
-    await viewModule.getView(access, req.mlViews, req.mlViewColumns, viewParams)
-  }))
-  return next()
+      await viewModule.getView(access, req.mlViews, req.mlViewColumns, viewParams)
+    }))
+    return next()
+  } catch (error) {
+    console.error(error)
+    return next(error)
+  }
 }

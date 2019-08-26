@@ -2,7 +2,6 @@
 /* https://github.com/EQWorks/firstorder/wiki/Locus-ML */
 
 const express = require('express')
-const apiError = require('../../util/api-error')
 
 const { execute } = require('../../ml/engine')
 const { listViews, getViews } = require('../../ml/views')
@@ -22,7 +21,7 @@ const mlHandler = async (req, res, next) => {
     return res.status(200).json(result)
   } catch (error) {
     console.error(error)
-    return next(apiError(error, 400))
+    return next(error)
   }
 }
 

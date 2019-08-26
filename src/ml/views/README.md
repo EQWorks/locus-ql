@@ -26,6 +26,9 @@ the view id object identifies a view, and consist of a few required fields and s
 * type: [required] view type, same as file name
 * `<view specific id>`: can have one or more this type of fields, used for query the underlaying tables for a view. like: `reportID` and `layerID` for report or `connectionID` for external data
 * id: [required] view id string, uniquely identifies a view, must be string concatenation of view type and all view type specific ids. When view type include dash: `-`, replace all dash with underscroll: `_`
+* filters: array of strings, when supplied, user is **required** to mutate the array into an object in place, using each element as key and desire filter as value.
+
+  example: `filters: ['poi-list-id']` => `filters: { 'poi-list-id': 1234 }`
 
 example:
 ```
@@ -61,12 +64,12 @@ The standard format of a view meta object is:
 * access: user access object
 * reqViews: an object under request, we need to inject the end result view into this object
 * reqViewColumns: an object under request, need to inject the view columns into it
-* viewIDObject: the view id object, but excluding `type` and `id`, contains only view specific ids
+* viewIDObject: the view id object, but excluding `type` and `id`, contains all view specific ids and `filters`
 
 
 The process of function:
 * Create the `viewID` constant by concatenating view type and other view specific id with `_`, replace all `-` with `_`
 * If necessary, validate access to view using `access` (can be combined with the next step)
-* Using `listViews(access, filter)` with **filter** to get the columns for this view, and inject into `reqViewColumns` using `viewID` as key
+* Using `listViews(access, filter)` with **filter** to get the columns for this view, and inject into `reqViewColumns` using `viewID` as key. If `columns` is fixed or easily derivable, can skip calling `listViews()` to increase performance
 * Use `knex.raw()` to query the necessary tables with provided view specific ids, be sured to wrap the whole query and give it an alias name `viewID`, like: `` knex.raw(`(<query>) as ${viewID}`) ``
 * Assign the result from `knex.raw()` to `reqViews` using `viewID` as key
