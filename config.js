@@ -63,10 +63,10 @@ const dataPipeLineTasksConfig = {
     dataops: [
       'stevenl@eqworks.com',
       'qinglei.zhang@eqworks.com',
-      'riyad.parvez@eqworks.com',
       'hao.zhang@eqworks.com',
       'dhruv.thapar@eqworks.com',
       'tom.wainas@eqworks.com',
+      'eric.shedletsky@eqworks.com',
       'dilshank@eqworks.com',
     ],
     financial: [
