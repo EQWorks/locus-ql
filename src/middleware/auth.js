@@ -28,17 +28,19 @@ function jwtMiddleware(req, _, next) {
 
   // both are integers
   const { _wl, _customer } = req.query
+  const wlID = parseInt(_wl)
+  const cuID = parseInt(_customer)
   // validate _wl and _customer
-  if (_wl && parseInt(_wl) && (!_customer || parseInt(_customer))) {
+  if (_wl && wlID && (!_customer || cuID)) {
     const isInternal = whitelabel === -1 && customers === -1
     if (isInternal || whitelabel.includes(_wl)) {
-      whitelabel = [_wl]
+      whitelabel = [wlID]
     }
 
     if (_customer && (isInternal ||
-        (whitelabel.includes(_wl) && (_customer === -1 || customers.includes(_customer)))
+        (whitelabel.includes(wlID) && (customers === -1 || customers.includes(cuID)))
     )) {
-      customers = [_customer]
+      customers = [cuID]
     }
   }
 
@@ -70,7 +72,7 @@ const haveLayerAccess = async (req, layerIDs) => {
       `)
       const subscribeLayerIDs = rows.map(layer => layer.type_id)
 
-      where += `AND
+      where += ` AND
         (
           whitelabel = -1
           OR
@@ -83,7 +85,6 @@ const haveLayerAccess = async (req, layerIDs) => {
     } else if (!(wl === -1 && cu === -1)) {
       return false
     }
-
 
     const { rows: layers } = await pool.query(
       `
