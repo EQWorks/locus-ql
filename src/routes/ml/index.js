@@ -6,8 +6,6 @@ const express = require('express')
 const { execute } = require('../../ml/engine')
 const { listViews, getViews } = require('../../ml/views')
 
-const { dev } = require('../../middleware/auth')
-
 
 const router = express.Router()
 
@@ -24,8 +22,6 @@ const mlHandler = async (req, res, next) => {
     return next(error)
   }
 }
-
-router.use(dev)
 
 // list out all accessible views with column data
 router.get('/', async (req, res, next) => {
