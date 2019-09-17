@@ -21,6 +21,7 @@ function jwtMiddleware(req, _, next) {
   const {
     email = '',
     api_access = {},
+    prefix,
   } = jwt.decode(uJWT)
 
   const { write = 0, read = 0 } = api_access
@@ -44,7 +45,7 @@ function jwtMiddleware(req, _, next) {
     }
   }
 
-  req.access = { whitelabel, customers, write, read, email }
+  req.access = { whitelabel, customers, write, read, email, prefix }
 
   axios({
     url: `${KEY_WARDEN_BASE}/confirm`,
@@ -146,7 +147,7 @@ const dataProviderAuth = (req, res, next) => {
 }
 
 const devAuth = ({ access }, res, next) => {
-  if (['whitelabel', 'customers', 'write'].every(key => access[key] === -1)) {
+  if (access.prefix !== 'dev') {
     return next()
   }
   return next(apiError('Only devs are allowed', 403))
