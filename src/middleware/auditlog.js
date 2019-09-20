@@ -11,6 +11,10 @@ module.exports.auditlog = action => (req, res, next) => {
     `,
     [email, action, JSON.stringify(body), method, originalUrl],
   )
-    .then(() => next())
+    .then((res) => {
+      const { rows: [{ id }] } = res
+      req.logID = id
+      next()
+    })
     .catch(next)
 }
