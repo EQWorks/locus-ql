@@ -23,7 +23,11 @@ module.exports.auditlog = action => (req, res, next) => {
   )
     .then((res) => {
       const { rows: [{ id }] } = res
+<<<<<<< HEAD
       req.log = { logID: id }
+=======
+      req.logID = id
+>>>>>>> log - pass logid down to endpoint
       next()
     })
     .catch(next)
