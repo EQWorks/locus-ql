@@ -5,6 +5,10 @@ const cors = require('cors')
 const compression = require('compression')
 
 const rootRouter = require('./routes/')
+<<<<<<< HEAD
+=======
+const config = require('../config')
+>>>>>>> log - write response into log
 const { pool } = require('./util/db')
 
 
@@ -32,6 +36,33 @@ app.get(`/${STAGE}`, (_, res) => {
 })
 
 app.use(`/${STAGE}`, rootRouter)
+
+// pass API response into log
+
+app.use((req, res, next) => {
+  const {
+    logID,
+    return_code,
+    return_meta,
+    res_info,
+  } = req.log
+
+  // If no logID what error should be return
+  if (!logID) {
+    return res.json({ message: 'No log recorded' })
+  }
+
+  pool.query(
+    `
+      UPDATE locus_log
+      SET return_code = $1, return_meta = $2
+      WHERE id = $3
+    `,
+    [return_code, return_meta, logID],
+  )
+    .catch(next)
+  return res.status(return_code).json(res_info)
+})
 
 // pass API response into log
 
