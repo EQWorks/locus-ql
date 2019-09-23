@@ -5,6 +5,7 @@ const cors = require('cors')
 const compression = require('compression')
 
 const rootRouter = require('./routes/')
+const { pool } = require('./util/db')
 
 
 const app = express()
@@ -32,14 +33,65 @@ app.get(`/${STAGE}`, (_, res) => {
 
 app.use(`/${STAGE}`, rootRouter)
 
+// pass API response into log
+
+app.use((req, res, next) => {
+  const {
+    logID,
+    return_code,
+    return_meta,
+    res_info,
+  } = req.log
+
+  // If no logID what error should be return
+  if (!logID) {
+    return res.json({ message: 'No log recorded' })
+  }
+
+  pool.query(
+    `
+      UPDATE locus_log
+      SET return_code = $1, return_meta = $2
+      WHERE id = $3
+    `,
+    [return_code, return_meta, logID],
+  )
+    .catch(next)
+  return res.status(return_code).json(res_info)
+})
+
 // catch-all error handler
 // eslint disable otherwise not able to catch errors
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   // set locals, only providing error in development
-  console.error(err)
+  console.error(err, 'error')
   const { message } = err
-  res.status(err.status || 500).json({ message })
+
+  // if has auditlog, write the error message in locuslog table
+  if (req.log) {
+    const { logID } = req.log
+    const return_code = err.status || 500
+    const return_meta = JSON.stringify({
+      status: 'falid',
+      message: `${message}`,
+    })
+    pool.query(
+      `
+        UPDATE locus_log
+        SET return_code = $1, return_meta = $2
+        WHERE id = $3
+      `,
+      [return_code, return_meta, logID],
+    )
+      .catch((err) => {
+        console.error(err)
+      })
+
+    res.status(err.status || 500).send({ error: message })
+  } else {
+    res.status(err.status || 500).json({ message })
+  }
 })
 
 module.exports = app

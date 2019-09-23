@@ -1,5 +1,15 @@
 const { pool } = require('../util/db')
 
+/**
+ * log need to have four params
+ * return_code as statusCode
+ * return_meta for locus_log table to record return message
+ * res_info for response to snoke
+ * logID
+ *
+ * logID will be generate from here
+ * and other params need to be defined in each endpoint which used log middleware
+ */
 
 module.exports.auditlog = action => (req, res, next) => {
   const { access: { email }, body, method, originalUrl } = req
@@ -13,7 +23,7 @@ module.exports.auditlog = action => (req, res, next) => {
   )
     .then((res) => {
       const { rows: [{ id }] } = res
-      req.logID = id
+      req.log = { logID: id }
       next()
     })
     .catch(next)
