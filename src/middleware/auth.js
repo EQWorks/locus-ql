@@ -59,7 +59,7 @@ const haveLayerAccess = async (req, layerIDs) => {
   const { whitelabel: wl, customers: cu, email } = req.access
   let where = 'WHERE layer_id = ANY ($1)'
   let values = [layerIDs]
-
+  let join = ''
   try {
     if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
       where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
@@ -72,12 +72,16 @@ const haveLayerAccess = async (req, layerIDs) => {
         WHERE MO.type = 'layer' AND MO.whitelabel = ${wl[0]} AND MO.customer = ${cu[0]}
       `)
       const subscribeLayerIDs = rows.map(layer => layer.type_id)
-
+      join = 'LEFT JOIN customers as CU ON CU.customerid = layer.customer'
       where += ` AND
         (
           whitelabel = -1
           OR
-          (whitelabel = ANY ($2) AND customer = ANY ($3) AND account in ('0', '-1', $4))
+          (
+            whitelabel = ANY ($2)
+            AND (customer = ANY ($3) OR agencyid = ANY ($3))
+            AND account in ('0', '-1', $4)
+          )
           OR
           layer_id = ANY ($5)
         )
@@ -91,6 +95,7 @@ const haveLayerAccess = async (req, layerIDs) => {
       `
       SELECT *
       FROM layer
+      ${join}
       ${where}
       `,
       values,
