@@ -56,6 +56,7 @@ const listViews = async (access, { conn_id } = {}) => {
     'columns',
   ])
   connQuery.innerJoin(SETS_TABLE, `${SETS_TABLE}.id`, 'set_id')
+  connQuery.whereNot({ dest: {} })
   connQuery.where(conn_id ? { [`${CONNECTION_TABLE}.id`]: conn_id } : {})
   if (whitelabel !== -1) {
     connQuery.where({ whitelabel: whitelabel[0] })
