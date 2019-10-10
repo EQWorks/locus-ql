@@ -24,6 +24,7 @@ const connections = require('./connections')
 const geoQuery = require('./geo-query')
 const widgets = require('./widgets')
 const ml = require('./ml')
+const credentials = require('./credentials')
 
 
 rootRouter.use(isMaint)
@@ -46,6 +47,7 @@ rootRouter.use('/connections', connections)
 rootRouter.use('/geoquery', geoQuery)
 rootRouter.use('/widgets', widgets)
 rootRouter.use('/ml', ml)
+rootRouter.use('/credentials', credentials)
 rootRouter.use(api)
 
 
