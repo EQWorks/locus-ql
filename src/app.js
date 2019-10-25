@@ -96,11 +96,14 @@ app.use((req, res, next) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   // set locals, only providing error in development
-  console.error(err, 'error')
+  console.error(err)
   const { message } = err
-
   // if has auditlog, write the error message in locuslog table
-  if (req.log) {
+  if (!req.log || Object.entries(req.log).length === 0) {
+    return res.status(err.status || 500).json({ message })
+  }
+
+  if (req.log && Object.entries(req.log).length !== 0) {
     const { logID } = req.log
     const return_code = err.status || 500
     const return_meta = JSON.stringify({
@@ -115,13 +118,10 @@ app.use((err, req, res, next) => {
       `,
       [return_code, return_meta, logID],
     )
+      .then((res) => { res.status(err.status || 500).send({ message }) })
       .catch((err) => {
         console.error(err)
       })
-
-    res.status(err.status || 500).send({ error: message })
-  } else {
-    res.status(err.status || 500).json({ message })
   }
 })
 
