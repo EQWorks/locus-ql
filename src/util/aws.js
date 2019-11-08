@@ -31,4 +31,30 @@ async function invokeLambda(params) {
   return response
 }
 
-module.exports = { invokeLambda, s3, lambda }
+async function listS3Objects(bucket, prefix) {
+  const params = { Bucket: bucket, Prefix: prefix }
+
+  let keys = []
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    // eslint-disable-next-line no-await-in-loop
+    const data = await s3.listObjectsV2(params).promise()
+
+    // eslint-disable-next-line no-loop-func
+    data.Contents.forEach((elem) => {
+      keys = keys.concat(elem.Key)
+    })
+
+    if (!data.IsTruncated) {
+      break
+    }
+
+    if (data.NextContinuationToken) {
+      params.ContinuationToken = data.NextContinuationToken
+    }
+  }
+
+  return keys
+}
+
+module.exports = { invokeLambda, s3, lambda, listS3Objects }
