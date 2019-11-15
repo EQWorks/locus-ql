@@ -80,6 +80,8 @@ const operators = {
   like: { value: 'like' },
   'not like': { value: 'not like' },
   is: { value: 'is' },
+  between: { value: 'between' },
+  'not between': { value: 'not between' },
 
   // arithmatic operators
   '+': { value: '+' },
@@ -150,10 +152,15 @@ class Expression {
         throw apiError(`Invalid operator: ${opName}`, 403)
       }
 
-      const [argA, argB] = args.map(this.parseExpression.bind(this))
+      const [argA, argB, argC = null] = args.map(this.parseExpression.bind(this))
+
+      if ((op.value === 'between' || op.value === 'not between') && !argC) {
+        throw apiError(`Too few arguments for operator: ${opName}`, 403)
+      }
+
 
       // eslint-disable-next-line max-len
-      return knex.raw(`(${argA} ${op.value} ${argB})${cast ? `::${cast}` : ''}${as ? ` as "${as}"` : ''}`)
+      return knex.raw(`(${argA} ${op.value} ${argB} ${argC ? `AND ${argC}` : ''})${cast ? `::${cast}` : ''}${as ? ` as "${as}"` : ''}`)
     }
 
     throw apiError(`Invalid expression type: ${type}`, 403)
