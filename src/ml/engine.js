@@ -72,6 +72,11 @@ const select = async (
     knexQuery = knexQuery.groupByRaw(groupBy.map(exp.parseExpression.bind(exp)).join(', '))
   }
 
+  // Order By
+  if (orderBy && orderBy.length > 0) {
+    knexQuery = knexQuery.orderByRaw(orderBy.map(exp.parseExpression.bind(exp)).join(', '))
+  }
+
   // JOINs
   joins.forEach((join) => {
     if (!JOIN_TYPES.includes(join.joinType)) {
