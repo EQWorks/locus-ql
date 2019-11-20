@@ -22,8 +22,8 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   // check access to ext connection table and get table name
   const connections = await knex(CONNECTION_TABLE)
     .where({ id: conn_id })
-    .whereRaw('? in (whitelabel, -1)', whitelabel)
-    .whereRaw('? in (customer, -1)', customers)
+    .whereRaw('? in (connections.whitelabel, -1)', whitelabel)
+    .whereRaw('? in (connections.customer, -1)', customers)
 
   if (connections.length === 0) {
     throw apiError('Connection not found', 403)
@@ -59,9 +59,9 @@ const listViews = async (access, { conn_id } = {}) => {
   connQuery.whereNot({ dest: {} })
   connQuery.where(conn_id ? { [`${CONNECTION_TABLE}.id`]: conn_id } : {})
   if (whitelabel !== -1) {
-    connQuery.where({ whitelabel: whitelabel[0] })
+    connQuery.where({ 'connections.whitelabel': whitelabel[0] })
     if (customers !== -1) {
-      connQuery.where({ agencyid: customers[0] })
+      connQuery.where({ 'connections.agencyid': customers[0] })
     }
   }
 

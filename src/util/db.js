@@ -10,6 +10,11 @@ const knex = Knex({
   connection: config.pg,
   debug: true,
 })
+const mapKnex = Knex({
+  client: 'pg',
+  connection: config.mappingPg,
+  debug: true,
+})
 
 
-module.exports = { pool, mapPool, knex }
+module.exports = { pool, mapPool, knex, mapKnex }

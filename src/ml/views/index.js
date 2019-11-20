@@ -4,7 +4,7 @@
 const apiError = require('../../util/api-error')
 
 
-const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather']
+const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather', 'layer']
 
 // VIEWS structure:
 // VIEWS = {
