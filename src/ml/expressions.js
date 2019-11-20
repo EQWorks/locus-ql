@@ -73,7 +73,7 @@ const operators = {
   '>': { value: '>' },
   '>=': { value: '>=' },
   '<': { value: '<' },
-  '<=': { value: '<=' },
+  '<=': { vaislue: '<=' },
   '=': { value: '=' },
   in: { value: 'in' },
   'not in': { value: 'not in' },
@@ -97,7 +97,6 @@ const operators = {
   'json object at path': { value: '#>' },
   'json object as text at path': { value: '#>>' },
 }
-
 
 class Expression {
   constructor(viewColumns) {
@@ -158,9 +157,16 @@ class Expression {
         throw apiError(`Too few arguments for operator: ${opName}`, 403)
       }
 
-
       // eslint-disable-next-line max-len
       return knex.raw(`(${argA} ${op.value} ${argB} ${argC ? `AND ${argC}` : ''})${cast ? `::${cast}` : ''}${as ? ` as "${as}"` : ''}`)
+    }
+
+    if (type === 'case') {
+      // values: [defaultValue,[expression1, result1], [expression2, result2]]
+      const { values: [defaultResult, ...statements] } = exp
+      // eslint-disable-next-line max-len
+      const whenStatements = statements.map(statement => `WHEN ${this.parseExpression(statement[0])} THEN ${statement[1]} `)
+      return knex.raw(`CASE ${whenStatements} ELSE ${defaultResult} END`)
     }
 
     throw apiError(`Invalid expression type: ${type}`, 403)
