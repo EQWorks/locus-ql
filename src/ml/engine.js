@@ -84,7 +84,6 @@ const select = async (
     }
     const joinFuncName = `${join.joinType}Join`
 
-    console.log('joinFuncName:', joinFuncName)
 
     knexQuery[joinFuncName](getView(views, join.view), function () {
       const conditions = join.on
@@ -99,9 +98,8 @@ const select = async (
         )) // validate conditions filters?
       }
 
-      // TODO: not supporting directly passing complex expression right now,
-      // which means no nested logic operators like:
-      // JOIN xxx ON name = 'abc' and (age = '13' or birth is null)
+      // handle complex conditions
+      this.on(exp.parseExpression(conditions))
     })
   })
 
