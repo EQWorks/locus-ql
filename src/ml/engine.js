@@ -34,7 +34,7 @@ const getView = (views, viewID) => {
 const select = async (
   views,
   viewColumns,
-  { distinct, columns, from, joins = [], where = [], groupBy, limit, db = 'place' },
+  { distinct, columns, from, joins = [], where = [], groupBy, orderBy, limit, db = 'place' },
 ) => {
   const exp = new Expression(viewColumns)
   let knexDB = knex
@@ -46,20 +46,36 @@ const select = async (
     .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
     .where(function () {
-      // handle simple array form conditions
-      // where condition is in format of: [argA, operator, argB]
-      if (Array.isArray(where)) {
-        where.forEach(([argA, operator, argB]) => this.where(
-          // to avoid adding ' ' to argument
+      // For first element in where array:
+      if (Array.isArray(where[0])) {
+        const [argA, operator, argB] = where[0]
+        this.where(
           typeof argA === 'object' ? exp.parseExpression(argA) : argA,
           operator,
           argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
-        )) // validate where operator and columns?
-        return
+        )
+      } else if (where[0]) {
+        this.whereRaw(exp.parseExpression(where[0]))
       }
+    })
 
-      // handle complex conditions
-      this.whereRaw(exp.parseExpression(where))
+    // Handle additional where statements
+    // TODO: some way to distinguish between "orWhere" and "andWhere"
+    .andWhere(function () {
+      if (where.length > 1) {
+        where.slice(1).forEach((whereStatement) => {
+          if (Array.isArray(whereStatement)) {
+            const [argA, operator, argB] = whereStatement
+            this.where(
+              typeof argA === 'object' ? exp.parseExpression(argA) : argA,
+              operator,
+              argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
+            )
+          } else if (where[0]) {
+            this.whereRaw(exp.parseExpression(whereStatement))
+          }
+        })
+      }
     })
 
   // Distinct Flag

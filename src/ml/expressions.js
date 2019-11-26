@@ -118,8 +118,6 @@ class Expression {
 
   parseComplex({ type, ...exp }) {
     if (type === 'column') {
-      console.log(exp)
-
       return this.constructColumn(exp.view, exp.column)
     }
 
@@ -166,7 +164,7 @@ class Expression {
       const { values: [defaultResult, ...statements] } = exp
       // eslint-disable-next-line max-len
       const whenStatements = statements.map(statement => `WHEN ${this.parseExpression(statement[0])} THEN ${statement[1]} `)
-      return knex.raw(`CASE ${whenStatements} ELSE ${defaultResult} END`)
+      return knex.raw(`CASE ${whenStatements.join(' ')} ELSE ${defaultResult} END`)
     }
 
     throw apiError(`Invalid expression type: ${type}`, 403)
