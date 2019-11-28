@@ -2,7 +2,7 @@
 /* eslint-disable func-names */
 /* eslint-disable no-nested-ternary */
 
-const { knex } = require('../util/db')
+const { knex, mapKnex } = require('../util/db')
 const { Expression } = require('./expressions')
 const apiError = require('../util/api-error')
 
@@ -29,14 +29,19 @@ const getView = (views, viewID) => {
   // }
 }
 
+// TODO: think through multiple DB case
+// should db be in views? Should first view determine db etc
 const select = async (
   views,
   viewColumns,
-  { distinct, columns, from, joins = [], where = [], groupBy, limit },
+  { distinct, columns, from, joins = [], where = [], groupBy, limit, db = 'place' },
 ) => {
   const exp = new Expression(viewColumns)
-
-  let knexQuery = knex
+  let knexDB = knex
+  if (db === 'map') {
+    knexDB = mapKnex
+  }
+  let knexQuery = knexDB
     // use bind() here to prevent exp instance from getting lost, same for other bind() usage below
     .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
