@@ -80,7 +80,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey }) => {
   const viewID = `layer_${layer_id}`
-  const layerQuery = await getKnexLayerQuery(access)
+  const layerQuery = await getKnexLayerQuery(access, { layer_id })
   const [layer] = await layerQuery
 
   if (!layer) {
@@ -126,7 +126,7 @@ const listViews = async (access, filter = {}) => {
       column.key = key
     })
     return Object.entries(layer_categories)
-      .map((categoryKey, { table, name: catName, resolution }) => (
+      .map(([categoryKey, { table, name: catName, resolution }]) => (
         {
           // required
           name: `${name} // ${catName}`,
