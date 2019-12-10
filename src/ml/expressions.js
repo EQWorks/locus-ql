@@ -73,7 +73,7 @@ const operators = {
   '>': { value: '>' },
   '>=': { value: '>=' },
   '<': { value: '<' },
-  '<=': { vaislue: '<=' },
+  '<=': { value: '<=' },
   '=': { value: '=' },
   in: { value: 'in' },
   'not in': { value: 'not in' },
@@ -131,20 +131,24 @@ class Expression {
       if (!func) {
         throw apiError(`Invalid function: ${funcName}`, 403)
       }
-      const castTo = cast || func.defaultCast
+      const castTo = `::${cast}` || `::${func.defaultCast}` || ''
+      const alias = as ? `as "${as}"` : ''
 
       // const { category } = func // check argument with category
 
       const argsString = args.map(this.parseExpression.bind(this)).join(', ')
 
+
       // e.g. SUM(visits)::real as visits
       // eslint-disable-next-line max-len
-      return knex.raw(`${func.value}(${argsString})${castTo ? `::${castTo}` : ''}${as ? ` as "${as}"` : ''}`)
+      return knex.raw(`${func.value}(${argsString})${castTo}${alias}`)
     }
 
     if (type === 'operator') {
       const { values: [opName, ...args], cast, as } = exp
       const op = operators[opName]
+      const castTo = `::${cast}` || ''
+      const alias = as ? `as "${as}"` : ''
       if (!op) {
         throw apiError(`Invalid operator: ${opName}`, 403)
       }
@@ -155,8 +159,13 @@ class Expression {
         throw apiError(`Too few arguments for operator: ${opName}`, 403)
       }
 
+      const thirdArgument = argC ? 'AND :argumentC' : ''
       // eslint-disable-next-line max-len
-      return knex.raw(`(${argA} ${op.value} ${argB} ${argC ? `AND ${argC}` : ''})${cast ? `::${cast}` : ''}${as ? ` as "${as}"` : ''}`)
+      return knex.raw(`(:argumentA: ${op.value} :argumentB ${thirdArgument})${castTo}${alias}`, {
+        argumentA: argA,
+        argumentB: argB,
+        argumentC: argC,
+      })
     }
 
     if (type === 'case') {
@@ -174,7 +183,7 @@ class Expression {
     const type = typeof expression
 
     if (type === TYPE_STRING) {
-      return `'${expression}'`
+      return `${expression}`
     }
 
     if (type === TYPE_NUMBER) {
