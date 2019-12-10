@@ -11,7 +11,6 @@ const router = express.Router()
 
 const mlHandler = async (req, res, next) => {
   const { query } = req.body
-  // console.log('query', query);
 
   try {
     const result = await execute(req.mlViews, req.mlViewColumns, query)

@@ -34,7 +34,7 @@ const getView = (views, viewID) => {
 const select = async (
   views,
   viewColumns,
-  { distinct, columns, from, joins = [], where = [], groupBy, limit, db = 'place' },
+  { distinct, columns, from, joins = [], where = [], groupBy, orderBy, limit, db = 'place' },
 ) => {
   const exp = new Expression(viewColumns)
   let knexDB = knex
@@ -46,20 +46,36 @@ const select = async (
     .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
     .where(function () {
-      // handle simple array form conditions
-      // where condition is in format of: [argA, operator, argB]
-      if (Array.isArray(where)) {
-        where.forEach(([argA, operator, argB]) => this.where(
-          // to avoid adding ' ' to argument
+      // For first element in where array:
+      if (Array.isArray(where[0])) {
+        const [argA, operator, argB] = where[0]
+        this.where(
           typeof argA === 'object' ? exp.parseExpression(argA) : argA,
           operator,
           argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
-        )) // validate where operator and columns?
-        return
+        )
+      } else if (where[0]) {
+        this.whereRaw(exp.parseExpression(where[0]))
       }
+    })
 
-      // handle complex conditions
-      this.whereRaw(exp.parseExpression(where))
+    // Handle additional where statements
+    // TODO: some way to distinguish between "orWhere" and "andWhere"
+    .andWhere(function () {
+      if (where.length > 1) {
+        where.slice(1).forEach((whereStatement) => {
+          if (Array.isArray(whereStatement)) {
+            const [argA, operator, argB] = whereStatement
+            this.where(
+              typeof argA === 'object' ? exp.parseExpression(argA) : argA,
+              operator,
+              argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
+            )
+          } else if (where[0]) {
+            this.whereRaw(exp.parseExpression(whereStatement))
+          }
+        })
+      }
     })
 
   // Distinct Flag
@@ -72,6 +88,11 @@ const select = async (
     knexQuery = knexQuery.groupByRaw(groupBy.map(exp.parseExpression.bind(exp)).join(', '))
   }
 
+  // Order By
+  if (orderBy && orderBy.length > 0) {
+    knexQuery = knexQuery.orderByRaw(orderBy.map(exp.parseExpression.bind(exp)).join(', '))
+  }
+
   // JOINs
   joins.forEach((join) => {
     if (!JOIN_TYPES.includes(join.joinType)) {
@@ -79,7 +100,6 @@ const select = async (
     }
     const joinFuncName = `${join.joinType}Join`
 
-    console.log('joinFuncName:', joinFuncName)
 
     knexQuery[joinFuncName](getView(views, join.view), function () {
       const conditions = join.on
@@ -94,9 +114,8 @@ const select = async (
         )) // validate conditions filters?
       }
 
-      // TODO: not supporting directly passing complex expression right now,
-      // which means no nested logic operators like:
-      // JOIN xxx ON name = 'abc' and (age = '13' or birth is null)
+      // handle complex conditions
+      this.on(exp.parseExpression(conditions))
     })
   })
 

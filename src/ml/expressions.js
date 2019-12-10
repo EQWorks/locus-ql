@@ -80,6 +80,8 @@ const operators = {
   like: { value: 'like' },
   'not like': { value: 'not like' },
   is: { value: 'is' },
+  between: { value: 'between' },
+  'not between': { value: 'not between' },
 
   // arithmatic operators
   '+': { value: '+' },
@@ -95,7 +97,6 @@ const operators = {
   'json object at path': { value: '#>' },
   'json object as text at path': { value: '#>>' },
 }
-
 
 class Expression {
   constructor(viewColumns) {
@@ -117,8 +118,6 @@ class Expression {
 
   parseComplex({ type, ...exp }) {
     if (type === 'column') {
-      console.log(exp)
-
       return this.constructColumn(exp.view, exp.column)
     }
 
@@ -132,28 +131,49 @@ class Expression {
       if (!func) {
         throw apiError(`Invalid function: ${funcName}`, 403)
       }
-      const castTo = cast || func.defaultCast
+      const castTo = `::${cast}` || `::${func.defaultCast}` || ''
+      const alias = as ? `as "${as}"` : ''
 
       // const { category } = func // check argument with category
 
       const argsString = args.map(this.parseExpression.bind(this)).join(', ')
 
+
       // e.g. SUM(visits)::real as visits
       // eslint-disable-next-line max-len
-      return knex.raw(`${func.value}(${argsString})${castTo ? `::${castTo}` : ''}${as ? ` as "${as}"` : ''}`)
+      return knex.raw(`${func.value}(${argsString})${castTo}${alias}`)
     }
 
     if (type === 'operator') {
       const { values: [opName, ...args], cast, as } = exp
       const op = operators[opName]
+      const castTo = cast ? `::${cast}` : ''
+      const alias = as ? ` as "${as}"` : ''
       if (!op) {
         throw apiError(`Invalid operator: ${opName}`, 403)
       }
 
-      const [argA, argB] = args.map(this.parseExpression.bind(this))
+      const [argA, argB, argC = null] = args.map(this.parseExpression.bind(this))
 
+      if ((op.value === 'between' || op.value === 'not between') && !argC) {
+        throw apiError(`Too few arguments for operator: ${opName}`, 403)
+      }
+
+      const thirdArgument = argC ? 'AND :argC' : ''
       // eslint-disable-next-line max-len
-      return knex.raw(`(${argA} ${op.value} ${argB})${cast ? `::${cast}` : ''}${as ? ` as "${as}"` : ''}`)
+      return knex.raw(`(:argA: ${op.value} :argB ${thirdArgument})${castTo}${alias}`, {
+        argA,
+        argB,
+        argC,
+      })
+    }
+
+    if (type === 'case') {
+      // values: [defaultValue,[expression1, result1], [expression2, result2]]
+      const { values: [defaultResult, ...statements] } = exp
+      // eslint-disable-next-line max-len
+      const whenStatements = statements.map(statement => `WHEN ${this.parseExpression(statement[0])} THEN ${statement[1]} `)
+      return knex.raw(`CASE ${whenStatements.join(' ')} ELSE ${defaultResult} END`)
     }
 
     throw apiError(`Invalid expression type: ${type}`, 403)
@@ -163,7 +183,7 @@ class Expression {
     const type = typeof expression
 
     if (type === TYPE_STRING) {
-      return `'${expression}'`
+      return expression
     }
 
     if (type === TYPE_NUMBER) {
