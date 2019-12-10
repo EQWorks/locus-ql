@@ -147,8 +147,8 @@ class Expression {
     if (type === 'operator') {
       const { values: [opName, ...args], cast, as } = exp
       const op = operators[opName]
-      const castTo = `::${cast}` || ''
-      const alias = as ? `as "${as}"` : ''
+      const castTo = cast ? `::${cast}` : ''
+      const alias = as ? ` as "${as}"` : ''
       if (!op) {
         throw apiError(`Invalid operator: ${opName}`, 403)
       }
@@ -159,12 +159,12 @@ class Expression {
         throw apiError(`Too few arguments for operator: ${opName}`, 403)
       }
 
-      const thirdArgument = argC ? 'AND :argumentC' : ''
+      const thirdArgument = argC ? 'AND :argC' : ''
       // eslint-disable-next-line max-len
-      return knex.raw(`(:argumentA: ${op.value} :argumentB ${thirdArgument})${castTo}${alias}`, {
-        argumentA: argA,
-        argumentB: argB,
-        argumentC: argC,
+      return knex.raw(`(:argA: ${op.value} :argB ${thirdArgument})${castTo}${alias}`, {
+        argA,
+        argB,
+        argC,
       })
     }
 
@@ -183,7 +183,7 @@ class Expression {
     const type = typeof expression
 
     if (type === TYPE_STRING) {
-      return `${expression}`
+      return expression
     }
 
     if (type === TYPE_NUMBER) {
