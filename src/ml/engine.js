@@ -103,6 +103,7 @@ const select = async (
 
     knexQuery[joinFuncName](getView(views, join.view), function () {
       const conditions = join.on
+
       // handle easy array form conditions
       // where condition is in format of: [argA, operator, argB]
       if (Array.isArray(conditions)) {
@@ -112,10 +113,10 @@ const select = async (
           operator,
           argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
         )) // validate conditions filters?
+      } else {
+        // handle complex conditions
+        this.on(exp.parseExpression(conditions))
       }
-
-      // handle complex conditions
-      this.on(exp.parseExpression(conditions))
     })
   })
 
