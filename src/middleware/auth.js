@@ -39,7 +39,7 @@ function jwtMiddleware(req, _, next) {
     }
 
     if (_customer && (isInternal ||
-        (whitelabel.includes(wlID) && (customers === -1 || customers.includes(cuID)))
+      (whitelabel.includes(wlID) && (customers === -1 || customers.includes(cuID)))
     )) {
       customers = [cuID]
     }
@@ -204,6 +204,22 @@ const hasWrite = requiredWrite => ({ access: { write } }, res, next) => {
   }
 }
 
+
+// assumes req.access exist
+const whitelabelAuth = (pathToID = 'query.wlID') => (req, res, next) => {
+  try {
+    const wlID = parseInt(get(req, pathToID))
+
+    const internal = req.access.whitelabel === -1 && req.access.customers === -1
+    if (!internal && !req.access.whitelabel.includes(wlID)) {
+      return next(apiError('Access to whitelabel not allowed', 403))
+    }
+    return next()
+  } catch (error) {
+    return next(apiError('Invalid wlID format', 403))
+  }
+}
+
 module.exports = {
   jwt: jwtMiddleware,
   layer: layerAuth,
@@ -212,4 +228,5 @@ module.exports = {
   dev: devAuth,
   map: mapAuth,
   write: hasWrite,
+  whitelabel: whitelabelAuth,
 }
