@@ -5,12 +5,11 @@ const cors = require('cors')
 const compression = require('compression')
 
 const rootRouter = require('./routes/')
-const config = require('../config')
 
 
 const app = express()
 
-const { API_VER = 'unknown' } = process.env
+const { API_VER = 'unknown', API_GATEWAY_BASE_PATH: STAGE = '' } = process.env
 
 // enable cors
 // this would enable Access-Control-Allow-Origin: *
@@ -27,11 +26,11 @@ app.use(bodyParser.urlencoded({ extended: false }))
 // favicon 404 supression
 app.get('/favicon.ico', (req, res) => res.sendStatus(204))
 
-app.get(`/${config.basePath}`, (_, res) => {
-  res.json({ API_VER, STAGE: config.basePath })
+app.get(`/${STAGE}`, (_, res) => {
+  res.json({ API_VER, STAGE })
 })
 
-app.use(`/${config.basePath}`, rootRouter)
+app.use(`/${STAGE}`, rootRouter)
 
 // catch-all error handler
 // eslint disable otherwise not able to catch errors

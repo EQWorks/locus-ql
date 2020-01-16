@@ -2,12 +2,13 @@ const jwt = require('jsonwebtoken')
 const axios = require('axios')
 const { get } = require('lodash')
 
-const { keyWarden: { host: KEY_WARDEN_HOST, stage: KEY_WARDEN_STAGE } } = require('../../config')
 const apiError = require('../util/api-error')
 const { pool } = require('../util/db')
 
 
+const { KEY_WARDEN_HOST, KEY_WARDEN_STAGE } = process.env
 const KEY_WARDEN_BASE = `${KEY_WARDEN_HOST}/${KEY_WARDEN_STAGE}`
+
 
 function jwtMiddleware(req, _, next) {
   // DEPRECATED `x-firstorder-token`
