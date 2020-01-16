@@ -10,6 +10,8 @@ const config = require('../config')
 
 const app = express()
 
+const { API_VER = 'unknown' } = process.env
+
 // enable cors
 // this would enable Access-Control-Allow-Origin: *
 app.use(cors())
@@ -26,10 +28,7 @@ app.use(bodyParser.urlencoded({ extended: false }))
 app.get('/favicon.ico', (req, res) => res.sendStatus(204))
 
 app.get(`/${config.basePath}`, (_, res) => {
-  res.json({
-    API_VER: config.commitHash,
-    STAGE: config.basePath,
-  })
+  res.json({ API_VER, STAGE: config.basePath })
 })
 
 app.use(`/${config.basePath}`, rootRouter)

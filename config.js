@@ -37,11 +37,6 @@ const mapboxConfig = {
   breaktime: process.env.MAP_BOX_BREAK_BETWEEN_BATCH,
 }
 
-const graphhopperConfig = {
-  isochroneURL: process.env.GRAPHHOPPER_ISOCHRONE_URL,
-  apiKey: process.env.GRAPHHOPPER_API_KEY,
-}
-
 const keyWardenConfig = {
   host: process.env.KEY_WARDEN_HOST,
   stage: process.env.KEY_WARDEN_STAGE,
@@ -86,8 +81,6 @@ const algolia = {
 
 const basePath = process.env.API_GATEWAY_BASE_PATH || ''
 
-const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
-
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
 
 module.exports = {
@@ -96,12 +89,10 @@ module.exports = {
   mappingPg: mappingPgConfig,
   mapzen: mapZenConfig,
   mapbox: mapboxConfig,
-  graphhopper: graphhopperConfig,
   keyWarden: keyWardenConfig,
   lotame: lotameConfig,
   dataPipeLine: dataPipeLineTasksConfig,
   basePath,
-  commitHash,
   algolia,
   redisUrl,
 }
