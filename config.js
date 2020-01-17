@@ -1,4 +1,4 @@
-const pgConfig = {
+module.exports.pg = {
   host: process.env.PG_HOST,
   port: process.env.PG_PORT,
   database: process.env.PG_DB,
@@ -6,7 +6,7 @@ const pgConfig = {
   password: process.env.PG_PW,
 }
 
-const pgAtomConfig = {
+module.exports.pgAtom = {
   host: process.env.PG_ATOM_HOST,
   port: process.env.PG_ATOM_PORT,
   database: process.env.PG_ATOM_DB,
@@ -14,7 +14,7 @@ const pgAtomConfig = {
   password: process.env.PG_ATOM_PW,
 }
 
-const mappingPgConfig = {
+module.exports.mappingPg = {
   host: process.env.MAPPING_PG_HOST,
   port: process.env.MAPPING_PG_PORT,
   database: process.env.MAPPING_PG_DB,
@@ -22,12 +22,12 @@ const mappingPgConfig = {
   password: process.env.MAPPING_PG_PW,
 }
 
-const mapZenConfig = {
+module.exports.mapzen = {
   baseURL: process.env.MAP_ZEN_BASE_URL,
   apikey: process.env.API_KEY,
 }
 
-const mapboxConfig = {
+module.exports.mapbox = {
   geocodeURL: process.env.MAP_BOX_GEOCODE_URL,
   appId: process.env.MAP_BOX_APP_ID,
   appCode: process.env.MAP_BOX_APP_CODE,
@@ -37,17 +37,7 @@ const mapboxConfig = {
   breaktime: process.env.MAP_BOX_BREAK_BETWEEN_BATCH,
 }
 
-const graphhopperConfig = {
-  isochroneURL: process.env.GRAPHHOPPER_ISOCHRONE_URL,
-  apiKey: process.env.GRAPHHOPPER_API_KEY,
-}
-
-const keyWardenConfig = {
-  host: process.env.KEY_WARDEN_HOST,
-  stage: process.env.KEY_WARDEN_STAGE,
-}
-
-const lotameConfig = {
+module.exports.lotame = {
   auth_url: process.env.LOTAME_AUTH_URL,
   api_url: process.env.LOTAME_API_URL,
   username: process.env.LOTAME_USERNAME,
@@ -55,15 +45,14 @@ const lotameConfig = {
   client_id: process.env.LOTAME_CLIENT_ID,
 }
 
-
-const dataPipeLineTasksConfig = {
+module.exports.dataPipeLine = {
   prefix: 'datapipeline-tasks',
   stage: process.env.KEY_WARDEN_STAGE,
   approvalUsers: {
     dataops: [
       'stevenl@eqworks.com',
       'qinglei.zhang@eqworks.com',
-      'hao.zhang@eqworks.com',
+      'dmytro.shparyk@eqworks.com',
       'dhruv.thapar@eqworks.com',
       'tom.wainas@eqworks.com',
       'eric.shedletsky@eqworks.com',
@@ -78,30 +67,8 @@ const dataPipeLineTasksConfig = {
   },
 }
 
-const algolia = {
+module.exports.algolia = {
   appID: process.env.ALGOLIA_APP_ID,
   adminKey: process.env.ALGOLIA_ADMIN_KEY,
   searchAPIKey: process.env.ALGOLIA_SEARCH_API_KEY,
-}
-
-const basePath = process.env.API_GATEWAY_BASE_PATH || ''
-
-const commitHash = process.env.COMMIT_SHORT_HASH || 'unknown'
-
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
-
-module.exports = {
-  pg: pgConfig,
-  pgAtom: pgAtomConfig,
-  mappingPg: mappingPgConfig,
-  mapzen: mapZenConfig,
-  mapbox: mapboxConfig,
-  graphhopper: graphhopperConfig,
-  keyWarden: keyWardenConfig,
-  lotame: lotameConfig,
-  dataPipeLine: dataPipeLineTasksConfig,
-  basePath,
-  commitHash,
-  algolia,
-  redisUrl,
 }
