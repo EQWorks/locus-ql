@@ -41,12 +41,26 @@ const select = async (
   if (db === 'map') {
     knexDB = mapKnex
   }
+
+  const orWhereArr = []
+  const andWhereArr = []
+
+  if (where.length > 1) {
+    where.forEach((whereStatement) => {
+      const { values } = whereStatement
+      if (typeof whereStatement === 'object' && whereStatement.type === 'or') {
+        orWhereArr.push(values)
+      } else if (typeof whereStatement === 'object' && whereStatement.type === 'and') {
+        andWhereArr.push(values)
+      }
+    })
+  }
+
   let knexQuery = knexDB
     // use bind() here to prevent exp instance from getting lost, same for other bind() usage below
     .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
     .where(function () {
-      // For first element in where array:
       if (Array.isArray(where[0])) {
         const [argA, operator, argB] = where[0]
         this.where(
@@ -58,25 +72,63 @@ const select = async (
         this.whereRaw(exp.parseExpression(where[0]))
       }
     })
-
-    // Handle additional where statements
-    // TODO: some way to distinguish between "orWhere" and "andWhere"
     .andWhere(function () {
-      if (where.length > 1) {
-        where.slice(1).forEach((whereStatement) => {
-          if (Array.isArray(whereStatement)) {
-            const [argA, operator, argB] = whereStatement
+      if (andWhereArr.length > 0) {
+        andWhereArr.forEach((andWhere) => {
+          if (Array.isArray(andWhere[0])) {
+            const [argA, operator, argB] = andWhere
             this.where(
               typeof argA === 'object' ? exp.parseExpression(argA) : argA,
               operator,
               argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
             )
-          } else if (where[0]) {
-            this.whereRaw(exp.parseExpression(whereStatement))
+          } else if (andWhere[0]) {
+            this.whereRaw(exp.parseExpression(andWhere[0]))
           }
         })
       }
     })
+    .orWhere(function () {
+      // if using 'this.where' (instead of 'this.orWhere'):
+      // maping through 'orWhere' array within orWhere
+      // generates chaining 'AND' statements within 'orWhere'
+      if (orWhereArr.length > 0) {
+        orWhereArr.forEach((orWhere) => {
+          if (Array.isArray(orWhere[0])) {
+            const [argA, operator, argB] = orWhere
+            this.orWhere(
+              typeof argA === 'object' ? exp.parseExpression(argA) : argA,
+              operator,
+              argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
+            )
+          } else if (orWhereArr[0]) {
+            this.orWhere(exp.parseExpression(orWhere[0]))
+          }
+        })
+      }
+    })
+
+    // Handle additional where statements
+    // TODO: some way to distinguish between "orWhere" and "andWhere"
+    // .andWhere(function () {
+    //   if (where.length > 1) {
+    //     where.slice(1).forEach((whereStatement) => {
+    //       if (Array.isArray(whereStatement)) {
+    //         const [argA, operator, argB] = whereStatement
+    //         this.where(
+    //           typeof argA === 'object' ? exp.parseExpression(argA) : argA,
+    //           operator,
+    //           argB === null ? argB : (typeof argB === 'object' ?
+    //           exp.parseExpression(argB) : argB),
+    //         )
+    //       } else if (where[0]) {
+    //         this.whereRaw(exp.parseExpression(whereStatement))
+    //       } else {
+    //         return null
+    //       }
+    //     })
+    //   }
+    // })
 
   // Distinct Flag
   if (distinct) {
