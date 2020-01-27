@@ -37,14 +37,14 @@ app.use(`/${STAGE}`, rootRouter)
 
 app.use((req, res, next) => {
   const {
-    logID,
+    id,
     return_code,
     return_meta,
     res_info,
   } = req.log
 
-  // If no logID what error should be return
-  if (!logID) {
+  // If no log id what error should be return
+  if (!id) {
     return res.json({ message: 'No log recorded' })
   }
 
@@ -54,7 +54,7 @@ app.use((req, res, next) => {
       SET return_code = $1, return_meta = $2
       WHERE id = $3
     `,
-    [return_code, return_meta, logID],
+    [return_code, return_meta, id],
   )
     .catch(next)
   return res.status(return_code).json(res_info)
@@ -73,7 +73,7 @@ app.use((err, req, res, next) => {
   }
 
   if (req.log && Object.entries(req.log).length !== 0) {
-    const { logID } = req.log
+    const { id } = req.log
     const return_code = err.status || 500
     const return_meta = JSON.stringify({
       status: 'falid',
@@ -85,7 +85,7 @@ app.use((err, req, res, next) => {
         SET return_code = $1, return_meta = $2
         WHERE id = $3
       `,
-      [return_code, return_meta, logID],
+      [return_code, return_meta, id],
     )
       .then((res) => { res.status(err.status || 500).send({ message }) })
       .catch((err) => {
