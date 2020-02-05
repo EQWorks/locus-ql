@@ -131,7 +131,8 @@ class Expression {
       if (!func) {
         throw apiError(`Invalid function: ${funcName}`, 403)
       }
-      const castTo = `::${cast}` || `::${func.defaultCast}` || ''
+      const castToVal = cast || func.defaultCast || false
+      const castTo = castToVal ? `::${castToVal}` : ''
       const alias = as ? `as "${as}"` : ''
 
       // const { category } = func // check argument with category
@@ -174,6 +175,11 @@ class Expression {
       // eslint-disable-next-line max-len
       const whenStatements = statements.map(statement => `WHEN ${this.parseExpression(statement[0])} THEN ${statement[1]} `)
       return knex.raw(`CASE ${whenStatements.join(' ')} ELSE ${defaultResult} END`)
+    }
+
+    if (['AND', 'OR'].includes(type)) {
+      const { values: [expA, expB] } = exp
+      return knex.raw(`(${this.parseExpression(expA)}) ${type} (${this.parseExpression(expB)})`)
     }
 
     throw apiError(`Invalid expression type: ${type}`, 403)
