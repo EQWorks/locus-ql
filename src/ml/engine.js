@@ -46,36 +46,18 @@ const select = async (
     .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
     .where(function () {
-      // For first element in where array:
-      if (Array.isArray(where[0])) {
-        const [argA, operator, argB] = where[0]
-        this.where(
-          typeof argA === 'object' ? exp.parseExpression(argA) : argA,
-          operator,
-          argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
-        )
-      } else if (where[0]) {
-        this.whereRaw(exp.parseExpression(where[0]))
-      }
-    })
-
-    // Handle additional where statements
-    // TODO: some way to distinguish between "orWhere" and "andWhere"
-    .andWhere(function () {
-      if (where.length > 1) {
-        where.slice(1).forEach((whereStatement) => {
-          if (Array.isArray(whereStatement)) {
-            const [argA, operator, argB] = whereStatement
-            this.where(
-              typeof argA === 'object' ? exp.parseExpression(argA) : argA,
-              operator,
-              argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
-            )
-          } else if (where[0]) {
-            this.whereRaw(exp.parseExpression(whereStatement))
-          }
-        })
-      }
+      where.forEach((whereStatement) => {
+        if (Array.isArray(whereStatement)) {
+          const [argA, operator, argB] = whereStatement
+          this.where(
+            typeof argA === 'object' ? exp.parseExpression(argA) : argA,
+            operator,
+            argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
+          )
+        } else if (whereStatement) {
+          this.whereRaw(exp.parseExpression(whereStatement))
+        }
+      })
     })
 
   // Distinct Flag
@@ -128,7 +110,6 @@ const select = async (
       throw apiError(`Invalid limit: ${limit}`, 403)
     }
   }
-
 
   return knexQuery
 }
