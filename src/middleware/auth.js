@@ -56,11 +56,13 @@ function jwtMiddleware(req, _, next) {
   }).then(() => next()).catch(next)
 }
 
-const haveLayerAccess = async (req, layerIDs) => {
-  const { whitelabel: wl, customers: cu, email } = req.access
+const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
   let where = 'WHERE layer_id = ANY ($1)'
   let values = [layerIDs]
   let join = ''
+  // TODO: make moduler (e.g. subscribed, owned, by type etc.)
+  // TODO: is email necessary?
+  // AND account in ('0', '-1', $4)
   try {
     if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
       where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
@@ -81,15 +83,14 @@ const haveLayerAccess = async (req, layerIDs) => {
           (
             whitelabel = ANY ($2)
             AND (customer = ANY ($3) OR agencyid = ANY ($3))
-            AND account in ('0', '-1', $4)
           )
           OR
-          layer_id = ANY ($5)
+          layer_id = ANY ($4)
         )
       `
-      values = [...values, wl, cu, email, subscribeLayerIDs]
+      values = [...values, wl, cu, subscribeLayerIDs]
     } else if (!(wl === -1 && cu === -1)) {
-      return false
+      return []
     }
 
     const { rows: layers } = await pool.query(
@@ -101,11 +102,10 @@ const haveLayerAccess = async (req, layerIDs) => {
       `,
       values,
     )
-    req.layers = layers
-    return layers.length === layerIDs.length
+    return layers
   } catch (error) {
     console.log(error)
-    return false
+    return []
   }
 }
 
@@ -123,8 +123,11 @@ const layerAuth = (pathToID = 'params.id', pathToSecondaryID = false) => async (
         layers.push(layer2)
       }
     }
-    const layerAccess = await haveLayerAccess(req, layers)
-    if (layerAccess) {
+    const { whitelabel: wl, customers: cu } = req.access
+    const layerAccess = await haveLayerAccess({ wl, cu, layerIDs: layers })
+    if (layerAccess && layerAccess.length) {
+      // we have layers
+      req.layers = layerAccess
       return next()
     }
     return next(apiError('Access to layer not allowed', 403))
@@ -230,4 +233,5 @@ module.exports = {
   map: mapAuth,
   write: hasWrite,
   whitelabel: whitelabelAuth,
+  layerAccess: haveLayerAccess,
 }
