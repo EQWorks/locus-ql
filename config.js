@@ -48,23 +48,6 @@ module.exports.lotame = {
 module.exports.dataPipeLine = {
   prefix: 'datapipeline-tasks',
   stage: process.env.KEY_WARDEN_STAGE,
-  approvalUsers: {
-    dataops: [
-      'stevenl@eqworks.com',
-      'qinglei.zhang@eqworks.com',
-      'dmytro.shparyk@eqworks.com',
-      'dhruv.thapar@eqworks.com',
-      'tom.wainas@eqworks.com',
-      'eric.shedletsky@eqworks.com',
-      'dilshank@eqworks.com',
-    ],
-    financial: [
-      'dilshank@eqworks.com',
-      'peter.kanniah@eqworks.com',
-      'benjamun.ng@eqworks.com',
-      'leo.li@eqworks.com',
-    ],
-  },
 }
 
 module.exports.algolia = {
