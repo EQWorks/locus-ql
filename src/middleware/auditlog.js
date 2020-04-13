@@ -12,14 +12,17 @@ const { pool } = require('../util/db')
  */
 
 module.exports.auditlog = action => (req, res, next) => {
-  const { access: { email }, body, method, originalUrl } = req
+  const { access: { email }, method, originalUrl } = req
+  const anyBodyParams = Object.entries(req.body).length
+  const payload = (!anyBodyParams) ? req.query : req.body
+
   pool.query(
     `
       INSERT INTO locus_log(email, time_st, action, payload, http_method, api_path)
       VALUES($1, now(), $2, $3, $4, $5)
       RETURNING id
     `,
-    [email, action, JSON.stringify(body), method, originalUrl],
+    [email, action, JSON.stringify(payload), method, originalUrl],
   )
     .then((res) => {
       const { rows: [{ id }] } = res
