@@ -3,8 +3,9 @@ const { Pool } = require('pg')
 const Knex = require('knex')
 
 
-const pool = new Pool(config.pg)
-const mapPool = new Pool(config.mappingPg)
+const pool = new Pool({ ...config.pg, max: 1 })
+const mapPool = new Pool({ ...config.mappingPg, max: 1 })
+const atomPool = new Pool({ ...config.pgAtom, max: 1 })
 const knex = Knex({
   client: 'pg',
   connection: config.pg,
@@ -17,4 +18,4 @@ const mapKnex = Knex({
 })
 
 
-module.exports = { pool, mapPool, knex, mapKnex }
+module.exports = { pool, mapPool, atomPool, knex, mapKnex }
