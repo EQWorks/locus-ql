@@ -42,21 +42,6 @@
   resolved "https://registry.yarnpkg.com/@sindresorhus/is/-/is-0.7.0.tgz#9a06f4f137ee84d7df0460c1fdb1135ffa6c50fd"
   integrity sha512-ONhaKPIufzzrlNbqtWFFd+jlnemX6lJAgq9ZeiZtS7I1PIf/la7CW4m83rTXRnVnsMbW2k56pGYu7AUFJD9Pow==
 
-"@turf/bbox-polygon@^5.1.5":
-  version "5.1.5"
-  resolved "https://registry.yarnpkg.com/@turf/bbox-polygon/-/bbox-polygon-5.1.5.tgz#6aeba4ed51d85d296e0f7c38b88c339f01eee024"
-  integrity sha1-auuk7VHYXSluD3w4uIwznwHu4CQ=
-  dependencies:
-    "@turf/helpers" "^5.1.5"
-
-"@turf/bbox@^5.1.5":
-  version "5.1.5"
-  resolved "https://registry.yarnpkg.com/@turf/bbox/-/bbox-5.1.5.tgz#3051df514ad4c50f4a4f9b8a2d15fd8b6840eda3"
-  integrity sha1-MFHfUUrUxQ9KT5uKLRX9i2hA7aM=
-  dependencies:
-    "@turf/helpers" "^5.1.5"
-    "@turf/meta" "^5.1.5"
-
 "@turf/bbox@^6.0.1":
   version "6.0.1"
   resolved "https://registry.yarnpkg.com/@turf/bbox/-/bbox-6.0.1.tgz#b966075771475940ee1c16be2a12cf389e6e923a"
@@ -81,24 +66,10 @@
     "@turf/helpers" "6.x"
     "@turf/invariant" "6.x"
 
-"@turf/envelope@^5.1.5":
-  version "5.1.5"
-  resolved "https://registry.yarnpkg.com/@turf/envelope/-/envelope-5.1.5.tgz#5013309c53fdd43dfaf4b588a65c3fed7dbc108a"
-  integrity sha1-UBMwnFP91D369LWIplw/7X28EIo=
-  dependencies:
-    "@turf/bbox" "^5.1.5"
-    "@turf/bbox-polygon" "^5.1.5"
-    "@turf/helpers" "^5.1.5"
-
 "@turf/helpers@6.x", "@turf/helpers@^6.1.4":
   version "6.1.4"
   resolved "https://registry.yarnpkg.com/@turf/helpers/-/helpers-6.1.4.tgz#d6fd7ebe6782dd9c87dca5559bda5c48ae4c3836"
   integrity sha512-vJvrdOZy1ngC7r3MDA7zIGSoIgyrkWcGnNIEaqn/APmw+bVLF2gAW7HIsdTxd12s5wQMqEpqIQrmrbRRZ0xC7g==
-
-"@turf/helpers@^5.1.5":
-  version "5.1.5"
-  resolved "https://registry.yarnpkg.com/@turf/helpers/-/helpers-5.1.5.tgz#153405227ab933d004a5bb9641a9ed999fcbe0cf"
-  integrity sha1-FTQFInq5M9AEpbuWQantmZ/L4M8=
 
 "@turf/invariant@6.x", "@turf/invariant@^6.1.2":
   version "6.1.2"
@@ -113,13 +84,6 @@
   integrity sha512-VA7HJkx7qF1l3+GNGkDVn2oXy4+QoLP6LktXAaZKjuT1JI0YESat7quUkbCMy4zP9lAUuvS4YMslLyTtr919FA==
   dependencies:
     "@turf/helpers" "6.x"
-
-"@turf/meta@^5.1.5":
-  version "5.2.0"
-  resolved "https://registry.yarnpkg.com/@turf/meta/-/meta-5.2.0.tgz#3b1ad485ee0c3b0b1775132a32c384d53e4ba53d"
-  integrity sha1-OxrUhe4MOwsXdRMqMsOE1T5LpT0=
-  dependencies:
-    "@turf/helpers" "^5.1.5"
 
 "@types/aws-lambda@^8.10.19":
   version "8.10.33"
