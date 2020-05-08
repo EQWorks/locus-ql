@@ -64,7 +64,6 @@ app.use((req, res, next) => {
 // eslint disable otherwise not able to catch errors
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  // set locals, only providing error in development
   console.error(err)
   const { message } = err
   // if has auditlog, write the error message in locuslog table
@@ -79,18 +78,16 @@ app.use((err, req, res, next) => {
       status: 'falid',
       message: `${message}`,
     })
-    pool.query(
-      `
+    pool.query({
+      text: `
         UPDATE locus_log
         SET return_code = $1, return_meta = $2
         WHERE id = $3
       `,
-      [return_code, return_meta, id],
-    )
-      .then((res) => { res.status(err.status || 500).send({ message }) })
-      .catch((err) => {
-        console.error(err)
-      })
+      values: [return_code, return_meta, id],
+    })
+      .then(() => res.status(err.status || 500).send({ message }))
+      .catch(console.error)
   }
 })
 
