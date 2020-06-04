@@ -52,7 +52,7 @@ function jwtMiddleware(req, _, next) {
     url: `${KEY_WARDEN_BASE}/confirm`,
     method: 'get',
     headers: { 'eq-api-jwt': uJWT },
-    params: { light: 1 },
+    params: { light: 1, product: 'locus' },
   }).then(() => next()).catch(next)
 }
 
