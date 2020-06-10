@@ -30,6 +30,7 @@ function jwtMiddleware(req, _, next) {
 
   // both are integers
   const { _wl, _customer } = req.query
+  const _product = req.get('X-EQ-Product')
   const wlID = parseInt(_wl)
   const cuID = parseInt(_customer)
   // validate _wl and _customer
@@ -48,11 +49,13 @@ function jwtMiddleware(req, _, next) {
 
   req.access = { whitelabel, customers, write, read, email, prefix }
 
+  const product = _product && ['atom', 'locus'].includes(_product) ? _product : 'locus'
+
   axios({
     url: `${KEY_WARDEN_BASE}/confirm`,
     method: 'get',
     headers: { 'eq-api-jwt': uJWT },
-    params: { light: 1, product: 'locus' },
+    params: { light: 1, product },
   }).then(() => next()).catch(next)
 }
 
