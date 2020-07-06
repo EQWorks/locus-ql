@@ -54,7 +54,7 @@ app.use((req, res, next) => {
       SET return_code = $1, return_meta = $2
       WHERE id = $3
     `,
-    [return_code, return_meta, id],
+    [return_code, JSON.stringify(return_meta), id],
   )
     .catch(next)
   return res.status(return_code).json(res_info)
@@ -84,7 +84,7 @@ app.use((err, req, res, next) => {
         SET return_code = $1, return_meta = $2
         WHERE id = $3
       `,
-      values: [return_code, return_meta, id],
+      values: [return_code, JSON.stringify(return_meta), id],
     })
       .then(() => res.status(err.status || 500).send({ message }))
       .catch(console.error)
