@@ -28,6 +28,7 @@ const widgets = require('./widgets')
 const ml = require('./ml')
 const credentials = require('./credentials')
 const log = require('./log')
+const activity = require('./activity')
 
 
 rootRouter.use(isMaint)
@@ -54,6 +55,7 @@ rootRouter.use('/widgets', widgets)
 rootRouter.use('/ml', ml)
 rootRouter.use('/credentials', credentials)
 rootRouter.use('/log', log)
+rootRouter.use('/activity', activity)
 rootRouter.use(api)
 
 
