@@ -80,4 +80,4 @@ old
 .idea
 
 # redis snapshot
-.rdb
+*.rdb
