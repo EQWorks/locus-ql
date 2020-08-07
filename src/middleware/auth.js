@@ -229,13 +229,14 @@ const whitelabelAuth = (pathToID = 'query.wlID') => (req, res, next) => {
 
 const hhSegmentAuth = (req, res, next) => {
   // Accepted whitelables are internal and OPTA
-  const acceptedWhitelabels = [-1, 1202]
+  const acceptedWhitelabels = [1202]
 
-  if (acceptedWhitelabels.includes(req.access.whitelabel)) {
+  if (req.access.whitelabel === -1 ||
+      req.access.whitelabel.some(wl => acceptedWhitelabels.includes(wl))) {
     return next()
   }
 
-  return next(apiError('Access not allowed'))
+  return next(apiError('Access not allowed', 403))
 }
 
 module.exports = {
