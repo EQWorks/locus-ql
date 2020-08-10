@@ -227,6 +227,18 @@ const whitelabelAuth = (pathToID = 'query.wlID') => (req, res, next) => {
   }
 }
 
+const hhSegmentAuth = (req, res, next) => {
+  // Accepted whitelables are internal and OPTA
+  const acceptedWhitelabels = [1202]
+
+  if (req.access.whitelabel === -1 ||
+      req.access.whitelabel.some(wl => acceptedWhitelabels.includes(wl))) {
+    return next()
+  }
+
+  return next(apiError('Access not allowed', 403))
+}
+
 module.exports = {
   jwt: jwtMiddleware,
   layer: layerAuth,
@@ -237,4 +249,5 @@ module.exports = {
   write: hasWrite,
   whitelabel: whitelabelAuth,
   layerAccess: haveLayerAccess,
+  hhSegments: hhSegmentAuth,
 }
