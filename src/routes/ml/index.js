@@ -23,12 +23,8 @@ const mlHandler = async (req, res, next) => {
 }
 
 // list out all accessible views with column data
-router.get('/', async (req, res, next) => {
-  try {
-    return res.status(200).json(await listViews(req.access))
-  } catch (err) {
-    return next(err)
-  }
+router.get('/', (req, res, next) => {
+  listViews(req.access).then(data => res.status(200).json(data)).catch(next)
 })
 
 // main query endpoint
