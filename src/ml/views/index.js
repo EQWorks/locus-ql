@@ -29,7 +29,6 @@ module.exports.listViews = async (access) => {
   }, {})
 }
 
-
 // get views based on requst body.views
 module.exports.getViews = async (req, res, next) => {
   const { views } = req.body

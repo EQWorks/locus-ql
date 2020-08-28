@@ -1,6 +1,6 @@
 /* eslint-disable no-use-before-define */
 
-const { knex } = require('../../util/db')
+const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
 const apiError = require('../../util/api-error')
 
@@ -47,25 +47,55 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
 const listViews = async (access, { conn_id } = {}) => {
   const { whitelabel, customers } = access
 
-  const connQuery = knex(CONNECTION_TABLE)
-  connQuery.column([
-    `${CONNECTION_TABLE}.id`,
-    'set_id',
-    'type',
-    `${CONNECTION_TABLE}.name`,
-    'columns',
-  ])
-  connQuery.innerJoin(SETS_TABLE, `${SETS_TABLE}.id`, 'set_id')
-  connQuery.whereNot({ dest: {} })
-  connQuery.where(conn_id ? { [`${CONNECTION_TABLE}.id`]: conn_id } : {})
+  const query = {
+    text: `
+      SELECT
+        c.id,
+        c.set_id,
+        c.type,
+        c.name,
+        s.columns,
+        pc.reltuples AS records
+      FROM ${CONNECTION_TABLE} AS c
+      INNER JOIN ${SETS_TABLE} AS s ON s.id = c.set_id
+      INNER JOIN pg_class AS pc
+        ON pc.relname = c.dest->>'table'
+      -- this is to ensure filter on schema name as well
+      INNER JOIN pg_catalog.pg_namespace AS n
+        ON n.oid = pc.relnamespace
+        AND n.nspname = c.dest->>'schema'
+        AND pc.relkind = 'r'
+        AND pc.reltuples > 0
+      WHERE c.last_sync IS NOT NULL
+        AND c.is_syncing = '0'
+    `,
+    values: [],
+  }
+
+  if (conn_id) {
+    query.values.push(conn_id)
+    query.text = `
+      ${query.text}
+      AND c.id = $${query.values.length}
+    `
+  }
+
   if (whitelabel !== -1) {
-    connQuery.where({ 'connections.whitelabel': whitelabel[0] })
+    query.values.push(whitelabel[0])
+    query.text = `
+      ${query.text}
+      AND c.whitelabel = $${query.values.length}
+    `
     if (customers !== -1) {
-      connQuery.where({ 'connections.agencyid': customers[0] })
+      query.values.push(customers[0])
+      query.text = `
+        ${query.text}
+        AND c.agencyid = $${query.values.length}
+      `
     }
   }
 
-  const connections = await connQuery
+  const { rows: connections } = await pool.query(query)
 
   return connections.map(({ id, set_id, type, name, columns }) => {
     // insert column type category
