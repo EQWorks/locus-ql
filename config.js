@@ -38,10 +38,9 @@ module.exports.mapbox = {
 }
 
 module.exports.lotame = {
-  auth_url: process.env.LOTAME_AUTH_URL,
   api_url: process.env.LOTAME_API_URL,
-  username: process.env.LOTAME_USERNAME,
-  password: process.env.LOTAME_PASSWORD,
+  api_key: process.env.LOTAME_API_KEY,
+  api_token: process.env.LOTAME_API_TOKEN,
   client_id: process.env.LOTAME_CLIENT_ID,
 }
 
