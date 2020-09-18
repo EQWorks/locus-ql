@@ -5,7 +5,7 @@ const { pool } = require('../util/db')
 
 const insertLog = (...values) => (_, res) => {
   // local "STAGE"-less
-  if (!process.env.STAGE) {
+  if (!process.env.API_GATEWAY_BASE_PATH) {
     return console.log('Local Audit Log:', ...values)
   }
   // remote deployment
