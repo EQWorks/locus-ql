@@ -6,7 +6,7 @@ const { pool } = require('../util/db')
 const insertLog = (...values) => (_, res) => {
   // local "STAGE"-less
   if (!process.env.STAGE) {
-    return console.log('Audit Log:', ...values)
+    return console.log('Local Audit Log:', ...values)
   }
   // remote deployment
   return pool.query({
@@ -24,7 +24,7 @@ const insertLog = (...values) => (_, res) => {
       VALUES ($1, now(), $2, $3, $4, $5, $6, $7);
     `,
     values: [...values, res.statusCode, res.return_meta],
-  }).catch(console.error).finally(() => pool.end())
+  }).catch(console.error)
 }
 
 module.exports.auditlog = (action = 'others') => (req, res, next) => {
