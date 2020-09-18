@@ -9,22 +9,24 @@ const insertLog = (...values) => (_, res) => {
     return console.log('Local Audit Log:', ...values)
   }
   // remote deployment
-  return pool.query({
-    text: `
-      INSERT INTO locus_log(
-        email,
-        time_st,
-        action,
-        payload,
-        http_method,
-        api_path,
-        return_code,
-        return_meta
-      )
-      VALUES ($1, now(), $2, $3, $4, $5, $6, $7);
-    `,
-    values: [...values, res.statusCode, res.return_meta],
-  }).catch(console.error)
+  return pool.connect()
+    .then(client => client.query({
+      text: `
+        INSERT INTO locus_log(
+          email,
+          time_st,
+          action,
+          payload,
+          http_method,
+          api_path,
+          return_code,
+          return_meta
+        )
+        VALUES ($1, now(), $2, $3, $4, $5, $6, $7);
+      `,
+      values: [...values, res.statusCode, res.return_meta],
+    }).finally(() => client.release())) // the finally is intentionally in client scope
+    .catch(console.error)
 }
 
 module.exports.auditlog = (action = 'others') => (req, res, next) => {
