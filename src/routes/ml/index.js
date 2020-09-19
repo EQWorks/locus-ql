@@ -4,7 +4,7 @@
 const express = require('express')
 
 const { execute } = require('../../ml/engine')
-const { listViews, getViews } = require('../../ml/views')
+const { listViews, listView, getViews } = require('../../ml/views')
 
 
 const router = express.Router()
@@ -26,6 +26,9 @@ const mlHandler = async (req, res, next) => {
 router.get('/', (req, res, next) => {
   listViews(req.access).then(data => res.status(200).json(data)).catch(next)
 })
+
+// return view object for viewID
+router.get('/:viewID', listView)
 
 // main query endpoint
 router.post('/', getViews, mlHandler)
