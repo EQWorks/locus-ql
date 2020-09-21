@@ -9,7 +9,8 @@ const rootRouter = require('./routes/')
 
 const app = express()
 
-const { API_VER = 'unknown', API_GATEWAY_BASE_PATH: STAGE = '' } = process.env
+const { API_VER = 'unknown', API_GATEWAY_BASE_PATH = '', IS_OFFLINE = false } = process.env
+const STAGE = IS_OFFLINE ? '' : API_GATEWAY_BASE_PATH
 
 // enable cors
 // this would enable Access-Control-Allow-Origin: *
