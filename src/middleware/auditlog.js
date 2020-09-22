@@ -1,33 +1,49 @@
 const { pool } = require('../util/db')
 
-/**
- * log need to have four params
- * return_code as statusCode
- * return_meta for locus_log table to record return message
- * res_info for response to snoke
- * log id
- *
- * log id will be generate from here
- * and other params need to be defined in each endpoint which used log middleware
- */
 
-module.exports.auditlog = action => (req, res, next) => {
-  const { access: { email }, method, originalUrl } = req
-  const anyBodyParams = Object.entries(req.body).length
-  const payload = (!anyBodyParams) ? req.query : req.body
-
-  pool.query(
-    `
-      INSERT INTO locus_log(email, time_st, action, payload, http_method, api_path)
-      VALUES($1, now(), $2, $3, $4, $5)
-      RETURNING id
-    `,
-    [email, action, JSON.stringify(payload), method, originalUrl],
-  )
-    .then((res) => {
-      const { rows: [{ id }] } = res
-      req.log = { id }
-      next()
+const insertLog = (props) => {
+  const {
+    action, // custom
+    access: { email }, method, originalUrl, body, query, // req {}
+    statusCode, return_meta = {}, // res {}
+  } = props
+  const payload = JSON.stringify(!Object.keys(body).length ? query : body)
+  // local context (serverless-less, yarn start)
+  if (!process.env.API_GATEWAY_BASE_PATH) {
+    console.log('Local Audit Log:\n')
+    return console.log(props)
+  }
+  // serverless context (remote or yarn offline), async/await for readability
+  async function insert() {
+    const client = await pool.connect()
+    await client.query({
+      text: `
+          INSERT INTO locus_log(
+            email,
+            action,
+            payload,
+            http_method,
+            api_path,
+            return_code,
+            return_meta,
+            time_st
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, now());
+        `,
+      values: [email, action, payload, method, originalUrl, statusCode, return_meta],
     })
-    .catch(next)
+    return client.release()
+  }
+  let p = Promise.reject() // promise retry hack https://stackoverflow.com/a/38225011/158111
+  for (let i = 0; i < 3; i++) { // max 3 retries
+    p = p.catch(insert)
+  }
+  return p.catch(console.error)
+}
+
+module.exports.auditlog = (action = 'others') => (req, res, next) => {
+  res.once('finish', () => {
+    insertLog({ action, ...req, ...res })
+  })
+  return next()
 }
