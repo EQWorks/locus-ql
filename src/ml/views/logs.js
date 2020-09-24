@@ -12,13 +12,13 @@ const apiError = require('../../util/api-error')
 const athena = new AWS.Athena({ region: 'us-east-1' })
 
 // constants
-const CACHE_DAYS = 90
+const CACHE_DAYS = 90 // days of logs to import into cache
 const ATHENA_OUTPUT_BUCKET = 'ml-fusion-cache'
-const ATHENA_WORKGROUP = 'locus_ml'
+const ATHENA_WORKGROUP = 'locus_ml' // use to segregate billing and history
 const ONE_HOUR = 60 * 60 * 1000
 const ONE_DAY = 24 * ONE_HOUR
-const CU_ADVERTISER = 0
-const CU_AGENCY = 1
+const CU_ADVERTISER = 0 // client type enum
+const CU_AGENCY = 1 // client type enum
 const LOG_TYPES = {
   imp: {
     name: 'ATOM Impressions',
@@ -110,6 +110,13 @@ const LOG_TYPES = {
   },
 }
 
+/**
+ * Extracts all columns from a query or an expression for a specific view
+ * @param {string} viewID ID of the view which columns are to be extracted
+ * @param {object} viewColumns An object with column names as keys
+ * @param {object} query Query or expression
+ * @returns {string[]} The view's columns contained in the query
+ */
 const getQueryColumns = (viewID, viewColumns, query) => {
   const columns = new Set()
   const queue = [query]
@@ -143,11 +150,23 @@ const getQueryColumns = (viewID, viewColumns, query) => {
   return [...columns]
 }
 
+/**
+ * Returns string following ISO 8601 'yyyy-mm-dd'
+ * @param {Date} date Date to represent as ISO
+ * @returns {string} ISO 8601 representation of the date
+ */
 const toISODate = date => `${date.getUTCFullYear()}-${
   (date.getUTCMonth() + 1).toString().padStart(2, '0')
 }-${date.getUTCDate().toString().padStart(2, '0')
 }`
 
+/**
+ * Returns all customers of a certain types (advertisers vs. agency) given some filters
+ * @param {number[]|-1} [whitelabelIDs=-1] Whitelabel filter. -1 means all.
+ * @param {number[]|-1} [agencyIDs=-1] Agency filter. -1 means all.
+ * @param {number} [type=1] 0 for advertiser type, 1 for agency
+ * @returns {Promise<{ customerID: number, customerName: string }[]>} Array of customers
+ */
 const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY) => {
   const filters = ['isactive', 'whitelabelid <> 0']
   const filterValues = []
@@ -171,6 +190,11 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
   return rows
 }
 
+/**
+ * Returns a unique hash per unordered collection of columns
+ * @param {string[]} cols The view's columns
+ * @returns {string} The view's hash
+ */
 const getViewHash = (cols) => {
   const hash = createHash('sha256')
   cols.sort().forEach((col) => {
@@ -182,6 +206,11 @@ const getViewHash = (cols) => {
   return hash.digest('base64')
 }
 
+/**
+ * Returns the public representation of a log type's columns
+ * @param {string} logType Log Type
+ * @returns {object} Columns
+ */
 const getReqViewColumns = logType => Object.entries(LOG_TYPES[logType].columns).reduce(
   (cols, [key, { category, geo_type }]) => {
     cols[key] = { category, geo_type, key }
@@ -190,8 +219,21 @@ const getReqViewColumns = logType => Object.entries(LOG_TYPES[logType].columns).
   {},
 )
 
+/**
+ * Returns a promise resolving after ms milliseconds
+ * @param {number} ms Time (in ms) to wait for before the promise resolves
+ * @returns {Promise<undefined>}
+ */
 const waitForMs = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+/**
+ * Retries wrapped Athena method on throttling errors
+ * @param {Function} callback Athena method to retry (use bind() to bind to Athena client)
+ * @param {any[]} args Arguments to pass to the callback
+ * @param {number} [maxAttempts=4] Maximum number of attempts
+ * @param {number} [minWaitMS=1000] Minimum wait time (in ms) between each attempt
+ * @returns {Promise<any>} Return value of the Athena method
+ */
 const retryAthenaOnThrottlingException = async (
   callback,
   args,
@@ -218,6 +260,16 @@ const retryAthenaOnThrottlingException = async (
   }
 }
 
+/**
+ * Submits a query to Athena to retrieve a view's data
+ * @param {number} customerID Customer
+ * @param {string} logType Log type
+ * @param {string} viewHash Hash representation of the view
+ * @param {string[]} viewColumns Columns which make up the view
+ * @param {Date} start Start date (exclusive) from which to pull data
+ * @param {Date} end End date (inclusive) up until which data will be considered
+ * @returns {Promise<string>} Athena's 'Query Execution ID'
+ */
 const requestViewData = async (customerID, logType, viewHash, viewColumns, start, end) => {
   try {
     const groupByColumns = [
@@ -295,6 +347,14 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
   }
 }
 
+/**
+ * Spawns Athena queries to fill the view's PG cache with data for the last CACHE_DAYS days
+ * @param {number} customerID Customer
+ * @param {string} logType Log type
+ * @param {string} viewHash Hash representation of the view
+ * @param {string[]} viewColumns Columns which make up the view
+ * @returns {boolean} Whether or not the view's PG cache is ready for querying
+ */
 const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
   // get latest cache date
   const { rows: [{ max_date: maxDate }] } = await knex.raw(`
