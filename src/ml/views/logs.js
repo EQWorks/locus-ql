@@ -1,3 +1,5 @@
+/* eslint-disable function-paren-newline */
+/* eslint-disable no-continue */
 const { createHash } = require('crypto')
 
 const AWS = require('aws-sdk')
@@ -6,42 +8,13 @@ const { knex, atomPool } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC } = require('../type')
 const apiError = require('../../util/api-error')
 
-// class Semaphore {
-//   constructor(capacity) {
-//     this._queue = Promise.resolve()
-//     this._maxPermits = capacity
-//     this._permitsInUse = 0
-//     this._next = () => undefined
-//   }
-
-//   acquire() {
-//     return new Promise((ready) => {
-//       this._queue = this._queue.then(() => {
-//         this._permitsInUse += 1
-//         ready()
-//         if (this._permitsInUse < this._maxPermits) {
-//           this._next = () => undefined
-//           return
-//         }
-//         return new Promise((next) => {
-//           this._next = next
-//         })
-//       })
-//     })
-//   }
-
-//   release() {
-//     this._permitsInUse -= 1
-//     this._next()
-//   }
-// }
-
-// const athenaSemaphore = new Semaphore(1)
 
 const athena = new AWS.Athena({ region: 'us-east-1' })
 
-const CACHE_DAYS = 10
-const ATHENA_OUTPUT_BUCKET = 'kevin-test-ml-fusion'
+// constants
+const CACHE_DAYS = 90
+const ATHENA_OUTPUT_BUCKET = 'ml-fusion-cache'
+const ATHENA_WORKGROUP = 'locus_ml'
 const ONE_HOUR = 60 * 60 * 1000
 const ONE_DAY = 24 * ONE_HOUR
 const CU_ADVERTISER = 0
@@ -137,6 +110,39 @@ const LOG_TYPES = {
   },
 }
 
+const getQueryColumns = (viewID, viewColumns, query) => {
+  const columns = new Set()
+  const queue = [query]
+  while (queue.length) {
+    const item = queue.shift()
+    if (typeof item === 'string' && item.indexOf('.') !== -1) {
+      queue.push(item.split('.', 2))
+      continue
+    }
+    if (typeof item !== 'object' || item === null) {
+      continue
+    }
+    if (item.type === 'column' && item.view === viewID && item.column in viewColumns) {
+      columns.add(item.column)
+      continue
+    }
+    if (
+      Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && item[1] === viewID
+    ) {
+      if (item[0] === '*') {
+        Object.keys(viewColumns).forEach(col => columns.add(col))
+        continue
+      }
+      if (item[0] in viewColumns) {
+        columns.add(item[0])
+        continue
+      }
+    }
+    queue.push(...Object.values(item))
+  }
+  return [...columns]
+}
+
 const toISODate = date => `${date.getUTCFullYear()}-${
   (date.getUTCMonth() + 1).toString().padStart(2, '0')
 }-${date.getUTCDate().toString().padStart(2, '0')
@@ -154,7 +160,6 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
     filterValues.push(whitelabelIDs)
     filters.push(`whitelabelid = ANY($${filterValues.length})`)
   }
-  console.log('filter', filters, filterValues)
   const { rows } = await atomPool.query(`
     SELECT
       customerid AS "customerID",
@@ -199,7 +204,7 @@ const retryAthenaOnThrottlingException = async (
       // eslint-disable-next-line no-await-in-loop
       return await callback(args).promise()
     } catch (err) {
-      if (attempt === maxAttempts || ![
+      if (attempt === maxAttempts - 1 || ![
         'TooManyRequestsException',
         'ThrottlingException',
       ].includes(err.code)) {
@@ -256,7 +261,6 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
 
     // token is used to cache queries at Athena's end
     const token = `ml-${logType}-${customerID}-${viewHash}-${isoEnd}-${end.getUTCHours()}`
-    // await athenaSemaphore.acquire()
     const { QueryExecutionId } = await retryAthenaOnThrottlingException(
       athena.startQueryExecution.bind(athena),
       {
@@ -276,9 +280,9 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
         ClientRequestToken: token,
         // eslint-disable-next-line max-len
         ResultConfiguration: { OutputLocation: `s3://${ATHENA_OUTPUT_BUCKET}/${logType}/${customerID}` },
+        WorkGroup: ATHENA_WORKGROUP,
       },
     )
-    console.log(QueryExecutionId, start, end)
     return QueryExecutionId
   } catch (err) {
     if (
@@ -288,8 +292,6 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
       return ''
     }
     throw err
-  } finally {
-    // athenaSemaphore.release()
   }
 }
 
@@ -349,18 +351,10 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
   return false
 }
 
-const getView = async (access, reqViews, reqViewColumns, { logType, queryColumns, agencyID }) => {
+const getView = async (access, reqViews, reqViewColumns, { logType, query, agencyID }) => {
   if (!(logType in LOG_TYPES)) {
     throw apiError(`Invalid log type: ${logType}`, 403)
   }
-  if (!queryColumns || !queryColumns.length) {
-    // should there be an upper limit on view columns?
-    throw apiError('Log views are restricted to queries pulling one or more columns', 403)
-  }
-  if (queryColumns.some(col => !(col in LOG_TYPES[logType].columns))) {
-    throw apiError(`Unknow column for log type: ${logType}`, 403)
-  }
-
   // check access
   const { whitelabel, customers } = access
   if (!(Array.isArray(customers) && customers.includes(agencyID)) && customers !== -1) {
@@ -372,6 +366,14 @@ const getView = async (access, reqViews, reqViewColumns, { logType, queryColumns
   }
 
   const viewID = `logs_${logType}_${agencyID}`
+  const viewColumns = getReqViewColumns(logType)
+  const queryColumns = getQueryColumns(viewID, viewColumns, query)
+  if (!queryColumns.length || queryColumns.length > 10) {
+    throw apiError('Log views are restricted to queries pulling between 1 and 10 columns', 403)
+  }
+  if (queryColumns.some(col => !(col in LOG_TYPES[logType].columns))) {
+    throw apiError(`Unknow column for log type: ${logType}`, 403)
+  }
   const viewHash = getViewHash(queryColumns)
 
   const cacheReady = await updateViewCache(customerID, logType, viewHash, queryColumns)
@@ -397,20 +399,18 @@ const getView = async (access, reqViews, reqViewColumns, { logType, queryColumns
     WHERE
       customer_id = ?
       AND view_hash = ?
-    GROUP BY ${groupByColumns.map((_, i) => i + 1).join(', ')}
+    ${groupByColumns.length ? `GROUP BY ${groupByColumns.map((_, i) => i + 1).join(', ')}` : ''}
   ) as ${viewID}
 `, [customerID, viewHash])
 
-  reqViewColumns[viewID] = getReqViewColumns(logType)
+  reqViewColumns[viewID] = viewColumns
 }
 
 const listViews = async (access) => {
   const { whitelabel, customers } = access
   const agencies = await getCustomers(whitelabel, customers, CU_AGENCY)
   return agencies.reduce(
-    // eslint-disable-next-line function-paren-newline
     (views, { customerID, customerName }) => views.concat(
-      // eslint-disable-next-line function-paren-newline
       Object.entries(LOG_TYPES).map(
         ([type, { name }]) => ({
           name: `${name} - ${customerName} (${customerID})`,
@@ -420,20 +420,19 @@ const listViews = async (access) => {
             logType: type,
             agencyID: customerID,
           },
+          // TODO: remove 'columns' -> use listView() to get full view
           columns: getReqViewColumns(type),
         }),
-      // eslint-disable-next-line function-paren-newline
       ),
-    // eslint-disable-next-line function-paren-newline
     ),
     [],
   )
 }
 
 const listView = async (access, viewID) => {
-  const [, logType, agency] = viewID.match(/^logs_([a-z]+)_(\d+)$/) || []
+  const [, logType, agencyIDStr] = viewID.match(/^logs_([a-z]+)_(\d+)$/) || []
   // eslint-disable-next-line radix
-  const agencyID = parseInt(agency, 10)
+  const agencyID = parseInt(agencyIDStr, 10)
   if (!logType || !agencyID) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }

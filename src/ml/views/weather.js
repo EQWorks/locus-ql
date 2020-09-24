@@ -93,52 +93,15 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
   }
 }
 
-const listViews = async () => [
-  {
-    name: 'weather daily point',
-    view: {
-      type: 'weather',
-      id: 'weather_daily_point',
-      filters: ['lat', 'lon'],
-      frequency: FREQ_DAILY,
-      queryBy: QUERY_BY_POINT,
-    },
-    columns,
-  },
-  {
-    name: 'weather daily poi list',
-    view: {
-      type: 'weather',
-      id: 'weather_daily_poi_list',
-      filters: ['poi-list-id'],
-      frequency: FREQ_DAILY,
-      queryBy: QUERY_BY_POI_LIST,
-    },
-    columns: poiListColumns,
-  },
-  {
-    name: 'weather hourly point',
-    view: {
-      type: 'weather',
-      id: 'weather_hourly_point',
-      filters: ['lat', 'lon'],
-      frequency: FREQ_HOURLY,
-      queryBy: QUERY_BY_POINT,
-    },
-    columns,
-  },
-  {
-    name: 'weather hourly poi list',
-    view: {
-      type: 'weather',
-      id: 'weather_hourly_poi_list',
-      filters: ['poi-list-id'],
-      frequency: FREQ_HOURLY,
-      queryBy: QUERY_BY_POI_LIST,
-    },
-    columns: poiListColumns,
-  },
-]
+const listViews = async () => Object.values(VIEWS)
+// .map(({ columns, ...rest }) => rest)
+
+const listView = async (_, viewID) => {
+  if (!(viewID in VIEWS)) {
+    throw apiError(`Invalid view: ${viewID}`, 403)
+  }
+  return VIEWS[viewID]
+}
 
 const columns = {
   csd_gid: { key: 'csd_gid', category: CAT_NUMERIC },
@@ -152,7 +115,55 @@ const poiListColumns = {
   poi_id: { key: 'poi_id', category: CAT_NUMERIC },
 }
 
+const VIEWS = {
+  weather_daily_point: {
+    name: 'weather daily point',
+    view: {
+      type: 'weather',
+      id: 'weather_daily_point',
+      filters: ['lat', 'lon'],
+      frequency: FREQ_DAILY,
+      queryBy: QUERY_BY_POINT,
+    },
+    columns,
+  },
+  weather_daily_poi_list: {
+    name: 'weather daily poi list',
+    view: {
+      type: 'weather',
+      id: 'weather_daily_poi_list',
+      filters: ['poi-list-id'],
+      frequency: FREQ_DAILY,
+      queryBy: QUERY_BY_POI_LIST,
+    },
+    columns: poiListColumns,
+  },
+  weather_hourly_point: {
+    name: 'weather hourly point',
+    view: {
+      type: 'weather',
+      id: 'weather_hourly_point',
+      filters: ['lat', 'lon'],
+      frequency: FREQ_HOURLY,
+      queryBy: QUERY_BY_POINT,
+    },
+    columns,
+  },
+  weather_hourly_poi_list: {
+    name: 'weather hourly poi list',
+    view: {
+      type: 'weather',
+      id: 'weather_hourly_poi_list',
+      filters: ['poi-list-id'],
+      frequency: FREQ_HOURLY,
+      queryBy: QUERY_BY_POI_LIST,
+    },
+    columns: poiListColumns,
+  },
+}
+
 module.exports = {
   getView,
   listViews,
+  listView,
 }
