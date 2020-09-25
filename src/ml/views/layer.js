@@ -40,6 +40,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
   layerQuery.column(['name', 'layer_id', 'layer_type_id', 'layer_categories'])
   layerQuery.where(filter)
   layerQuery.whereIn('layer_type_id', layerTypes)
+  layerQuery.whereNotNull('layer_categories')
   layerQuery.whereNull('parent_layer')
   // subscription logic
   if (Array.isArray(whitelabel)
@@ -80,9 +81,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey }) => {
   const viewID = `layer_${layer_id}`
-  const layerQuery = await getKnexLayerQuery(access, { layer_id })
-  const [layer] = await layerQuery
-
+  const [layer] = await getKnexLayerQuery(access, { layer_id })
   if (!layer) {
     throw apiError('Access to layer not allowed', 403)
   }
@@ -118,10 +117,9 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey
 }
 
 const listViews = async (access, filter = {}) => {
-  const layerQuery = await getKnexLayerQuery(access, filter)
-  const layers = (await layerQuery).filter(l => l.layer_categories)
-
+  const layers = await getKnexLayerQuery(access, filter)
   return layers.map(({ name, layer_categories, layer_id, layer_type_id }) => {
+    // TODO: remove 'columns' -> use listView() to get full view
     Object.entries(options.columns).forEach(([key, column]) => {
       column.key = key
     })
@@ -132,18 +130,58 @@ const listViews = async (access, filter = {}) => {
           name: `${name} // ${catName}`,
           view: {
             type: 'layer',
-            id: `layer_${layer_id}`,
+            id: `layer_${layer_id}_${categoryKey}`,
             layer_id,
             layer_type_id,
             resolution,
             table,
             categoryKey,
           },
+          // TODO: remove 'columns' -> use listView() to get full view
           columns: options.columns,
           // meta
         }
       ))
   }).reduce((agg, view) => [...agg, ...view], [])
+}
+
+const listView = async (access, viewID) => {
+  const [, layerIDStr, categoryKeyStr] = viewID.match(/^layer_(\d+)_(\d+)$/) || []
+  // eslint-disable-next-line radix
+  const layer_id = parseInt(layerIDStr, 10)
+  // eslint-disable-next-line radix
+  const categoryKey = parseInt(categoryKeyStr, 10)
+  if (!layer_id || !categoryKey) {
+    throw apiError(`Invalid view: ${viewID}`, 403)
+  }
+
+  const [layer] = await getKnexLayerQuery(access, { layer_id })
+  if (!layer || !(categoryKey in layer.layer_categories)) {
+    throw apiError('Access to layer not allowed', 403)
+  }
+
+  Object.entries(options.columns).forEach(([key, column]) => {
+    column.key = key
+  })
+
+  const { name, layer_categories, layer_type_id } = layer
+  const { table, name: catName, resolution } = layer_categories[categoryKey]
+
+  return {
+    // required
+    name: `${name} // ${catName}`,
+    view: {
+      type: 'layer',
+      id: `layer_${layer_id}_${categoryKey}`,
+      layer_id,
+      layer_type_id,
+      resolution,
+      table,
+      categoryKey,
+    },
+    columns: options.columns,
+    // meta
+  }
 }
 
 const options = {
@@ -161,4 +199,5 @@ const options = {
 module.exports = {
   getView,
   listViews,
+  listView,
 }

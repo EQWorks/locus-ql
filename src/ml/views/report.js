@@ -118,6 +118,7 @@ const listViews = async (access, filter = {}) => {
   const reportLayers = await layerQuery
 
   return reportLayers.map(({ name, layer_id, report_id, layer_type_id, dates }) => {
+    // TODO: remove 'columns' -> use listView() to get full view
     Object.entries(options.columns).forEach(([key, column]) => {
       column.key = key
     })
@@ -131,12 +132,78 @@ const listViews = async (access, filter = {}) => {
         report_id,
         layer_id,
       },
+      // TODO: remove 'columns' and meta fields -> use listView() to get full view
       columns: options.columns,
       // meta
       layer_type_id,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
   })
+}
+
+const listView = async (access, viewID) => {
+  const [, layerIDStr, reportIDStr] = viewID.match(/^report_(\d+)_(\d+)$/) || []
+  // eslint-disable-next-line radix
+  const layer_id = parseInt(layerIDStr, 10)
+  // eslint-disable-next-line radix
+  const report_id = parseInt(reportIDStr, 10)
+  if (!layer_id || !report_id) {
+    throw apiError(`Invalid view: ${viewID}`, 403)
+  }
+
+  const { whitelabel, customers } = access
+  const reportLayerTypes = [1, 16, 17] // wi, xwi and xvwi
+
+  const layerQuery = knex('layer')
+  layerQuery.column(['name', 'layer_type_id'])
+  layerQuery.select(knex.raw(`
+    COALESCE(
+      ARRAY_AGG(DISTINCT ARRAY[
+        report_wi.start_date::varchar,
+        report_wi.end_date::varchar,
+        report_wi.date_type::varchar
+      ])
+      FILTER (WHERE report_wi.start_date IS NOT null),
+      '{}'
+    ) AS dates
+  `))
+  layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
+  layerQuery.leftJoin('report_wi', 'report_wi.report_id', 'layer.report_id')
+  layerQuery.where({ layer_id, 'layer.report_id': report_id })
+  layerQuery.whereIn('layer_type_id', reportLayerTypes)
+  layerQuery.whereNull('parent_layer')
+  if (whitelabel !== -1) {
+    layerQuery.where({ whitelabel: whitelabel[0] })
+    if (customers !== -1) {
+      layerQuery.where({ agencyid: customers[0] })
+    }
+  }
+  layerQuery.groupBy(['name', 'layer_type_id'])
+
+  const [reportLayer] = await layerQuery
+  if (!reportLayer) {
+    throw apiError('Access to layer not allowed', 403)
+  }
+  const { name, layer_type_id, dates } = reportLayer
+
+  Object.entries(options.columns).forEach(([key, column]) => {
+    column.key = key
+  })
+
+  return {
+    // required
+    name,
+    view: {
+      type: 'report',
+      id: `report_${layer_id}_${report_id}`,
+      report_id,
+      layer_id,
+    },
+    columns: options.columns,
+    // meta
+    layer_type_id,
+    dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
+  }
 }
 
 const options = {
@@ -185,4 +252,5 @@ const options = {
 module.exports = {
   getView,
   listViews,
+  listView,
 }

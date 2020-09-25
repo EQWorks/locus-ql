@@ -53,6 +53,7 @@ const listViews = async (_, filter) => {
       .columns(['column_name', 'data_type', 'udt_name'])
       .where({ table_schema: schema, table_name: table })
 
+    // TODO: remove 'columns' -> use listView() to get full view
     const columns = {}
     tableColumns.forEach(({ column_name, data_type, udt_name }) => {
       const type = data_type === 'USER-DEFINED' ? udt_name : data_type
@@ -70,6 +71,7 @@ const listViews = async (_, filter) => {
         id: `geo_${tableKey}`,
         tableKey,
       },
+      // TODO: remove 'columns' -> use listView() to get full view
       columns,
     }
   })
@@ -77,7 +79,40 @@ const listViews = async (_, filter) => {
   return Promise.all(tablePromises)
 }
 
+const listView = async (_, viewID) => {
+  const [, tableKey] = viewID.match(/^geo_(\w+)$/) || []
+  // eslint-disable-next-line radix
+  if (!(tableKey in GEO_TABLES)) {
+    throw apiError(`Invalid view: ${viewID}`, 403)
+  }
+  const { schema, table } = GEO_TABLES[tableKey]
+  const tableColumns = await knex('information_schema.columns')
+    .columns(['column_name', 'data_type', 'udt_name'])
+    .where({ table_schema: schema, table_name: table })
+
+  const columns = {}
+  tableColumns.forEach(({ column_name, data_type, udt_name }) => {
+    const type = data_type === 'USER-DEFINED' ? udt_name : data_type
+    columns[column_name] = {
+      category: typeToCatMap.get(type),
+      key: column_name,
+      type,
+    }
+  })
+
+  return {
+    name: tableKey,
+    view: {
+      type: 'geo',
+      id: `geo_${tableKey}`,
+      tableKey,
+    },
+    columns,
+  }
+}
+
 module.exports = {
   getView,
   listViews,
+  listView,
 }
