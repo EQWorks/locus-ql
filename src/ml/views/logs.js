@@ -17,8 +17,10 @@ const ATHENA_OUTPUT_BUCKET = 'ml-fusion-cache'
 const ATHENA_WORKGROUP = 'locus_ml' // use to segregate billing and history
 const ONE_HOUR = 60 * 60 * 1000
 const ONE_DAY = 24 * ONE_HOUR
-const CU_ADVERTISER = 0 // client type enum
-const CU_AGENCY = 1 // client type enum
+const CU_AGENCY = 1 // customer type enum
+const CU_ADVERTISER = 2 // customer type enum
+const ACCESS_INTERNAL = 1 // access type enum
+const ACCESS_CUSTOMER = 2 // access type enum
 const LOG_TYPES = {
   imp: {
     name: 'ATOM Impressions',
@@ -62,10 +64,30 @@ const LOG_TYPES = {
       city: { category: CAT_STRING },
       banner_code: { category: CAT_NUMERIC },
       app_platform_id: { category: CAT_NUMERIC },
-      revenue: { category: CAT_NUMERIC },
-      revenue_in_currency: { category: CAT_NUMERIC },
-      cost: { category: CAT_NUMERIC },
-      cost_in_currency: { category: CAT_NUMERIC },
+      revenue: {
+        category: CAT_NUMERIC,
+        access: ACCESS_INTERNAL,
+      },
+      revenue_in_currency: {
+        category: CAT_NUMERIC,
+        access: ACCESS_INTERNAL,
+      },
+      spend: {
+        aliasFor: 'revenue',
+        access: ACCESS_CUSTOMER,
+      },
+      spend_in_currency: {
+        aliasFor: 'revenue_in_currency',
+        access: ACCESS_CUSTOMER,
+      },
+      cost: {
+        category: CAT_NUMERIC,
+        access: ACCESS_INTERNAL,
+      },
+      cost_in_currency: {
+        category: CAT_NUMERIC,
+        access: ACCESS_INTERNAL,
+      },
     },
   },
   bcn: {
@@ -110,15 +132,25 @@ const LOG_TYPES = {
   },
 }
 
+const accessMap = {
+  dev: ACCESS_INTERNAL,
+  internal: ACCESS_INTERNAL,
+  wl: ACCESS_CUSTOMER,
+  customers: ACCESS_CUSTOMER,
+}
+
 /**
  * Extracts all columns from a query or an expression for a specific view
  * @param {string} viewID ID of the view which columns are to be extracted
  * @param {object} viewColumns An object with column names as keys
  * @param {object} query Query or expression
- * @returns {string[]} The view's columns contained in the query
+ * @param {number} [accessType=2] Access type. See access enum values.
+ * @returns {[string[], string[]]} The view's columns contained in the
+ * query. [cacheColumns, queryColumns]
  */
-const getQueryColumns = (viewID, viewColumns, query) => {
-  const columns = new Set()
+const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOMER) => {
+  const cacheColumns = new Set() // aliases are substituted with the columns they reference
+  const queryColumns = new Set() // aliases not substituted
   const queue = [query]
   while (queue.length) {
     const item = queue.shift()
@@ -130,24 +162,37 @@ const getQueryColumns = (viewID, viewColumns, query) => {
       continue
     }
     if (item.type === 'column' && item.view === viewID && item.column in viewColumns) {
-      columns.add(item.column)
+      const { access, aliasFor } = viewColumns[item.column]
+      if (!access || access === accessType) {
+        queryColumns.add(item.column)
+        cacheColumns.add(aliasFor || item.column)
+      }
       continue
     }
     if (
       Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && item[1] === viewID
     ) {
       if (item[0] === '*') {
-        Object.keys(viewColumns).forEach(col => columns.add(col))
+        Object.entries(viewColumns).forEach(([col, { access, aliasFor }]) => {
+          if (!access || access === accessType) {
+            queryColumns.add(col)
+            cacheColumns.add(aliasFor || col)
+          }
+        })
         continue
       }
       if (item[0] in viewColumns) {
-        columns.add(item[0])
+        const { access, aliasFor } = viewColumns[item[0]]
+        if (!access || access === accessType) {
+          queryColumns.add(item[0])
+          cacheColumns.add(aliasFor || item[0])
+        }
         continue
       }
     }
     queue.push(...Object.values(item))
   }
-  return [...columns]
+  return [[...cacheColumns], [...queryColumns]]
 }
 
 /**
@@ -164,7 +209,7 @@ const toISODate = date => `${date.getUTCFullYear()}-${
  * Returns all customers of a certain types (advertisers vs. agency) given some filters
  * @param {number[]|-1} [whitelabelIDs=-1] Whitelabel filter. -1 means all.
  * @param {number[]|-1} [agencyIDs=-1] Agency filter. -1 means all.
- * @param {number} [type=1] 0 for advertiser type, 1 for agency
+ * @param {number} [type=1] Customer type. See customer enum values.
  * @returns {Promise<{ customerID: number, customerName: string }[]>} Array of customers
  */
 const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY) => {
@@ -208,16 +253,26 @@ const getViewHash = (cols) => {
 
 /**
  * Returns the public representation of a log type's columns
- * @param {string} logType Log Type
+ * @param {string} logType Log type
+ * @param {number} [accessType=2] Access type. See access enum values.
  * @returns {object} Columns
  */
-const getReqViewColumns = logType => Object.entries(LOG_TYPES[logType].columns).reduce(
-  (cols, [key, { category, geo_type }]) => {
-    cols[key] = { category, geo_type, key }
-    return cols
-  },
-  {},
-)
+// eslint-disable-next-line arrow-body-style
+const getReqViewColumns = (logType, accessType = ACCESS_CUSTOMER) => {
+  return Object.entries(LOG_TYPES[logType].columns).reduce(
+    (cols, [key, { category, geo_type, access, aliasFor }]) => {
+      if (!access || access === accessType) {
+        cols[key] = {
+          category: aliasFor ? LOG_TYPES[logType].columns[aliasFor].category : category,
+          geo_type: aliasFor ? LOG_TYPES[logType].columns[aliasFor].geo_type : geo_type,
+          key,
+        }
+      }
+      return cols
+    },
+    {},
+  )
+}
 
 /**
  * Returns a promise resolving after ms milliseconds
@@ -416,7 +471,7 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
     throw apiError(`Invalid log type: ${logType}`, 403)
   }
   // check access
-  const { whitelabel, customers } = access
+  const { whitelabel, customers, prefix } = access
   if (!(Array.isArray(customers) && customers.includes(agencyID)) && customers !== -1) {
     throw apiError('Invalid access permissions', 403)
   }
@@ -426,17 +481,21 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   }
 
   const viewID = `logs_${logType}_${agencyID}`
-  const viewColumns = getReqViewColumns(logType)
-  const queryColumns = getQueryColumns(viewID, viewColumns, query)
-  if (!queryColumns.length || queryColumns.length > 10) {
+  const [cacheColumns, queryColumns] = getQueryColumns(
+    viewID,
+    LOG_TYPES[logType].columns,
+    query,
+    accessMap[prefix],
+  )
+  if (!cacheColumns.length || cacheColumns.length > 10) {
     throw apiError('Log views are restricted to queries pulling between 1 and 10 columns', 403)
   }
-  if (queryColumns.some(col => !(col in LOG_TYPES[logType].columns))) {
+  if (cacheColumns.some(col => !(col in LOG_TYPES[logType].columns))) {
     throw apiError(`Unknow column for log type: ${logType}`, 403)
   }
-  const viewHash = getViewHash(queryColumns)
+  const viewHash = getViewHash(cacheColumns)
 
-  const cacheReady = await updateViewCache(customerID, logType, viewHash, queryColumns)
+  const cacheReady = await updateViewCache(customerID, logType, viewHash, cacheColumns)
   if (!cacheReady) {
     throw Error('We need a moment to load your query\'s data, please try again in 30s')
   }
@@ -444,11 +503,12 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   const groupByColumns = []
   const aggColumns = []
   queryColumns.forEach((col) => {
-    if (LOG_TYPES[logType].columns[col].isAggregate) {
-      aggColumns.push(`SUM("${col}") AS "${col}"`)
+    const { aliasFor } = LOG_TYPES[logType].columns[col]
+    if (LOG_TYPES[logType].columns[aliasFor || col].isAggregate) {
+      aggColumns.push(`SUM("${aliasFor || col}") AS "${col}"`)
       return
     }
-    groupByColumns.push(`"${col}"`)
+    groupByColumns.push(`"${aliasFor || col}" AS "${col}"`)
   })
 
   reqViews[viewID] = knex.raw(`
@@ -463,11 +523,11 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   ) as ${viewID}
 `, [customerID, viewHash])
 
-  reqViewColumns[viewID] = viewColumns
+  reqViewColumns[viewID] = getReqViewColumns(logType, accessMap[prefix])
 }
 
 const listViews = async (access) => {
-  const { whitelabel, customers } = access
+  const { whitelabel, customers, prefix } = access
   const agencies = await getCustomers(whitelabel, customers, CU_AGENCY)
   return agencies.reduce(
     (views, { customerID, customerName }) => views.concat(
@@ -481,7 +541,7 @@ const listViews = async (access) => {
             agencyID: customerID,
           },
           // TODO: remove 'columns' -> use listView() to get full view
-          columns: getReqViewColumns(type),
+          columns: getReqViewColumns(type, accessMap[prefix]),
         }),
       ),
     ),
@@ -500,7 +560,7 @@ const listView = async (access, viewID) => {
     throw apiError(`Invalid log type: ${logType}`, 403)
   }
   // check access
-  const { whitelabel, customers } = access
+  const { whitelabel, customers, prefix } = access
   if (!(Array.isArray(customers) && customers.includes(agencyID)) && customers !== -1) {
     throw apiError('Invalid access permissions', 403)
   }
@@ -517,7 +577,7 @@ const listView = async (access, viewID) => {
       logType,
       agencyID,
     },
-    columns: getReqViewColumns(logType),
+    columns: getReqViewColumns(logType, accessMap[prefix]),
   }
 }
 
