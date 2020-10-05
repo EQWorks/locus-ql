@@ -5,7 +5,7 @@ const apiError = require('../../util/api-error')
 
 
 const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather', 'layer', 'logs',
-  { reports: ['reportwi'] },
+  { reports: ['reportwi', 'reportvwi'] },
 ]
 const ALL_VIEWS_LIST = VIEW_LIST.map((v) => {
   if (typeof v === 'object') return Object.values(v)[0]
@@ -44,7 +44,7 @@ module.exports.listViews = async (access) => {
     let vn = viewName
     if (typeof viewName === 'object') {
       vn = Object.keys(viewName)[0]
-      acc[vn] = viewName[vn].map((v, i) => ({ name: v, viewData: views[index + i].flat() }))
+      acc[vn] = viewName[vn].map((v, i) => ({ name: v, viewData: views[index][i].flat() }))
     } else {
       acc[vn] = views[index]
     }
