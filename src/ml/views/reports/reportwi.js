@@ -136,7 +136,7 @@ const listView = async (access, viewID) => {
     layerIDs = [{ layer_id: parseInt(layerIDStr, 10) }]
   }
 
-  return Promise.all(layerIDs.map(async ({ layer_id }) => {
+  const viewLayers = await Promise.all(layerIDs.map(async ({ layer_id }) => {
     const layerQuery = knex('layer')
     layerQuery.column(['name', 'layer_type_id'])
     layerQuery.select(knex.raw(`
@@ -164,7 +164,7 @@ const listView = async (access, viewID) => {
 
     const [reportLayer] = await layerQuery
     if (!reportLayer) {
-      throw apiError('Access to layer not allowed', 403)
+      return null
     }
     const { name, layer_type_id, dates } = reportLayer
     Object.entries(options.columns).forEach(([key, column]) => { column.key = key })
@@ -181,6 +181,10 @@ const listView = async (access, viewID) => {
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
   }))
+  if (viewLayers.filter(v => v).length === 0) {
+    throw apiError('Access to layer(s) not allowed', 403)
+  }
+  return viewLayers.filter(v => v)
 }
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
