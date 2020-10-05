@@ -4,7 +4,13 @@
 const apiError = require('../../util/api-error')
 
 
-const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather', 'layer', 'logs']
+const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather', 'layer', 'logs',
+  { reports: ['reportwi'] },
+]
+const ALL_VIEWS_LIST = VIEW_LIST.map((v) => {
+  if (typeof v === 'object') return Object.values(v)[0]
+  return v
+}).flat()
 
 // VIEWS structure:
 // VIEWS = {
@@ -13,17 +19,35 @@ const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather', 'layer', 'lo
 //   ...
 // }
 const VIEWS = VIEW_LIST.reduce((accViews, viewName) => {
-  accViews[viewName] = require(`./${viewName}`)
+  let view = viewName
+  if (typeof viewName === 'object') {
+    view = Object.keys(viewName)[0]
+    viewName[view].forEach((v) => { accViews[v] = require(`./${view}/${v}`) })
+  } else {
+    accViews[view] = require(`./${view}`)
+  }
   return accViews
 }, {})
 
 // return all accessible views
 module.exports.listViews = async (access) => {
-  const viewPromises = Object.values(VIEWS).map(view => view.listViews(access))
+  const viewPromises = VIEW_LIST.map(async (v) => {
+    if (typeof v === 'object') {
+      const vName = Object.keys(v)[0]
+      return Promise.all(v[vName].map(subV => VIEWS[subV].listViews(access)))
+    }
+    return VIEWS[v].listViews(access)
+  })
   const views = await Promise.all(viewPromises)
 
   return VIEW_LIST.reduce((acc, viewName, index) => {
-    acc[viewName] = views[index]
+    let vn = viewName
+    if (typeof viewName === 'object') {
+      vn = Object.keys(viewName)[0]
+      acc[vn] = viewName[vn].map((v, i) => ({ name: v, viewData: views[index + i].flat() }))
+    } else {
+      acc[vn] = views[index]
+    }
     return acc
   }, {})
 }
@@ -39,7 +63,7 @@ module.exports.getViews = async (req, res, next) => {
     await Promise.all(views.map(async (view) => {
       const { type, id, ...viewParams } = view
 
-      if (!VIEW_LIST.includes(type)) {
+      if (!ALL_VIEWS_LIST.includes(type)) {
         throw apiError(`Invalid view type: ${type}`, 403)
       }
 
@@ -58,12 +82,14 @@ module.exports.getViews = async (req, res, next) => {
     return next(error)
   }
 }
+
 module.exports.listView = async (req, res, next) => {
   try {
     const { access } = req
     const { viewID } = req.params
     const [, type] = viewID.match(/^([^_]+)_.*$/) || []
-    if (!VIEW_LIST.includes(type)) {
+
+    if (!ALL_VIEWS_LIST.includes(type)) {
       throw apiError(`Invalid view type: ${viewID}`, 403)
     }
 
