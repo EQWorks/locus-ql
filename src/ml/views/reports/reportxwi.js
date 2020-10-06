@@ -40,6 +40,7 @@ const options = {
     unique_visitors: { category: CAT_NUMERIC },
     repeat_visits: { category: CAT_NUMERIC },
     repeat_visitors: { category: CAT_NUMERIC },
+    repeat_visitor_rate: { category: CAT_NUMERIC },
     visits_hod: { category: CAT_JSON },
     visits_dow: { category: CAT_JSON },
     unique_visitors_hod: { category: CAT_JSON },
@@ -50,30 +51,47 @@ const options = {
     unique_hh: { category: CAT_NUMERIC },
     repeat_visitors_hh: { category: CAT_NUMERIC },
     outlier: { category: CAT_BOOL },
+
+    target_poi_list_id: { category: CAT_NUMERIC },
+    target_poi_id: { category: CAT_NUMERIC },
+    xvisit_visits: { category: CAT_NUMERIC },
+    xvisit_unique_visitors: { category: CAT_NUMERIC },
+    xvisit_repeat_visits: { category: CAT_NUMERIC },
+    xvisit_repeat_visitors: { category: CAT_NUMERIC },
+    xvisit_visits_hod: { category: CAT_JSON },
+    xvisit_visits_dow: { category: CAT_JSON },
+    xvisit_unique_visitors_hod: { category: CAT_JSON },
+    xvisit_unique_visitors_dow: { category: CAT_JSON },
+    timeto_xvisit: { category: CAT_NUMERIC },
+    xvisit_unique_visitors_single_visit: { category: CAT_NUMERIC },
+    xvisit_unique_visitors_multi_visit: { category: CAT_NUMERIC },
+    xvisit_unique_xdevice: { category: CAT_NUMERIC },
+    xvisit_unique_hh: { category: CAT_NUMERIC },
   },
 }
 
 const listViews = async (access, filter = {}) => {
   const { whitelabel, customers } = access
-  const layerTypeID = 1 // wi
-  filter.layer_type_id = layerTypeID
+  const reportLayerTypes = [16, 17] // xwi and xvwi
 
   const layerQuery = knex('layer')
-  layerQuery.column(['name', 'layer_id', 'layer.report_id', 'layer_type_id'])
+  layerQuery.column(['name', 'layer_id', 'layer.report_id', 'layer_type_id' ])
   layerQuery.select(knex.raw(`
     COALESCE(
       ARRAY_AGG(DISTINCT ARRAY[
-        report_wi.start_date::varchar,
-        report_wi.end_date::varchar,
-        report_wi.date_type::varchar
+        report_xwi.start_date::varchar,
+        report_xwi.end_date::varchar,
+        report_xwi.date_type::varchar
       ])
-      FILTER (WHERE report_wi.start_date IS NOT null),
+      FILTER (WHERE report_xwi.start_date IS NOT null),
       '{}'
     ) AS dates
   `))
   layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
   layerQuery.leftJoin('report_wi', 'report_wi.report_id', 'layer.report_id')
+  layerQuery.leftJoin('report_xwi', 'report_xwi.report_id', 'layer.report_id')
   layerQuery.where(filter)
+  layerQuery.whereIn('layer_type_id', reportLayerTypes)
   layerQuery.whereNull('parent_layer')
   if (whitelabel !== -1) {
     layerQuery.where({ whitelabel: whitelabel[0] })
@@ -86,15 +104,12 @@ const listViews = async (access, filter = {}) => {
   const reportLayers = await layerQuery
   return reportLayers.map(({ name, layer_id, report_id, layer_type_id, dates }) => {
     // TODO: remove 'columns' -> use listView() to get full view
-    Object.entries(options.columns).forEach(([key, column]) => {
-      column.key = key
-    })
-
+    Object.entries(options.columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
       view: {
-        type: 'reportwi', // TODO: dash error on name type
-        id: `reportwi_${layer_id}_${report_id}`,
+        type: 'reportxwi',
+        id: `reportxwi_${layer_id}_${report_id}`,
         report_id,
         layer_id,
       },
@@ -108,8 +123,8 @@ const listViews = async (access, filter = {}) => {
 
 const listView = async (access, viewID) => {
   const { whitelabel, customers } = access
-  const layerTypeID = 1 // wi
-  const [, layerIDStr, reportIDStr] = viewID.match(/^reportwi_(\d+|\w+)_(\d+)$/) || []
+  const reportLayerTypes = [16, 17] // xwi and xvwi
+  const [, layerIDStr, reportIDStr] = viewID.match(/^reportxwi_(\d+|\w+)_(\d+)$/) || []
   let layerIDs = []
 
   // eslint-disable-next-line radix
@@ -142,17 +157,19 @@ const listView = async (access, viewID) => {
     layerQuery.select(knex.raw(`
       COALESCE(
         ARRAY_AGG(DISTINCT ARRAY[
-          report_wi.start_date::varchar,
-          report_wi.end_date::varchar,
-          report_wi.date_type::varchar
+          report_xwi.start_date::varchar,
+          report_xwi.end_date::varchar,
+          report_xwi.date_type::varchar
         ])
-        FILTER (WHERE report_wi.start_date IS NOT null),
+        FILTER (WHERE report_xwi.start_date IS NOT null),
         '{}'
       ) AS dates
     `))
     layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
     layerQuery.leftJoin('report_wi', 'report_wi.report_id', 'layer.report_id')
-    layerQuery.where({ layer_id, 'layer.report_id': reportID, layer_type_id: layerTypeID })
+    layerQuery.leftJoin('report_xwi', 'report_xwi.report_id', 'layer.report_id')
+    layerQuery.where({ layer_id, 'layer.report_id': reportID })
+    layerQuery.whereIn('layer_type_id', reportLayerTypes)
     layerQuery.whereNull('parent_layer')
     if (whitelabel !== -1) {
       layerQuery.where({ whitelabel: whitelabel[0] })
@@ -171,8 +188,8 @@ const listView = async (access, viewID) => {
     return {
       name,
       view: {
-        type: 'reportwi',
-        id: `reportwi_${layer_id}_${reportID}`,
+        type: 'reportxwi',
+        id: `reportxwi_${layer_id}_${reportID}`,
         report_id: reportID,
         layer_id,
       },
@@ -182,14 +199,14 @@ const listView = async (access, viewID) => {
     }
   }))
   if (viewLayers.filter(v => v).length === 0) {
-    throw apiError('Access to layer(s) not allowed', 403)
+    throw apiError('Access to layer(s) not allowed.', 403)
   }
   return viewLayers.filter(v => v)
 }
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
   const { whitelabel, customers } = access
-  const viewID = `reportwi_${layer_id}_${report_id}`
+  const viewID = `reportxwi_${layer_id}_${report_id}`
 
   const [layer] = await listLayers(
     whitelabel,
@@ -225,39 +242,63 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
 
       layer.wi_factor,
 
-      report.report_id,
-      report.date_type,
-      report.start_date,
-      report.end_date,
-      report.repeat_type,
-      report.visits * layer.wi_factor as visits,
-      report.unique_visitors * layer.wi_factor as unique_visitors,
-      report.repeat_visits * layer.wi_factor as repeat_visits,
-      report.repeat_visitors * layer.wi_factor as repeat_visitors,
+      wi.report_id,
+      wi.date_type,
+      wi.start_date,
+      wi.end_date,
+      wi.repeat_type,
+      wi.visits * layer.wi_factor as visits,
+      wi.unique_visitors * layer.wi_factor as unique_visitors,
+      wi.repeat_visits * layer.wi_factor as repeat_visits,
+      wi.repeat_visitors * layer.wi_factor as repeat_visitors,
       CASE
-        WHEN report.unique_visitors in (null, 0) THEN 0
-        ELSE report.repeat_visitors / report.unique_visitors::float
+        WHEN wi.unique_visitors in (null, 0) THEN 0
+        ELSE wi.repeat_visitors / wi.unique_visitors::float
       END as repeat_visitor_rate,
-      report.visits_hod,
-      report.visits_dow,
-      report.unique_visitors_hod,
-      report.unique_visitors_dow,
-      report.unique_visitors_single_visit * layer.wi_factor as unique_visitors_single_visit,
-      report.unique_visitors_multi_visit * layer.wi_factor as unique_visitors_multi_visit,
-      report.unique_xdevice * layer.wi_factor as unique_xdevice,
-      report.unique_hh * layer.wi_factor as unique_hh,
-      report.repeat_visitors_hh * layer.wi_factor as repeat_visitors_hh,
-      report.outlier
+      wi.visits_hod,
+      wi.visits_dow,
+      wi.unique_visitors_hod,
+      wi.unique_visitors_dow,
+      wi.unique_visitors_single_visit * layer.wi_factor as unique_visitors_single_visit,
+      wi.unique_visitors_multi_visit * layer.wi_factor as unique_visitors_multi_visit,
+      wi.unique_xdevice * layer.wi_factor as unique_xdevice,
+      wi.unique_hh * layer.wi_factor as unique_hh,
+      wi.repeat_visitors_hh * layer.wi_factor as repeat_visitors_hh,
+      wi.outlier,
+
+      xwi.target_poi_list_id,
+      xwi.target_poi_id,
+      xwi.xvisit_visits * layer.wi_factor as xvisit_visits,
+      xwi.xvisit_unique_visitors * layer.wi_factor as xvisit_unique_visitors,
+      xwi.xvisit_repeat_visits * layer.wi_factor as xvisit_repeat_visits,
+      xwi.xvisit_repeat_visitors * layer.wi_factor as xvisit_repeate_visitors,
+      xwi.xvisit_visits_hod,
+      xwi.xvisit_visits_dow,
+      xwi.xvisit_unique_visitors_hod,
+      xwi.xvisit_unique_visitors_dow,
+      xwi.timeto_xvisit,
+      xwi.xvisit_unique_visitors_single_visit * layer.wi_factor
+        as xvisit_unique_visitors_single_visit,
+      xwi.xvisit_unique_visitors_multi_visit * layer.wi_factor
+        as xvisit_unique_visitors_multi_visit,
+      xwi.xvisit_unique_xdevice * layer.wi_factor as xvisit_unique_xdevice,
+      xwi.xvisit_unique_hh * layer.wi_factor as xvisit_unique_hh
     FROM poi
     LEFT JOIN tz_world AS tz ON ST_Contains(
       tz.geom,
       ST_SetSRID(ST_MakePoint(poi.lon, poi.lat), 4326)
     )
     RIGHT JOIN poi_list_map ON poi.poi_id = poi_list_map.poi_id
-    RIGHT JOIN layer ON layer.poi_list_id = poi_list_map.poi_list_id
-    LEFT JOIN report_wi AS report ON report.poi_id = poi.poi_id
-    WHERE report.report_id = ?
-      AND layer.layer_id = ?
+    RIGHT JOIN LAYER ON layer.poi_list_id = poi_list_map.poi_list_id
+    LEFT JOIN report_wi AS wi ON wi.poi_id = poi.poi_id
+    LEFT JOIN report_xwi as xwi ON
+      wi.report_id = xwi.report_id AND
+      wi.date_type = xwi.date_type AND
+      wi.start_date = xwi.start_date AND
+      wi.end_date = xwi.end_date AND
+      wi.repeat_type = xwi.repeat_type
+    WHERE wi.report_id = ?
+    AND layer.layer_id = ?
     ) as ${viewID}
   `, [report_id, layer_id])
 }

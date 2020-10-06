@@ -5,7 +5,7 @@ const apiError = require('../../util/api-error')
 
 
 const VIEW_LIST = ['ext', 'report', 'report-vwi', 'geo', 'weather', 'layer', 'logs',
-  { reports: ['reportwi', 'reportvwi'] },
+  { reports: ['reportwi', 'reportvwi', 'reportxwi'] },
 ]
 const ALL_VIEWS_LIST = VIEW_LIST.map((v) => {
   if (typeof v === 'object') return Object.values(v)[0]
