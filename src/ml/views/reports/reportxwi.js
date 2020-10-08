@@ -75,7 +75,7 @@ const listViews = async (access, filter = {}) => {
   const reportLayerTypes = [16, 17] // xwi and xvwi
 
   const layerQuery = knex('layer')
-  layerQuery.column(['name', 'layer_id', 'layer.report_id', 'layer_type_id' ])
+  layerQuery.column(['name', 'layer_id', 'layer.report_id', 'layer_type_id'])
   layerQuery.select(knex.raw(`
     COALESCE(
       ARRAY_AGG(DISTINCT ARRAY[
