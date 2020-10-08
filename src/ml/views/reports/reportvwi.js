@@ -29,7 +29,6 @@ const options = {
     address_postalcode: { category: CAT_STRING },
     address_country: { category: CAT_STRING },
 
-    wi_factor: { category: CAT_NUMERIC },
     vwi_factor: { category: CAT_NUMERIC },
 
     report_id: { category: CAT_NUMERIC },
@@ -37,20 +36,6 @@ const options = {
     start_date: { category: CAT_DATE },
     end_date: { category: CAT_DATE },
     repeat_type: { category: CAT_NUMERIC },
-    visits: { category: CAT_NUMERIC },
-    unique_visitors: { category: CAT_NUMERIC },
-    repeat_visits: { category: CAT_NUMERIC },
-    repeat_visitors: { category: CAT_NUMERIC },
-    repeat_visitor_rate: { category: CAT_NUMERIC },
-    visits_hod: { category: CAT_JSON },
-    visits_dow: { category: CAT_JSON },
-    unique_visitors_hod: { category: CAT_JSON },
-    unique_visitors_dow: { category: CAT_JSON },
-    unique_visitors_single_visit: { category: CAT_NUMERIC },
-    unique_visitors_multi_visit: { category: CAT_NUMERIC },
-    unique_xdevice: { category: CAT_NUMERIC },
-    unique_hh: { category: CAT_NUMERIC },
-    repeat_visitors_hh: { category: CAT_NUMERIC },
     outlier: { category: CAT_BOOL },
 
     beacon: { category: CAT_NUMERIC },
@@ -64,7 +49,6 @@ const options = {
     converted_beacon_unique_hh: { category: CAT_NUMERIC },
     converted_visits: { category: CAT_NUMERIC },
     converted_unique_visitors: { category: CAT_NUMERIC },
-    visitor_conversion_rate: { category: CAT_NUMERIC },
     converted_repeat_visits: { category: CAT_NUMERIC },
     converted_repeat_visitors: { category: CAT_NUMERIC },
     repeat_conversion_rate: { category: CAT_NUMERIC },
@@ -82,13 +66,13 @@ const options = {
   },
 }
 
-const listViews = async (access, filter = {}) => {
-  const { whitelabel, customers } = access
-  const layerTypeID = 2 // wi
-  filter.layer_type_id = layerTypeID
-
+const getReportLayers = (wl, cu, filter) => {
+  const whereFilters = {
+    ...filter,
+    'report.type': 2, // vwi
+  }
   const layerQuery = knex('layer')
-  layerQuery.column(['layer.name', 'layer_id', 'layer.report_id', 'layer_type_id'])
+  layerQuery.column(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
   layerQuery.select(knex.raw(`
     COALESCE(
       ARRAY_AGG(DISTINCT ARRAY[
@@ -113,25 +97,40 @@ const listViews = async (access, filter = {}) => {
     ) AS camps
   `))
   layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
-  layerQuery.leftJoin('report_vwi', 'report_vwi.report_id', 'layer.report_id')
+  layerQuery.leftJoin('report', 'layer.report_id', 'report.report_id')
+  layerQuery.innerJoin('report_vwi', 'report.report_id', 'report_vwi.report_id')
   layerQuery.joinRaw('LEFT JOIN camps on camps.camp_id::text = report_vwi.campaign')
-  layerQuery.where(filter)
+  layerQuery.where(whereFilters)
   layerQuery.whereNull('parent_layer')
-  if (whitelabel !== -1) {
-    layerQuery.where({ whitelabel: whitelabel[0] })
-    if (customers !== -1) {
-      layerQuery.where({ agencyid: customers[0] })
+  if (wl !== -1) {
+    layerQuery.where({ whitelabel: wl[0] })
+    if (cu !== -1) {
+      layerQuery.where({ agencyid: cu[0] })
     }
   }
-  layerQuery.groupBy(['layer.name', 'layer_id', 'layer.report_id', 'layer_type_id'])
+  layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
+  return layerQuery
+}
 
-  const reportLayers = await layerQuery
-  return reportLayers.map(({ name, layer_id, report_id, layer_type_id, dates, vendors, camps }) => {
-    // TODO: remove 'columns' -> use listView() to get full view
-    Object.entries(options.columns).forEach(([key, column]) => {
-      column.key = key
-    })
+const getLayerIDs = (wl, cu, reportID) => {
+  const layerIDQuery = knex('layer')
+  layerIDQuery.column('layer_id')
+  layerIDQuery.where({ report_id: reportID })
+  layerIDQuery.whereNull('parent_layer')
+  if (wl !== -1) {
+    layerIDQuery.where({ whitelabel: wl[0] })
+    if (cu !== -1) {
+      layerIDQuery.where({ agencyid: cu[0] })
+    }
+  }
+  return layerIDQuery
+}
 
+const listViews = async (access, filter) => {
+  const { whitelabel, customers } = access
+  const reportLayers = await getReportLayers(whitelabel, customers, filter)
+  return reportLayers.map(({ name, layer_id, report_id, type, dates, vendors, camps }) => {
+    Object.entries(options.columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
       view: {
@@ -142,7 +141,7 @@ const listViews = async (access, filter = {}) => {
       },
       // TODO: remove 'columns' and meta fields -> use listView() to get full view
       columns: options.columns,
-      layer_type_id,
+      report_type: type,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
       vendors,
       camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
@@ -152,7 +151,6 @@ const listViews = async (access, filter = {}) => {
 
 const listView = async (access, viewID) => {
   const { whitelabel, customers } = access
-  const layerTypeID = 2 // wi
   const [, layerIDStr, reportIDStr] = viewID.match(/^reportvwi_(\d+|\w+)_(\d+)$/) || []
   let layerIDs = []
 
@@ -163,80 +161,29 @@ const listView = async (access, viewID) => {
   }
   // optional layer_id param
   if (layerIDStr === 'any') {
-    const layerIDQuery = knex('layer')
-    layerIDQuery.column('layer_id')
-    layerIDQuery.where({ report_id: reportID })
-    layerIDQuery.whereNull('parent_layer')
-    if (whitelabel !== -1) {
-      layerIDQuery.where({ whitelabel: whitelabel[0] })
-      if (customers !== -1) {
-        layerIDQuery.where({ agencyid: customers[0] })
-      }
-    }
-
-    layerIDs = await layerIDQuery
+    layerIDs = await getLayerIDs(whitelabel, customers, reportID)
   } else {
     // eslint-disable-next-line radix
     layerIDs = [{ layer_id: parseInt(layerIDStr, 10) }]
   }
 
   const viewLayers = await Promise.all(layerIDs.map(async ({ layer_id }) => {
-    const layerQuery = knex('layer')
-    layerQuery.column(['layer.name', 'layer_type_id'])
-    layerQuery.select(knex.raw(`
-      COALESCE(
-        ARRAY_AGG(DISTINCT ARRAY[
-          report_vwi.start_date::varchar,
-          report_vwi.end_date::varchar,
-          report_vwi.date_type::varchar
-        ])
-        FILTER (WHERE report_vwi.start_date IS NOT null),
-        '{}'
-      ) AS dates
-    `))
-    layerQuery.select(knex.raw(`
-      COALESCE(
-        ARRAY_AGG(DISTINCT report_vwi.vendor) FILTER (WHERE report_vwi.vendor != ''), '{}'
-      ) AS vendors
-    `))
-    layerQuery.select(knex.raw(`
-      COALESCE(
-        ARRAY_AGG(DISTINCT ARRAY[report_vwi.campaign, camps.name])
-        FILTER (WHERE report_vwi.campaign != ''),
-        '{}'
-      ) AS camps
-    `))
-    layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
-    layerQuery.leftJoin('report_vwi', 'report_vwi.report_id', 'layer.report_id')
-    layerQuery.joinRaw('LEFT JOIN camps on camps.camp_id::text = report_vwi.campaign')
-    layerQuery.where({ layer_id, 'layer.report_id': reportID, layer_type_id: layerTypeID })
-    layerQuery.whereNull('parent_layer')
-    if (whitelabel !== -1) {
-      layerQuery.where({ whitelabel: whitelabel[0] })
-      if (customers !== -1) {
-        layerQuery.where({ agencyid: customers[0] })
-      }
-    }
-    layerQuery.groupBy(['layer.name', 'layer_type_id'])
-
-    const [reportLayer] = await layerQuery
+    const [reportLayer] = await getReportLayers(whitelabel, customers)
     if (!reportLayer) {
       return null
     }
-    const { name, layer_type_id, dates, vendors, camps } = reportLayer
-
+    const { name, type, dates, vendors, camps } = reportLayer
     Object.entries(options.columns).forEach(([key, column]) => { column.key = key })
-
     return {
       name,
       view: {
-        type: 'report-vwi',
-        id: `report-vwi_${layer_id}_${reportID}`,
+        type: 'reportvwi',
+        id: `reportvwi_${layer_id}_${reportID}`,
         report_id: reportID,
         layer_id,
       },
       columns: options.columns,
-      layer_type_id,
+      report_type: type,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
       vendors,
       camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
@@ -251,7 +198,6 @@ const listView = async (access, viewID) => {
 const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
   const { whitelabel, customers } = access
   const viewID = `reportvwi_${layer_id}_${report_id}`
-
   const [layer] = await listLayers(
     whitelabel,
     customers,
@@ -262,7 +208,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
   }
 
   // inject view columns
-  const viewMeta = await listViews(access, { layer_id, 'report_wi.report_id': report_id })
+  const viewMeta = await listViews(access, { layer_id, 'report_vwi.report_id': report_id })
   reqViewColumns[viewID] = (viewMeta[0] || {}).columns
 
   // inject view
@@ -284,38 +230,19 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       poi.address_postalcode,
       poi.address_country,
 
-      layer.wi_factor,
       layer.vwi_factor,
 
-      wi.report_id,
-      wi.date_type,
-      wi.start_date,
-      wi.end_date,
-      wi.repeat_type,
-      wi.visits * layer.wi_factor as visits,
-      wi.unique_visitors * layer.wi_factor as unique_visitors,
-      wi.repeat_visits * layer.wi_factor as repeat_visits,
-      wi.repeat_visitors * layer.wi_factor as repeat_visitors,
-      CASE
-        WHEN wi.unique_visitors in (null, 0) THEN 0
-        ELSE wi.repeat_visitors / wi.unique_visitors::float
-      END as repeat_visitor_rate,
-      wi.visits_hod,
-      wi.visits_dow,
-      wi.unique_visitors_hod,
-      wi.unique_visitors_dow,
-      wi.unique_visitors_single_visit * layer.wi_factor as unique_visitors_single_visit,
-      wi.unique_visitors_multi_visit * layer.wi_factor as unique_visitors_multi_visit,
-      wi.unique_xdevice * layer.wi_factor as unique_xdevice,
-      wi.unique_hh * layer.wi_factor as unique_hh,
-      wi.repeat_visitors_hh * layer.wi_factor as repeat_visitors_hh,
-      wi.outlier,
+      vwi.report_id,
+      vwi.date_type,
+      vwi.start_date,
+      vwi.end_date,
+      vwi.repeat_type,
+      vwi.outlier,
 
       vwi.beacon,
       vwi.beacon_unique_user,
       vwi.beacon_xdevice,
       vwi.beacon_unique_hh,
-
       vwi.converted_beacon * layer.vwi_factor as converted_beacon,
       vwi.converted_beacon_unique_user * layer.vwi_factor as converted_beacon_unique_user,
       CASE
@@ -326,10 +253,6 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       vwi.converted_beacon_unique_hh * layer.vwi_factor as converted_beacon_unique_hh,
       vwi.converted_visits * layer.vwi_factor as converted_visits,
       vwi.converted_unique_visitors * layer.vwi_factor as converted_unique_visitors,
-      CASE
-        WHEN wi.unique_visitors in (null, 0) THEN 0
-        ELSE vwi.converted_unique_visitors / wi.unique_visitors::float
-      END as visitor_conversion_rate,
       vwi.converted_repeat_visits * layer.vwi_factor as converted_repeat_visits,
       vwi.converted_repeat_visitors * layer.vwi_factor as converted_repeat_visitors,
       CASE
@@ -356,15 +279,12 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     )
     RIGHT JOIN poi_list_map ON poi.poi_id = poi_list_map.poi_id
     RIGHT JOIN LAYER ON layer.poi_list_id = poi_list_map.poi_list_id
-    LEFT JOIN report_wi AS wi ON wi.poi_id = poi.poi_id
-    LEFT JOIN report_vwi as vwi ON
-      wi.report_id = vwi.report_id AND
-      wi.poi_id = vwi.poi_id AND
-      wi.date_type = vwi.date_type AND
-      wi.start_date = vwi.start_date AND
-      wi.end_date = vwi.end_date AND
-      wi.repeat_type = vwi.repeat_type
-    WHERE wi.report_id = ?
+    LEFT JOIN report AS r ON r.report_id = layer.report_id
+    INNER JOIN report_vwi as vwi ON
+      vwi.report_id = r.report_id AND
+      vwi.poi_id = poi.poi_id
+    WHERE r.type = 2
+      AND r.report_id = ?
       AND layer.layer_id = ?
     ) as ${viewID}
   `, [report_id, layer_id])
