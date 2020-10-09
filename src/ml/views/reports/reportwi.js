@@ -14,7 +14,7 @@ const options = {
   columns: {
     time_zone: { category: CAT_STRING },
     poi_id: { category: CAT_NUMERIC },
-    name: { category: CAT_STRING },
+    poi_name: { category: CAT_STRING },
     chain_id: { category: CAT_NUMERIC },
     type: { category: CAT_NUMERIC },
     category: { category: CAT_NUMERIC },
@@ -30,6 +30,7 @@ const options = {
     address_country: { category: CAT_STRING },
 
     wi_factor: { category: CAT_NUMERIC },
+    name: { category: CAT_STRING },
 
     report_id: { category: CAT_NUMERIC },
     date_type: { category: CAT_NUMERIC },
@@ -51,6 +52,12 @@ const options = {
     unique_hh: { category: CAT_NUMERIC },
     repeat_visitors_hh: { category: CAT_NUMERIC },
     outlier: { category: CAT_BOOL },
+  },
+  aoi: {
+    aoi_type: { category: CAT_STRING },
+    aoi_id: { category: CAT_STRING },
+    aoi_category: { category: CAT_STRING },
+    inflator: { category: CAT_NUMERIC },
   },
 }
 
@@ -101,11 +108,28 @@ const getLayerIDs = (wl, cu, reportID) => {
   return layerIDQuery
 }
 
+const hasAOIData = async (wl, layerID, reportID) => {
+  const whereFilters = [`wi_aoi.report_id = ${reportID}`, `l.layer_id = ${layerID}`]
+  if (wl !== -1) whereFilters.push(`l.whitelabel = ${wl}`)
+  const { rows: [{ exists }] } = await knex.raw(`
+    SELECT EXISTS (SELECT
+      l.layer_id,
+      wi_aoi.aoi_id
+    FROM layer l
+      JOIN report_wi_aoi wi_aoi ON wi_aoi.report_id = l.report_id
+    WHERE ${whereFilters.join(' AND ')}
+    )
+  `)
+  return exists
+}
+
 const listViews = async (access, filter = {}) => {
   const { whitelabel, customers } = access
   const reportLayers = await getReportLayers(whitelabel, customers, filter)
-  return reportLayers.map(({ name, layer_id, report_id, type, dates }) => {
-    Object.entries(options.columns).forEach(([key, column]) => { column.key = key })
+  return Promise.all(reportLayers.map(async ({ name, layer_id, report_id, type, dates }) => {
+    const hasAOI = await hasAOIData(whitelabel, layer_id, report_id)
+    const columns = hasAOI ? Object.assign({}, options.columns, options.aoi) : options.columns
+    Object.entries(columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
       view: {
@@ -115,11 +139,11 @@ const listViews = async (access, filter = {}) => {
         layer_id,
       },
       // TODO: remove 'columns' and meta fields -> use listView() to get full view
-      columns: options.columns,
+      columns,
       report_type: type,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
-  })
+  }))
 }
 
 const listView = async (access, viewID) => {
@@ -141,12 +165,18 @@ const listView = async (access, viewID) => {
   }
 
   const viewLayers = await Promise.all(layerIDs.map(async ({ layer_id }) => {
-    const [reportLayer] = await getReportLayers(whitelabel, customers)
+    const [reportLayer] = await getReportLayers(
+      whitelabel,
+      customers,
+      { layer_id, 'report_wi.report_id': reportID },
+    )
     if (!reportLayer) {
       return null
     }
     const { name, type, dates } = reportLayer
-    Object.entries(options.columns).forEach(([key, column]) => { column.key = key })
+    const hasAOI = await hasAOIData(whitelabel, layer_id, reportID)
+    const columns = hasAOI ? Object.assign({}, options.columns, options.aoi) : options.columns
+    Object.entries(columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
       view: {
@@ -155,7 +185,7 @@ const listView = async (access, viewID) => {
         report_id: reportID,
         layer_id,
       },
-      columns: options.columns,
+      columns,
       report_type: type,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
@@ -182,11 +212,13 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
   const viewMeta = await listViews(access, { layer_id, 'report_wi.report_id': report_id })
   reqViewColumns[viewID] = (viewMeta[0] || {}).columns
 
+  const whereFilters = ['r.type = 1', `r.report_id = ${report_id}`, `layer.layer_id = ${layer_id}`]
+  if (whitelabel !== -1) whereFilters.push(`layer.whitelabel = ${whitelabel}`)
   // inject view
   reqViews[viewID] = knex.raw(`
     (SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
       poi.poi_id,
-      poi.name,
+      poi.name AS poi_name,
       poi.chain_id,
       poi.type,
       poi.category,
@@ -202,30 +234,35 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       poi.address_country,
 
       layer.wi_factor,
+      layer.name,
 
-      report.report_id,
-      report.date_type,
-      report.start_date,
-      report.end_date,
-      report.repeat_type,
-      report.visits * layer.wi_factor as visits,
-      report.unique_visitors * layer.wi_factor as unique_visitors,
-      report.repeat_visits * layer.wi_factor as repeat_visits,
-      report.repeat_visitors * layer.wi_factor as repeat_visitors,
+      wi.report_id,
+      wi.date_type,
+      wi.start_date,
+      wi.end_date,
+      wi.repeat_type,
+      wi.visits * layer.wi_factor as visits,
+      wi.unique_visitors * layer.wi_factor as unique_visitors,
+      wi.repeat_visits * layer.wi_factor as repeat_visits,
+      wi.repeat_visitors * layer.wi_factor as repeat_visitors,
       CASE
-        WHEN report.unique_visitors in (null, 0) THEN 0
-        ELSE report.repeat_visitors / report.unique_visitors::float
+        WHEN wi.unique_visitors in (null, 0) THEN 0
+        ELSE wi.repeat_visitors / wi.unique_visitors::float
       END as repeat_visitor_rate,
-      report.visits_hod,
-      report.visits_dow,
-      report.unique_visitors_hod,
-      report.unique_visitors_dow,
-      report.unique_visitors_single_visit * layer.wi_factor as unique_visitors_single_visit,
-      report.unique_visitors_multi_visit * layer.wi_factor as unique_visitors_multi_visit,
-      report.unique_xdevice * layer.wi_factor as unique_xdevice,
-      report.unique_hh * layer.wi_factor as unique_hh,
-      report.repeat_visitors_hh * layer.wi_factor as repeat_visitors_hh,
-      report.outlier
+      wi.visits_hod,
+      wi.visits_dow,
+      wi.unique_visitors_hod,
+      wi.unique_visitors_dow,
+      wi.unique_visitors_single_visit * layer.wi_factor as unique_visitors_single_visit,
+      wi.unique_visitors_multi_visit * layer.wi_factor as unique_visitors_multi_visit,
+      wi.unique_xdevice * layer.wi_factor as unique_xdevice,
+      wi.unique_hh * layer.wi_factor as unique_hh,
+      wi.repeat_visitors_hh * layer.wi_factor as repeat_visitors_hh,
+      wi.outlier,
+      wi_aoi.aoi_type,
+      wi_aoi.aoi_id,
+      wi_aoi.aoi_category,
+      wi_aoi.inflator
     FROM poi
     LEFT JOIN tz_world AS tz ON ST_Contains(
       tz.geom,
@@ -234,14 +271,19 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     RIGHT JOIN poi_list_map ON poi.poi_id = poi_list_map.poi_id
     RIGHT JOIN layer ON layer.poi_list_id = poi_list_map.poi_list_id
     LEFT JOIN report AS r ON r.report_id = layer.report_id
-    INNER JOIN report_wi AS report ON 
-      report.report_id = r.report_id AND
-      report.poi_id = poi.poi_id
-    WHERE r.type = 1
-      AND r.report_id = ?
-      AND layer.layer_id = ?
+    INNER JOIN report_wi AS wi ON 
+      wi.report_id = r.report_id AND
+      wi.poi_id = poi.poi_id
+    LEFT JOIN report_wi_aoi AS wi_aoi ON
+      wi_aoi.poi_id = poi.poi_id AND
+      wi_aoi.report_id = wi.report_id AND
+      wi_aoi.date_type = wi.date_type AND
+      wi_aoi.start_date = wi.start_date AND
+      wi_aoi.end_date = wi.end_date AND
+      wi_aoi.repeat_type = wi.repeat_type
+    WHERE ${whereFilters.join(' AND ')}
     ) as ${viewID}
-  `, [report_id, layer_id])
+  `)
 }
 
 module.exports = {
