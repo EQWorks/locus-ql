@@ -141,7 +141,11 @@ const listView = async (access, viewID) => {
   }
 
   const viewLayers = await Promise.all(layerIDs.map(async ({ layer_id }) => {
-    const [reportLayer] = await getReportLayers(whitelabel, customers)
+    const [reportLayer] = await getReportLayers(
+      whitelabel,
+      customers,
+      { layer_id, 'report_xwi.report_id': reportID },
+    )
     if (!reportLayer) {
       return null
     }
