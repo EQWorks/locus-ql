@@ -219,7 +219,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       xwi.xvisit_visits * layer.wi_factor as xvisit_visits,
       xwi.xvisit_unique_visitors * layer.wi_factor as xvisit_unique_visitors,
       xwi.xvisit_repeat_visits * layer.wi_factor as xvisit_repeat_visits,
-      xwi.xvisit_repeat_visitors * layer.wi_factor as xvisit_repeate_visitors,
+      xwi.xvisit_repeat_visitors * layer.wi_factor as xvisit_repeat_visitors,
       xwi.xvisit_visits_hod,
       xwi.xvisit_visits_dow,
       xwi.xvisit_unique_visitors_hod,

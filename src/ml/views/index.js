@@ -30,23 +30,28 @@ const VIEWS = VIEW_LIST.reduce((accViews, viewName) => {
 }, {})
 
 // return all accessible views
-module.exports.listViews = async (access) => {
-  const viewPromises = VIEW_LIST.map(async (v) => {
-    if (typeof v === 'object') {
-      const vName = Object.keys(v)[0]
-      return Promise.all(v[vName].map(subV => VIEWS[subV].listViews(access)))
-    }
-    return VIEWS[v].listViews(access)
-  })
-  const views = await Promise.all(viewPromises)
+module.exports.listViews = async ({ access, query: { viewCategory = 'ext', subCategory } }) => {
+  let view
+  if (subCategory) {
+    view = await VIEWS[subCategory].listViews(access)
+  } else {
+    view = await VIEWS[viewCategory].listViews(access)
+  }
 
-  return VIEW_LIST.reduce((acc, viewName, index) => {
+  return VIEW_LIST.reduce((acc, viewName) => {
     let vn = viewName
     if (typeof viewName === 'object') {
       vn = Object.keys(viewName)[0]
-      acc[vn] = viewName[vn].map((v, i) => ({ name: v, viewData: views[index][i].flat() }))
+      acc[vn] = viewName[vn].map((v) => {
+        if (v === subCategory) {
+          return { name: v, viewData: view }
+        }
+        return { name: v, viewData: [] }
+      })
+    } else if (viewName === viewCategory) {
+      acc[vn] = view
     } else {
-      acc[vn] = views[index]
+      acc[vn] = []
     }
     return acc
   }, {})
