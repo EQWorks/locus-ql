@@ -24,7 +24,7 @@ const mlHandler = async (req, res, next) => {
 
 // list out all accessible views with column data
 router.get('/', (req, res, next) => {
-  listViews(req.access).then(data => res.status(200).json(data)).catch(next)
+  listViews(req).then(data => res.status(200).json(data)).catch(next)
 })
 
 // return view object for viewID
