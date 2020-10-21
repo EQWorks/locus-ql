@@ -22,13 +22,18 @@ const mlHandler = async (req, res, next) => {
   }
 }
 
-// list out all accessible views with column data
+// list out all accessible views with column data - legacy (use /views instead)
 router.get('/', (req, res, next) => {
+  listViews(req, true).then(data => res.status(200).json(data)).catch(next)
+})
+
+// list out all accessible views without column nor meta data
+router.get('/views/', (req, res, next) => {
   listViews(req).then(data => res.status(200).json(data)).catch(next)
 })
 
 // return view object for viewID
-router.get('/:viewID', listView)
+router.get('/views/:viewID', listView)
 
 // main query endpoint
 router.post('/', getViews, mlHandler)
