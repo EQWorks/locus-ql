@@ -34,7 +34,10 @@ const getView = (views, viewID) => {
 const select = async (
   views,
   viewColumns,
-  { distinct, columns, from, joins = [], where = [], groupBy, orderBy, limit, db = 'place' },
+  {
+    distinct, columns, from, joins = [], where = [], having = [],
+    groupBy, orderBy, limit, db = 'place',
+  },
 ) => {
   const exp = new Expression(viewColumns)
   let knexDB = knex
@@ -59,6 +62,18 @@ const select = async (
         }
       })
     })
+
+  // Having
+  if (having.length > 0) {
+    having.forEach((havingStatement) => {
+      const [argA, operator, argB] = havingStatement
+      knexQuery.having(
+        typeof argA === 'object' ? exp.parseExpression(argA) : argA,
+        operator,
+        argB,
+      )
+    })
+  }
 
   // Distinct Flag
   if (distinct) {
