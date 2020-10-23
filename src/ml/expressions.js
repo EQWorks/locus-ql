@@ -133,7 +133,7 @@ class Expression {
       }
       const castToVal = cast || func.defaultCast || false
       const castTo = castToVal ? `::${castToVal}` : ''
-      const alias = as ? `as "${as}"` : ''
+      const alias = as ? ` as "${as}"` : ''
 
       // const { category } = func // check argument with category
 
