@@ -66,12 +66,16 @@ const select = async (
   // Having
   if (having.length > 0) {
     having.forEach((havingStatement) => {
-      const [argA, operator, argB] = havingStatement
-      knexQuery.having(
-        typeof argA === 'object' ? exp.parseExpression(argA) : argA,
-        operator,
-        argB,
-      )
+      if (Array.isArray(havingStatement)) {
+        const [argA, operator, argB] = havingStatement
+        knexQuery.having(
+          typeof argA === 'object' ? exp.parseExpression(argA) : argA,
+          operator,
+          argB,
+        )
+      } else if (havingStatement) {
+        knexQuery.havingRaw(exp.parseExpression(havingStatement))
+      }
     })
   }
 
