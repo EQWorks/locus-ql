@@ -123,14 +123,11 @@ const hasAOIData = async (wl, layerID, reportID) => {
   return exists
 }
 
-const listViews = async (access, filter = {}) => {
+const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
   const reportLayers = await getReportLayers(whitelabel, customers, filter)
   return Promise.all(reportLayers.map(async ({ name, layer_id, report_id, type, dates }) => {
-    const hasAOI = await hasAOIData(whitelabel, layer_id, report_id)
-    const columns = hasAOI ? Object.assign({}, options.columns, options.aoi) : options.columns
-    Object.entries(columns).forEach(([key, column]) => { column.key = key })
-    return {
+    const view = {
       name,
       view: {
         type: 'reportwi', // TODO: dash error on name type
@@ -138,11 +135,18 @@ const listViews = async (access, filter = {}) => {
         report_id,
         layer_id,
       },
-      // TODO: remove 'columns' and meta fields -> use listView() to get full view
-      columns,
-      report_type: type,
-      dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
+    if (inclMeta) {
+      const hasAOI = await hasAOIData(whitelabel, layer_id, report_id)
+      const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+      Object.entries(columns).forEach(([key, column]) => { column.key = key })
+      Object.assign(view, {
+        columns,
+        report_type: type,
+        dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
+      })
+    }
+    return view
   }))
 }
 
@@ -175,7 +179,7 @@ const listView = async (access, viewID) => {
     }
     const { name, type, dates } = reportLayer
     const hasAOI = await hasAOIData(whitelabel, layer_id, reportID)
-    const columns = hasAOI ? Object.assign({}, options.columns, options.aoi) : options.columns
+    const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
     Object.entries(columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
@@ -209,7 +213,10 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
   }
 
   // inject view columns
-  const viewMeta = await listViews(access, { layer_id, 'report_wi.report_id': report_id })
+  const viewMeta = await listViews({
+    access,
+    filter: { layer_id, 'report_wi.report_id': report_id },
+  })
   reqViewColumns[viewID] = (viewMeta[0] || {}).columns
 
   const whereFilters = ['r.type = 1', `r.report_id = ${report_id}`, `layer.layer_id = ${layer_id}`]

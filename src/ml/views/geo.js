@@ -26,7 +26,7 @@ const getView = async (_, reqViews, reqViewColumns, { tableKey }) => {
   }
 
   // inject view columns
-  const viewMeta = await listViews(null, { tableKey })
+  const viewMeta = await listViews({ filter: { tableKey } })
   reqViewColumns[viewID] = (viewMeta[0] || {}).columns
 
   // inject view
@@ -38,7 +38,7 @@ const getView = async (_, reqViews, reqViewColumns, { tableKey }) => {
   `)
 }
 
-const listViews = async (_, filter) => {
+const listViews = async ({ filter, inclMeta = true }) => {
   let geoTableList = []
   if (filter && filter.tableKey) {
     geoTableList = [
@@ -49,31 +49,29 @@ const listViews = async (_, filter) => {
   }
 
   const tablePromises = geoTableList.map(async ([tableKey, { schema, table }]) => {
-    const tableColumns = await knex('information_schema.columns')
-      .columns(['column_name', 'data_type', 'udt_name'])
-      .where({ table_schema: schema, table_name: table })
-
-    // TODO: remove 'columns' -> use listView() to get full view
-    const columns = {}
-    tableColumns.forEach(({ column_name, data_type, udt_name }) => {
-      const type = data_type === 'USER-DEFINED' ? udt_name : data_type
-      columns[column_name] = {
-        category: typeToCatMap.get(type),
-        key: column_name,
-        type,
-      }
-    })
-
-    return {
+    const view = {
       name: tableKey,
       view: {
         type: 'geo',
         id: `geo_${tableKey}`,
         tableKey,
       },
-      // TODO: remove 'columns' -> use listView() to get full view
-      columns,
     }
+    if (inclMeta) {
+      const tableColumns = await knex('information_schema.columns')
+        .columns(['column_name', 'data_type', 'udt_name'])
+        .where({ table_schema: schema, table_name: table })
+      view.columns = {}
+      tableColumns.forEach(({ column_name, data_type, udt_name }) => {
+        const type = data_type === 'USER-DEFINED' ? udt_name : data_type
+        view.columns[column_name] = {
+          category: typeToCatMap.get(type),
+          key: column_name,
+          type,
+        }
+      })
+    }
+    return view
   })
 
   return Promise.all(tablePromises)

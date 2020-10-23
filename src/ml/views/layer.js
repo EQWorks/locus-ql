@@ -92,7 +92,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey
   }
 
   // inject view columns
-  const viewMeta = await listViews(access, { layer_id })
+  const viewMeta = await listViews({ access, filter: { layer_id } })
   reqViewColumns[viewID] = (viewMeta[0] || {}).columns
 
   const { table, slug, resolution } = category
@@ -116,7 +116,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey
   `)
 }
 
-const listViews = async (access, filter = {}) => {
+const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   const layers = await getKnexLayerQuery(access, filter)
   return layers.map(({ name, layer_categories, layer_id, layer_type_id }) => {
     // TODO: remove 'columns' -> use listView() to get full view
@@ -124,8 +124,8 @@ const listViews = async (access, filter = {}) => {
       column.key = key
     })
     return Object.entries(layer_categories)
-      .map(([categoryKey, { table, name: catName, resolution }]) => (
-        {
+      .map(([categoryKey, { table, name: catName, resolution }]) => {
+        const view = {
           // required
           name: `${name} // ${catName}`,
           view: {
@@ -137,11 +137,12 @@ const listViews = async (access, filter = {}) => {
             table,
             categoryKey,
           },
-          // TODO: remove 'columns' -> use listView() to get full view
-          columns: options.columns,
-          // meta
         }
-      ))
+        if (inclMeta) {
+          view.columns = options.columns
+        }
+        return view
+      })
   }).reduce((agg, view) => [...agg, ...view], [])
 }
 

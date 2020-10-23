@@ -31,7 +31,7 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
 
 
   // inject view columns
-  const viewMeta = await listViews(access, { conn_id })
+  const viewMeta = await listViews({ access, filter: { conn_id } })
   reqViewColumns[viewID] = (viewMeta[0] || {}).columns
 
   // inject view
@@ -44,7 +44,7 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   `)
 }
 
-const listViews = async (access, { conn_id } = {}) => {
+const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
 
   const query = {
@@ -105,7 +105,7 @@ const listViews = async (access, { conn_id } = {}) => {
       column.category = typeToCatMap.get(column.type)
     })
 
-    return {
+    const view = {
       name,
       set_id,
       type,
@@ -114,9 +114,11 @@ const listViews = async (access, { conn_id } = {}) => {
         id: `ext_${id}`,
         conn_id: id,
       },
-      // TODO: remove 'columns' -> use listView() to get full view
-      columns,
     }
+    if (inclMeta) {
+      view.columns = columns
+    }
+    return view
   })
 }
 

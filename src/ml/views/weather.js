@@ -93,8 +93,14 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
   }
 }
 
-const listViews = async () => Object.values(VIEWS)
-// .map(({ columns, ...rest }) => rest)
+const listViews = async ({ inclMeta = true }) => Object.values(VIEWS)
+  .map((view) => {
+    if (inclMeta) {
+      return view
+    }
+    const { columns, ...rest } = view
+    return rest
+  })
 
 const listView = async (_, viewID) => {
   if (!(viewID in VIEWS)) {

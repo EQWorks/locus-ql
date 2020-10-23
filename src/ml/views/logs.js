@@ -299,7 +299,7 @@ const retryAthenaOnThrottlingException = async (
   while (attempt < maxAttempts) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      return await callback(args).promise()
+      return await callback(...args).promise()
     } catch (err) {
       if (attempt === maxAttempts - 1 || ![
         'TooManyRequestsException',
@@ -370,7 +370,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
     const token = `ml-${logType}-${customerID}-${viewHash}-${isoEnd}-${end.getUTCHours()}`
     const { QueryExecutionId } = await retryAthenaOnThrottlingException(
       athena.startQueryExecution.bind(athena),
-      {
+      [{
         QueryString: `
           SELECT
             ${[...groupByColumns, ...aggColumns].join(', ')}
@@ -388,7 +388,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
         // eslint-disable-next-line max-len
         ResultConfiguration: { OutputLocation: `s3://${ATHENA_OUTPUT_BUCKET}/${logType}/${customerID}` },
         WorkGroup: ATHENA_WORKGROUP,
-      },
+      }],
     )
     return QueryExecutionId
   } catch (err) {
@@ -456,7 +456,7 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
     }
     const res = await retryAthenaOnThrottlingException(
       athena.getQueryExecution.bind(athena),
-      { QueryExecutionId: executionIds[0] },
+      [{ QueryExecutionId: executionIds[0] }],
     )
     const { State, CompletionDateTime } = res.QueryExecution.Status
     if (State === 'SUCCEEDED' && CompletionDateTime.valueOf() < Date.now() - (30 * 1000)) {
@@ -526,13 +526,13 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   reqViewColumns[viewID] = getReqViewColumns(logType, accessMap[prefix])
 }
 
-const listViews = async (access) => {
+const listViews = async ({ access, inclMeta = true }) => {
   const { whitelabel, customers, prefix } = access
   const agencies = await getCustomers(whitelabel, customers, CU_AGENCY)
   return agencies.reduce(
     (views, { customerID, customerName }) => views.concat(
-      Object.entries(LOG_TYPES).map(
-        ([type, { name }]) => ({
+      Object.entries(LOG_TYPES).map(([type, { name }]) => {
+        const view = {
           name: `${name} - ${customerName} (${customerID})`,
           view: {
             type: 'logs',
@@ -540,10 +540,12 @@ const listViews = async (access) => {
             logType: type,
             agencyID: customerID,
           },
-          // TODO: remove 'columns' -> use listView() to get full view
-          columns: getReqViewColumns(type, accessMap[prefix]),
-        }),
-      ),
+        }
+        if (inclMeta) {
+          view.columns = getReqViewColumns(type, accessMap[prefix])
+        }
+        return view
+      }),
     ),
     [],
   )
