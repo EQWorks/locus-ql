@@ -5,7 +5,7 @@ const { createHash } = require('crypto')
 const AWS = require('aws-sdk')
 
 const { knex, atomPool } = require('../../util/db')
-const { CAT_STRING, CAT_NUMERIC } = require('../type')
+const { CAT_STRING, CAT_NUMERIC, CAT_JSON } = require('../type')
 const apiError = require('../../util/api-error')
 
 
@@ -128,6 +128,7 @@ const LOG_TYPES = {
       city: { category: CAT_STRING },
       vendor: { category: CAT_STRING },
       type: { category: CAT_STRING },
+      content: { category: CAT_JSON },
     },
   },
 }
