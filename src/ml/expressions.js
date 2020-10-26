@@ -4,6 +4,7 @@
 // reference: https://github.com/EQWorks/firstorder/wiki/Locus-ML-Expression
 const { knex } = require('../util/db')
 const apiError = require('../util/api-error')
+const { CAT_DATE, CAT_NUMERIC, CAT_JSON } = require('./type')
 
 
 const TYPE_STRING = 'string'
@@ -14,7 +15,7 @@ const functions = {
   // aggregation functions
   sum: {
     value: 'sum',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
     defaultCast: 'real',
   },
   count: {
@@ -23,44 +24,50 @@ const functions = {
   },
   avg: {
     value: 'avg',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
     defaultCast: 'real',
   },
   min: {
     value: 'min',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
     defaultCast: 'real',
   },
   max: {
     value: 'max',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
     defaultCast: 'real',
   },
   minDate: {
     value: 'min',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
     defaultCast: 'date',
   },
   maxDate: {
     value: 'max',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
     defaultCast: 'date',
   },
 
   round: {
     value: 'round',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
   },
 
   // time/date functions
   // field can be year, month, day, hour etc
   date_part: { // date_part(field, timestamp)
     value: 'date_part',
-    category: 'Numeric',
+    category: CAT_NUMERIC,
   },
   date_trunc: { // date_trunc(field, timestamp)
     value: 'date_trunc',
-    category: 'Date',
+    category: CAT_DATE,
+  },
+
+  // JSON functions
+  json_extract_path: { // json_extract_path(field, key)
+    value: 'json_extract_path',
+    category: CAT_JSON,
   },
 }
 
