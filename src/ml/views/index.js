@@ -30,7 +30,9 @@ module.exports.listViews = async (
   { access, query: { viewCategory = 'ext', subCategory } },
   inclMeta = false,
 ) => {
-  const view = await VIEWS[subCategory || viewCategory].listViews({ access, inclMeta })
+  const view = (subCategory || viewCategory) in VIEWS
+    ? await VIEWS[subCategory || viewCategory].listViews({ access, inclMeta })
+    : []
 
   return VIEW_LIST.reduce((acc, viewCat) => {
     if (typeof viewCat === 'object') {
