@@ -2,14 +2,11 @@
 /* eslint-disable no-continue */
 const { createHash } = require('crypto')
 
-const AWS = require('aws-sdk')
-
 const { knex, atomPool } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC, CAT_JSON } = require('../type')
 const apiError = require('../../util/api-error')
+const { athena } = require('../../util/aws')
 
-
-const athena = new AWS.Athena({ region: 'us-east-1' })
 
 // constants
 const CACHE_DAYS = 90 // days of logs to import into cache

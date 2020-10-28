@@ -5,6 +5,7 @@ const express = require('express')
 
 const { execute } = require('../../ml/engine')
 const { listViews, listView, getViews } = require('../../ml/views')
+const { getResFromCache, putToCache } = require('../../ml/cache')
 
 
 const router = express.Router()
@@ -14,8 +15,14 @@ const mlHandler = async (req, res, next) => {
 
   try {
     const result = await execute(req.mlViews, req.mlViewColumns, query)
-    console.log('finshed')
-    return res.status(200).json(result)
+    const resultJSON = JSON.stringify(result)
+    // store response in cache
+    if (req.cacheKey) {
+      await putToCache(req.cacheKey, resultJSON)
+    }
+    console.log('finished')
+    // return res.status(200).json(result)
+    return res.status(200).type('application/json').send(resultJSON)
   } catch (error) {
     console.error(error)
     return next(error)
@@ -36,6 +43,6 @@ router.get('/views/', (req, res, next) => {
 router.get('/views/:viewID', listView)
 
 // main query endpoint
-router.post('/', getViews, mlHandler)
+router.post('/', getResFromCache, getViews, mlHandler)
 
 module.exports = router
