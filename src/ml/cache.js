@@ -71,13 +71,13 @@ const getResFromCache = async (req, res, next) => {
     // cache key is a blend of the user's access and the query
     // i.e. users with different access permissions but submitting the same query
     // will not be sharing the same cache (for now)
-    req.cacheKey = createHash('sha256').update(JSON.stringify({ access, query })).digest('hex')
+    req.mlCacheKey = createHash('sha256').update(JSON.stringify({ access, query })).digest('hex')
     if (cache === 0) {
       // refresh, do not pull from cache
       return next()
     }
 
-    const cachedRes = await getFromCache(req.cacheKey, cache)
+    const cachedRes = await getFromCache(req.mlCacheKey, cache)
     if (cachedRes) {
       // cachedRes is a JSON string
       return res.status(200).type('application/json').send(cachedRes)

@@ -401,67 +401,91 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
 }
 
 /**
+ * Returns the latest end date for which an Athena query was sucessfully submitted
+ * @param {number} customerID Customer
+ * @param {string} logType Log type
+ * @param {string} viewHash Hash representation of the view
+ * @returns {Promise<Date>} undefined if the view does not exist in cache
+ */
+const getViewCacheDate = async (customerID, logType, viewHash) => {
+  const { rows: [{ cachedUntil } = {}] } = await knex.raw(`
+    SELECT
+      cached_until::timestamptz as "cachedUntil"
+    FROM public.logs_views
+    WHERE
+      log_type = ?
+      AND customer_id = ?
+      AND view_hash = ?
+  `, [logType, customerID, viewHash])
+  return cachedUntil
+}
+
+/**
+ * Updates the view cache's end date
+ * @param {number} customerID Customer
+ * @param {string} logType Log type
+ * @param {string} viewHash Hash representation of the view
+ * @param {Date} end New cache end date
+ */
+const updateViewCacheDate = (customerID, logType, viewHash, end) => knex.raw(`
+  INSERT INTO public.logs_views
+    (log_type, customer_id, view_hash, cached_until)
+    VALUES (:logType, :customerID, :viewHash, :end)
+  ON CONFLICT (log_type, customer_id, view_hash) DO UPDATE
+  SET cached_until = :end;
+`, { logType, customerID, viewHash, end: end.toISOString() })
+
+/**
  * Spawns Athena queries to fill the view's PG cache with data for the last CACHE_DAYS days
  * @param {number} customerID Customer
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
  * @param {string[]} viewColumns Columns which make up the view
- * @returns {boolean} Whether or not the view's PG cache is ready for querying
+ * @returns {Promise<boolean>} Whether or not the view's PG cache was updated
  */
 const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
-  // get latest cache date
-  const { rows: [{ max_date: maxDate }] } = await knex.raw(`
-    SELECT
-      max("date" + "hour" * interval '1 hour')::timestamptz as max_date
-    FROM public.logs_${logType}
-    WHERE
-      customer_id = ?
-      AND view_hash = ?
-  `, [customerID, viewHash])
-  const thisHour = new Date()
-  thisHour.setUTCMinutes(0, 0, 0)
-  // start is exclusive
-  let start = maxDate
-    ? new Date(Math.max(new Date(maxDate).valueOf(), thisHour.valueOf() - (CACHE_DAYS * ONE_DAY)))
-    : new Date(thisHour.valueOf() - (CACHE_DAYS * ONE_DAY))
-  let end
-  const viewColumnsCount = viewColumns.reduce(
-    (count, col) => (['view_hash', 'date', 'hour'].includes(col) ? count : count + 1),
-    0,
-  )
-  const queries = []
-  // split time range into multiple queries
-  while (start < thisHour) {
-    // end is inclusive
-    // except for the last day 'end' ends at 23h so that it queries full
-    // partitions (logs partitioned by day)
-    // the more fields the view includes the less dates the athena query spans
-    end = new Date(Math.min(
-      start.valueOf()
-      + ((2 ** Math.max(4 - viewColumnsCount, 0)) * ONE_DAY)
-      + ((23 - start.getUTCHours()) * ONE_HOUR),
-      thisHour.valueOf(),
-    ))
-    queries.push(requestViewData(customerID, logType, viewHash, viewColumns, start, end))
-    start = end
-  }
-
-  const executionIds = await Promise.all(queries)
-  if (executionIds.length === 1) {
-    // Idempotent queries
-    if (executionIds[0] === '') {
-      return true
-    }
-    const res = await retryAthenaOnThrottlingException(
-      athena.getQueryExecution.bind(athena),
-      [{ QueryExecutionId: executionIds[0] }],
+  try {
+    // get latest cache date
+    const cacheDate = await getViewCacheDate(customerID, logType, viewHash)
+    const thisHour = new Date()
+    thisHour.setUTCMinutes(0, 0, 0)
+    // start is exclusive
+    let start = cacheDate
+      ? new Date(
+        Math.max(new Date(cacheDate).valueOf(), thisHour.valueOf() - (CACHE_DAYS * ONE_DAY)),
+      )
+      : new Date(thisHour.valueOf() - (CACHE_DAYS * ONE_DAY))
+    let end
+    const viewColumnsCount = viewColumns.reduce(
+      (count, col) => (['view_hash', 'date', 'hour'].includes(col) ? count : count + 1),
+      0,
     )
-    const { State, CompletionDateTime } = res.QueryExecution.Status
-    if (State === 'SUCCEEDED' && CompletionDateTime.valueOf() < Date.now() - (30 * 1000)) {
-      return true
+    let updated = false
+    // split time range into multiple queries
+    while (start < thisHour) {
+      // end is inclusive
+      // except for the last day 'end' ends at 23h so that it queries full
+      // partitions (logs partitioned by day)
+      // the more fields the view includes the less dates the athena query spans
+      end = new Date(Math.min(
+        start.valueOf()
+        + ((2 ** Math.max(4 - viewColumnsCount, 0)) * ONE_DAY)
+        + ((23 - start.getUTCHours()) * ONE_HOUR),
+        thisHour.valueOf(),
+      ))
+      updated = true
+      // wait for query to succeed before subitting next one to ensure no gap in dataset
+      // eslint-disable-next-line no-await-in-loop
+      await requestViewData(customerID, logType, viewHash, viewColumns, start, end)
+      // eslint-disable-next-line no-await-in-loop
+      await updateViewCacheDate(customerID, logType, viewHash, end)
+      start = end
     }
+
+    return updated
+  } catch (err) {
+    throw apiError('Error updating the view cache', 500)
   }
-  return false
 }
 
 const getView = async (access, reqViews, reqViewColumns, { logType, query, agencyID }) => {
@@ -493,8 +517,8 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   }
   const viewHash = getViewHash(cacheColumns)
 
-  const cacheReady = await updateViewCache(customerID, logType, viewHash, cacheColumns)
-  if (!cacheReady) {
+  const cacheIsUpdating = await updateViewCache(customerID, logType, viewHash, cacheColumns)
+  if (cacheIsUpdating) {
     throw Error('We need a moment to load your query\'s data, please try again in 30s')
   }
 
