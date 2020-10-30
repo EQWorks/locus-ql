@@ -17,8 +17,8 @@ const mlHandler = async (req, res, next) => {
     const result = await execute(req.mlViews, req.mlViewColumns, query)
     const resultJSON = JSON.stringify(result)
     // store response in cache
-    if (req.cacheKey) {
-      await putToCache(req.cacheKey, resultJSON)
+    if (req.mlCacheKey) {
+      await putToCache(req.mlCacheKey, resultJSON)
     }
     console.log('finished')
     // return res.status(200).json(result)
