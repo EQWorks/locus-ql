@@ -80,7 +80,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
 }
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey }) => {
-  const viewID = `layer_${layer_id}`
+  const viewID = `layer_${layer_id}_${categoryKey}`
   const [layer] = await getKnexLayerQuery(access, { layer_id })
   if (!layer) {
     throw apiError('Access to layer not allowed', 403)
