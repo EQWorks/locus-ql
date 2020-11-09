@@ -35,13 +35,24 @@ const select = async (
   views,
   viewColumns,
   {
-    distinct, columns, from, joins = [], where = [], having = [],
-    groupBy, orderBy, limit, db = 'place',
+    distinct,
+    columns,
+    from,
+    joins = [],
+    where = [],
+    having = [],
+    groupBy,
+    orderBy,
+    limit,
+    // db = 'place',
   },
 ) => {
   const exp = new Expression(viewColumns)
   let knexDB = knex
-  if (db === 'map') {
+  // only layers need db to be map(?)
+  // 'layer_958_0' - `layer_${layer_id}_${categoryKey}`
+  if (from.startsWith('layer')) {
+  // if (db === 'map') {
     knexDB = mapKnex
   }
   let knexQuery = knexDB
