@@ -80,7 +80,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
 }
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey }) => {
-  const viewID = `layer_${layer_id}`
+  const viewID = `layer_${layer_id}_${categoryKey}`
   const [layer] = await getKnexLayerQuery(access, { layer_id })
   if (!layer) {
     throw apiError('Access to layer not allowed', 403)
@@ -152,7 +152,7 @@ const listView = async (access, viewID) => {
   const layer_id = parseInt(layerIDStr, 10)
   // eslint-disable-next-line radix
   const categoryKey = parseInt(categoryKeyStr, 10)
-  if (!layer_id || !categoryKey) {
+  if (!layer_id || Number.isNaN(categoryKey)) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
 
