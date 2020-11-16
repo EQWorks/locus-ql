@@ -29,6 +29,7 @@ const ml = require('./ml')
 const credentials = require('./credentials')
 const log = require('./log')
 const activity = require('./activity')
+const dataset = require('./dataset')
 
 
 rootRouter.use(isMaint)
@@ -56,6 +57,7 @@ rootRouter.use('/ml', ml)
 rootRouter.use('/credentials', credentials)
 rootRouter.use('/log', log)
 rootRouter.use('/activity', activity)
+rootRouter.use('/dataset', dataset)
 rootRouter.use(api)
 
 
