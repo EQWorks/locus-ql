@@ -5,6 +5,7 @@
 const { knex, mapKnex } = require('../util/db')
 const { Expression } = require('./expressions')
 const apiError = require('../util/api-error')
+const { knexWithCache } = require('./cache')
 
 
 // const TYPE_STRING = 'string'
@@ -46,6 +47,7 @@ const select = async (
     limit,
     // db = 'place',
   },
+  maxAge,
 ) => {
   const exp = new Expression(viewColumns)
   let knexDB = knex
@@ -141,14 +143,14 @@ const select = async (
     }
   }
 
-  return knexQuery
+  return knexWithCache(knexQuery, { ttl: 1800, maxAge }) // 30 minutes (subject to maxAge)
 }
 
-module.exports.execute = async (views, viewColumns, query) => {
+module.exports.execute = async (views, viewColumns, query, maxAge) => {
   const { type } = query
 
   if (type === 'select') {
-    return select(views, viewColumns, query)
+    return select(views, viewColumns, query, maxAge)
   }
 }
 

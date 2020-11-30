@@ -8,6 +8,7 @@ const {
   CAT_BOOL,
 } = require('../../type')
 const apiError = require('../../../util/api-error')
+const { knexWithCache } = require('../../cache')
 
 
 const options = {
@@ -91,7 +92,7 @@ const getReportLayers = (wl, cu, filter) => {
     }
   }
   layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
-  return layerQuery
+  return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
 }
 
 const getLayerIDs = (wl, cu, reportID) => {
@@ -105,7 +106,7 @@ const getLayerIDs = (wl, cu, reportID) => {
       layerIDQuery.where({ agencyid: cu[0] })
     }
   }
-  return layerIDQuery
+  return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
 }
 
 const hasAOIData = async (wl, layerID, reportID) => {
@@ -120,7 +121,7 @@ const hasAOIData = async (wl, layerID, reportID) => {
     WHERE ${whereFilters.join(' AND ')}
     )
   `)
-  return exists
+  return knexWithCache(exists, { ttl: 600 }) // 10 minutes
 }
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {

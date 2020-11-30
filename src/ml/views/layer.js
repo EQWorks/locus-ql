@@ -6,6 +6,7 @@ const {
   CAT_NUMERIC,
 } = require('../type')
 const apiError = require('../../util/api-error')
+const { knexWithCache } = require('../cache')
 
 
 const RESOLUTION_TABLE_MAP = Object.freeze({
@@ -55,11 +56,14 @@ const getKnexLayerQuery = async (access, filter = {}) => {
     && Array.isArray(customers)
     && customers.length > 0) {
     // get subscribe layers
-    const { rows } = await knex.raw(`
-      SELECT type_id
-      FROM market_ownership_flat MO
-      WHERE MO.type = 'layer' AND MO.whitelabel = ? AND MO.customer = ?
-    `, whitelabel[0], customers[0])
+    const { rows } = await knexWithCache(
+      knex.raw(`
+        SELECT type_id
+        FROM market_ownership_flat MO
+        WHERE MO.type = 'layer' AND MO.whitelabel = ? AND MO.customer = ?
+      `, whitelabel[0], customers[0]),
+      { ttl: 1800 }, // 30 minutes
+    )
     const subscribeLayerIDs = rows.map(layer => layer.type_id)
     layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
     layerQuery.whereRaw(`
@@ -76,7 +80,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
       )
     `, [whitelabel], [customers], [customers], email, subscribeLayerIDs)
   }
-  return layerQuery
+  return knexWithCache(layerQuery, { ttl: 600 }) // 30 minutes
 }
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey }) => {
