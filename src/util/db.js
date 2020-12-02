@@ -17,5 +17,4 @@ const mapKnex = Knex({
   debug: true,
 })
 
-
 module.exports = { pool, mapPool, atomPool, knex, mapKnex }

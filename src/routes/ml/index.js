@@ -4,7 +4,7 @@
 const express = require('express')
 
 const { execute } = require('../../ml/engine')
-const { listViews, listView, getViews } = require('../../ml/views')
+const { listViews, listView, loadViews } = require('../../ml/views')
 // const { getResFromS3Cache, putToS3Cache } = require('../../ml/cache')
 
 
@@ -45,7 +45,7 @@ router.get('/views/', (req, res, next) => {
 router.get('/views/:viewID', listView)
 
 // main query endpoint
-router.post('/', getViews, mlHandler)
-// router.post('/', getResFromS3Cache, getViews, mlHandler)
+router.post('/', loadViews, mlHandler)
+// router.post('/', getResFromS3Cache, loadViews, mlHandler)
 
 module.exports = router

@@ -112,16 +112,19 @@ const getLayerIDs = (wl, cu, reportID) => {
 const hasAOIData = async (wl, layerID, reportID) => {
   const whereFilters = [`wi_aoi.report_id = ${reportID}`, `l.layer_id = ${layerID}`]
   if (wl !== -1) whereFilters.push(`l.whitelabel = ${wl}`)
-  const { rows: [{ exists }] } = await knex.raw(`
-    SELECT EXISTS (SELECT
-      l.layer_id,
-      wi_aoi.aoi_id
-    FROM layer l
-      JOIN report_wi_aoi wi_aoi ON wi_aoi.report_id = l.report_id
-    WHERE ${whereFilters.join(' AND ')}
-    )
-  `)
-  return knexWithCache(exists, { ttl: 600 }) // 10 minutes
+  const { rows: [{ exists }] } = await knexWithCache(
+    knex.raw(`
+      SELECT EXISTS (SELECT
+        l.layer_id,
+        wi_aoi.aoi_id
+      FROM layer l
+        JOIN report_wi_aoi wi_aoi ON wi_aoi.report_id = l.report_id
+      WHERE ${whereFilters.join(' AND ')}
+      )
+    `),
+    { ttl: 600 }, // 10 minutes
+  )
+  return exists
 }
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {

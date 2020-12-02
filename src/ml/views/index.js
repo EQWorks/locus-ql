@@ -47,15 +47,15 @@ module.exports.listViews = async (
   }, {})
 }
 
-// gets views based on request body.views
-module.exports.getViews = async (req, _, next) => {
+// load views into req object based on request body.views
+module.exports.loadViews = async (req, res, next) => {
   const { views, query } = req.body
   const { access } = req
 
   req.mlViews = {}
   req.mlViewColumns = {}
   try {
-    await Promise.all(views.map(async (view) => {
+    const loaded = await Promise.all(views.map(async (view) => {
       const { type, id, ...viewParams } = view
 
       if (!Object.keys(VIEWS).includes(type)) {
@@ -68,8 +68,16 @@ module.exports.getViews = async (req, _, next) => {
       }
 
       viewParams.query = query || {}
-      await viewModule.getView(access, req.mlViews, req.mlViewColumns, viewParams)
+      // getView must return false if query is async
+      return viewModule.getView(access, req.mlViews, req.mlViewColumns, viewParams)
     }))
+
+    if (loaded.some(proceed => proceed === false)) {
+      // TODO: agree on payload format to signal async query instead of error
+      return res.status(500)
+        .json({ message: 'We need a moment to load your query\'s data, please try again in 30s' })
+    }
+
     return next()
   } catch (error) {
     // console.error(error)
