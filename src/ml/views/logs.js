@@ -231,7 +231,7 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
     FROM public.customers
     WHERE
       ${filters.join(' AND ')}
-  `, filterValues, atomPool, { ttl: 600 }) // 10 minutes
+  `, filterValues, atomPool, { ttl: 600, gzip: false }) // 10 minutes
   return rows
 }
 

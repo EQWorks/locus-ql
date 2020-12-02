@@ -5,7 +5,7 @@
 const { knex, mapKnex } = require('../util/db')
 const { Expression } = require('./expressions')
 const apiError = require('../util/api-error')
-const { knexWithCache } = require('./cache')
+const { knexWithCache, cacheTypes } = require('./cache')
 
 
 // const TYPE_STRING = 'string'
@@ -143,7 +143,10 @@ const select = async (
     }
   }
 
-  return knexWithCache(knexQuery, { ttl: 1800, maxAge }) // 30 minutes (subject to maxAge)
+  return knexWithCache(
+    knexQuery,
+    { ttl: 1800, maxAge, type: cacheTypes.S3 }, // 30 minutes (subject to maxAge)
+  )
 }
 
 module.exports.execute = async (views, viewColumns, query, maxAge) => {
