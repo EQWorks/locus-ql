@@ -37,7 +37,7 @@
     "express": "^4.16.3",
     "facebook-nodejs-business-sdk": "^6.0.0",
     "jsonwebtoken": "^8.2.0",
-    "knex": "^0.19.5",
+    "knex": "^0.21.12",
     "lodash": "^4.17.13",
     "moment": "^2.24.0",
     "morgan": "^1.9.0",

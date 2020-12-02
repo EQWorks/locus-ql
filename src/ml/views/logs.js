@@ -6,14 +6,15 @@ const { knex, atomPool } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC, CAT_JSON } = require('../type')
 const apiError = require('../../util/api-error')
 const { athena } = require('../../util/aws')
+const { knexWithCache, pgWithCache } = require('../cache')
 
 
 // constants
 const CACHE_DAYS = 90 // days of logs to import into cache
 const ATHENA_OUTPUT_BUCKET = 'ml-fusion-cache'
 const ATHENA_WORKGROUP = 'locus_ml' // use to segregate billing and history
-const ONE_HOUR = 60 * 60 * 1000
-const ONE_DAY = 24 * ONE_HOUR
+const ONE_HOUR_MS = 60 * 60 * 1000
+const ONE_DAY_MS = 24 * ONE_HOUR_MS
 const CU_AGENCY = 1 // customer type enum
 const CU_ADVERTISER = 2 // customer type enum
 const ACCESS_INTERNAL = 1 // access type enum
@@ -222,14 +223,15 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
     filterValues.push(whitelabelIDs)
     filters.push(`whitelabelid = ANY($${filterValues.length})`)
   }
-  const { rows } = await atomPool.query(`
+
+  const { rows } = await pgWithCache(`
     SELECT
       customerid AS "customerID",
       companyname AS "customerName"
     FROM public.customers
     WHERE
       ${filters.join(' AND ')}
-  `, filterValues)
+  `, filterValues, atomPool, { ttl: 600, gzip: false }) // 10 minutes
   return rows
 }
 
@@ -408,15 +410,18 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
  * @returns {Promise<Date>} undefined if the view does not exist in cache
  */
 const getViewCacheDate = async (customerID, logType, viewHash) => {
-  const { rows: [{ cachedUntil } = {}] } = await knex.raw(`
-    SELECT
-      cached_until::timestamptz as "cachedUntil"
-    FROM public.logs_views
-    WHERE
-      log_type = ?
-      AND customer_id = ?
-      AND view_hash = ?
-  `, [logType, customerID, viewHash])
+  const { rows: [{ cachedUntil } = {}] } = await knexWithCache(
+    knex.raw(`
+      SELECT
+        cached_until::timestamptz as "cachedUntil"
+      FROM public.logs_views
+      WHERE
+        log_type = ?
+        AND customer_id = ?
+        AND view_hash = ?
+    `, [logType, customerID, viewHash]),
+    { ttl: 1800 }, // 30 minutes
+  )
   return cachedUntil
 }
 
@@ -452,9 +457,9 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
     // start is exclusive
     let start = cacheDate
       ? new Date(
-        Math.max(new Date(cacheDate).valueOf(), thisHour.valueOf() - (CACHE_DAYS * ONE_DAY)),
+        Math.max(new Date(cacheDate).valueOf(), thisHour.valueOf() - (CACHE_DAYS * ONE_DAY_MS)),
       )
-      : new Date(thisHour.valueOf() - (CACHE_DAYS * ONE_DAY))
+      : new Date(thisHour.valueOf() - (CACHE_DAYS * ONE_DAY_MS))
     let end
     const viewColumnsCount = viewColumns.reduce(
       (count, col) => (['view_hash', 'date', 'hour'].includes(col) ? count : count + 1),
@@ -469,8 +474,8 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
       // the more fields the view includes the less dates the athena query spans
       end = new Date(Math.min(
         start.valueOf()
-        + ((2 ** Math.max(4 - viewColumnsCount, 0)) * ONE_DAY)
-        + ((23 - start.getUTCHours()) * ONE_HOUR),
+        + ((2 ** Math.max(4 - viewColumnsCount, 0)) * ONE_DAY_MS)
+        + ((23 - start.getUTCHours()) * ONE_HOUR_MS),
         thisHour.valueOf(),
       ))
       updated = true

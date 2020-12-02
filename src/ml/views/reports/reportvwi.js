@@ -8,6 +8,7 @@ const {
   CAT_BOOL,
 } = require('../../type')
 const apiError = require('../../../util/api-error')
+const { knexWithCache } = require('../../cache')
 
 
 const options = {
@@ -116,7 +117,7 @@ const getReportLayers = (wl, cu, filter) => {
     }
   }
   layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
-  return layerQuery
+  return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
 }
 
 const getLayerIDs = (wl, cu, reportID) => {
@@ -130,21 +131,24 @@ const getLayerIDs = (wl, cu, reportID) => {
       layerIDQuery.where({ agencyid: cu[0] })
     }
   }
-  return layerIDQuery
+  return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
 }
 
 const hasAOIData = async (wl, layerID, reportID) => {
   const whereFilters = [`vwi_aoi.report_id = ${reportID}`, `l.layer_id = ${layerID}`]
   if (wl !== -1) whereFilters.push(`l.whitelabel = ${wl}`)
-  const { rows: [{ exists }] } = await knex.raw(`
-    SELECT EXISTS (SELECT
-      l.layer_id,
-      vwi_aoi.aoi_id
-    FROM layer l
-      JOIN report_vwi_aoi vwi_aoi ON vwi_aoi.report_id = l.report_id
-    WHERE ${whereFilters.join(' AND ')}
-    )
-  `)
+  const { rows: [{ exists }] } = await knexWithCache(
+    knex.raw(`
+      SELECT EXISTS (SELECT
+        l.layer_id,
+        vwi_aoi.aoi_id
+      FROM layer l
+        JOIN report_vwi_aoi vwi_aoi ON vwi_aoi.report_id = l.report_id
+      WHERE ${whereFilters.join(' AND ')}
+      )
+    `),
+    { ttl: 600 }, // 10 minutes
+  )
   return exists
 }
 

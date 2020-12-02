@@ -3,6 +3,7 @@
 const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
 const apiError = require('../../util/api-error')
+const { knexWithCache, pgWithCache } = require('../cache')
 
 
 const CONNECTION_TABLE = 'ext_conn.connections'
@@ -20,10 +21,13 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   }
 
   // check access to ext connection table and get table name
-  const connections = await knex(CONNECTION_TABLE)
-    .where({ id: conn_id })
-    .whereRaw('? in (connections.whitelabel, -1)', whitelabel)
-    .whereRaw('? in (connections.customer, -1)', customers)
+  const connections = await knexWithCache(
+    knex(CONNECTION_TABLE)
+      .where({ id: conn_id })
+      .whereRaw('? in (connections.whitelabel, -1)', whitelabel)
+      .whereRaw('? in (connections.customer, -1)', customers),
+    { ttl: 600 }, // 10 minutes
+  )
 
   if (connections.length === 0) {
     throw apiError('Connection not found', 403)
@@ -95,7 +99,12 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
     }
   }
 
-  const { rows: connections } = await pool.query(query)
+  const { rows: connections } = await pgWithCache(
+    query.text,
+    query.values,
+    pool,
+    { maxAge: 600 }, // 10 minutes
+  )
 
   return connections.map(({ id, set_id, type, name, columns }) => {
     // TODO: remove 'columns' -> use listView() to get full view
@@ -172,7 +181,12 @@ const listView = async (access, viewID) => {
     }
   }
 
-  const { rows: [connection = {}] } = await pool.query(query)
+  const { rows: [connection = {}] } = await pgWithCache(
+    query.text,
+    query.values,
+    pool,
+    { ttl: 600 }, // 10 minutes
+  )
   const { set_id, type, name, columns } = connection
 
   // insert column type category

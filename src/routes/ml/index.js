@@ -5,24 +5,26 @@ const express = require('express')
 
 const { execute } = require('../../ml/engine')
 const { listViews, listView, getViews } = require('../../ml/views')
-const { getResFromCache, putToCache } = require('../../ml/cache')
+// const { getResFromS3Cache, putToS3Cache } = require('../../ml/cache')
 
 
 const router = express.Router()
 
 const mlHandler = async (req, res, next) => {
   const { query } = req.body
+  // eslint-disable-next-line radix
+  const cacheMaxAge = parseInt(req.query.cache, 10) || undefined
 
   try {
-    const result = await execute(req.mlViews, req.mlViewColumns, query)
-    const resultJSON = JSON.stringify(result)
-    // store response in cache
-    if (req.mlCacheKey) {
-      await putToCache(req.mlCacheKey, resultJSON)
-    }
+    const result = await execute(req.mlViews, req.mlViewColumns, query, cacheMaxAge)
+    // const resultJSON = JSON.stringify(result)
+    // // store response in cache
+    // if (req.mlCacheKey) {
+    //   await putToS3Cache(req.mlCacheKey, resultJSON)
+    // }
     console.log('finished')
-    // return res.status(200).json(result)
-    return res.status(200).type('application/json').send(resultJSON)
+    return res.status(200).json(result)
+    // return res.status(200).type('application/json').send(resultJSON)
   } catch (error) {
     console.error(error)
     return next(error)
@@ -43,6 +45,7 @@ router.get('/views/', (req, res, next) => {
 router.get('/views/:viewID', listView)
 
 // main query endpoint
-router.post('/', getResFromCache, getViews, mlHandler)
+router.post('/', getViews, mlHandler)
+// router.post('/', getResFromS3Cache, getViews, mlHandler)
 
 module.exports = router

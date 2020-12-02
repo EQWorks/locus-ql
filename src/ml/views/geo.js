@@ -3,6 +3,7 @@
 const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
 const apiError = require('../../util/api-error')
+const { knexWithCache } = require('../cache')
 
 
 const GEO_TABLES = {
@@ -58,9 +59,12 @@ const listViews = async ({ filter, inclMeta = true }) => {
       },
     }
     if (inclMeta) {
-      const tableColumns = await knex('information_schema.columns')
-        .columns(['column_name', 'data_type', 'udt_name'])
-        .where({ table_schema: schema, table_name: table })
+      const tableColumns = await knexWithCache(
+        knex('information_schema.columns')
+          .columns(['column_name', 'data_type', 'udt_name'])
+          .where({ table_schema: schema, table_name: table }),
+        { ttl: 3600 }, // 1 hour
+      )
       view.columns = {}
       tableColumns.forEach(({ column_name, data_type, udt_name }) => {
         const type = data_type === 'USER-DEFINED' ? udt_name : data_type
@@ -84,9 +88,12 @@ const listView = async (_, viewID) => {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
   const { schema, table } = GEO_TABLES[tableKey]
-  const tableColumns = await knex('information_schema.columns')
-    .columns(['column_name', 'data_type', 'udt_name'])
-    .where({ table_schema: schema, table_name: table })
+  const tableColumns = await knexWithCache(
+    knex('information_schema.columns')
+      .columns(['column_name', 'data_type', 'udt_name'])
+      .where({ table_schema: schema, table_name: table }),
+    { ttl: 3600 }, // 1 hour
+  )
 
   const columns = {}
   tableColumns.forEach(({ column_name, data_type, udt_name }) => {
