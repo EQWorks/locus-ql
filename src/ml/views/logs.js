@@ -3,10 +3,10 @@
 const { createHash } = require('crypto')
 
 const { knex, atomPool } = require('../../util/db')
-const { CAT_STRING, CAT_NUMERIC, CAT_JSON } = require('../type')
+const { CAT_STRING, CAT_NUMERIC, CAT_JSON, CAT_DATE } = require('../type')
 const apiError = require('../../util/api-error')
 const { athena } = require('../../util/aws')
-const { knexWithCache, pgWithCache } = require('../cache')
+const { pgWithCache } = require('../cache')
 
 
 // constants
@@ -26,6 +26,7 @@ const LOG_TYPES = {
     owner: CU_ADVERTISER,
     columns: {
       camp_code: { category: CAT_NUMERIC },
+      date: { category: CAT_DATE },
       fsa: {
         category: CAT_STRING,
         geo_type: 'ca-fsa',
@@ -57,6 +58,7 @@ const LOG_TYPES = {
         category: CAT_STRING,
         geo_type: 'ca-fsa',
       },
+      // TODO: enrich os, browser, banner...
       os_id: { category: CAT_NUMERIC },
       browser_id: { category: CAT_NUMERIC },
       city: { category: CAT_STRING },
@@ -94,6 +96,7 @@ const LOG_TYPES = {
     owner: CU_AGENCY,
     columns: {
       camp_code: { category: CAT_NUMERIC },
+      date: { category: CAT_DATE },
       fsa: {
         category: CAT_STRING,
         geo_type: 'ca-fsa',
@@ -410,18 +413,15 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
  * @returns {Promise<Date>} undefined if the view does not exist in cache
  */
 const getViewCacheDate = async (customerID, logType, viewHash) => {
-  const { rows: [{ cachedUntil } = {}] } = await knexWithCache(
-    knex.raw(`
-      SELECT
-        cached_until::timestamptz as "cachedUntil"
-      FROM public.logs_views
-      WHERE
-        log_type = ?
-        AND customer_id = ?
-        AND view_hash = ?
-    `, [logType, customerID, viewHash]),
-    { ttl: 1800 }, // 30 minutes
-  )
+  const { rows: [{ cachedUntil } = {}] } = await knex.raw(`
+    SELECT
+      cached_until::timestamptz as "cachedUntil"
+    FROM public.logs_views
+    WHERE
+      log_type = ?
+      AND customer_id = ?
+      AND view_hash = ?
+  `, [logType, customerID, viewHash])
   return cachedUntil
 }
 
@@ -524,7 +524,8 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
 
   const cacheIsUpdating = await updateViewCache(customerID, logType, viewHash, cacheColumns)
   if (cacheIsUpdating) {
-    throw Error('We need a moment to load your query\'s data, please try again in 30s')
+    // async query
+    return false
   }
 
   const groupByColumns = []
