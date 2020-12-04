@@ -2,7 +2,7 @@
 /* eslint-disable no-continue */
 const { createHash } = require('crypto')
 
-const { knex, atomPool } = require('../../util/db')
+const { knex, atomPool, fdwConnect } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC, CAT_JSON, CAT_DATE } = require('../type')
 const apiError = require('../../util/api-error')
 const { athena } = require('../../util/aws')
@@ -10,7 +10,7 @@ const { pgWithCache } = require('../cache')
 
 
 // constants
-const CACHE_DAYS = 90 // days of logs to import into cache
+const PG_CACHE_DAYS = 90 // days of logs to import into cache
 const ATHENA_OUTPUT_BUCKET = 'ml-fusion-cache'
 const ATHENA_WORKGROUP = 'locus_ml' // use to segregate billing and history
 const ONE_HOUR_MS = 60 * 60 * 1000
@@ -19,6 +19,50 @@ const CU_AGENCY = 1 // customer type enum
 const CU_ADVERTISER = 2 // customer type enum
 const ACCESS_INTERNAL = 1 // access type enum
 const ACCESS_CUSTOMER = 2 // access type enum
+
+const ATOM_CONNECTION_NAME = 'locus_atom_fdw'
+const ATOM_VIEW_OS = knex.raw(`
+  (
+    SELECT * FROM dblink(?,'
+      SELECT
+        osid,
+        osname
+      FROM public.os
+    ') AS t(
+      os_id int,
+      os_name text
+    )
+  ) AS atom_os
+`, [ATOM_CONNECTION_NAME])
+const ATOM_VIEW_BROWSERS = knex.raw(`
+  (
+    SELECT * FROM dblink(?,'
+      SELECT
+        browserid,
+        browsername
+      FROM public.browsers
+    ') AS t(
+      browser_id int,
+      browser_name text
+    )
+  ) AS atom_browsers
+`, [ATOM_CONNECTION_NAME])
+const ATOM_VIEW_BANNERS = knex.raw(`
+  (
+    SELECT * FROM dblink(?,'
+      SELECT
+        bannercode,
+        bannername,
+        imgwidth || ''x'' || imgheight
+      FROM public.banners
+    ') AS t(
+      banner_code int,
+      banner_name text,
+      banner_size text
+    )
+  ) AS atom_banners
+`, [ATOM_CONNECTION_NAME])
+
 const LOG_TYPES = {
   imp: {
     name: 'ATOM Impressions',
@@ -58,12 +102,81 @@ const LOG_TYPES = {
         category: CAT_STRING,
         geo_type: 'ca-fsa',
       },
-      // TODO: enrich os, browser, banner...
       os_id: { category: CAT_NUMERIC },
+      os_name: {
+        category: CAT_STRING,
+        dependsOn: ['os_id'],
+        viewExpression: 'atom_os.os_name',
+        joins: [
+          {
+            type: 'left',
+            view: ATOM_VIEW_OS,
+            condition() {
+              this.on('log.os_id', '=', 'atom_os.os_id')
+            },
+          },
+        ],
+      },
       browser_id: { category: CAT_NUMERIC },
+      browser_name: {
+        category: CAT_STRING,
+        dependsOn: ['browser_id'],
+        viewExpression: 'atom_browsers.browser_name',
+        joins: [
+          {
+            type: 'left',
+            view: ATOM_VIEW_BROWSERS,
+            condition() {
+              this.on('log.browser_id', '=', 'atom_browsers.browser_id')
+            },
+          },
+        ],
+      },
       city: { category: CAT_STRING },
       banner_code: { category: CAT_NUMERIC },
-      app_platform_id: { category: CAT_NUMERIC },
+      banner_name: {
+        category: CAT_STRING,
+        dependsOn: ['banner_code'],
+        viewExpression: 'atom_banners.banner_name',
+        joins: [
+          {
+            type: 'left',
+            view: ATOM_VIEW_BANNERS,
+            condition() {
+              this.on('log.banner_code', '=', 'atom_banners.banner_code')
+            },
+          },
+        ],
+      },
+      banner_size: {
+        category: CAT_STRING,
+        dependsOn: ['banner_code'],
+        viewExpression: 'atom_banners.banner_size',
+        joins: [
+          {
+            type: 'left',
+            view: ATOM_VIEW_BANNERS,
+            condition() {
+              this.on('log.banner_code', '=', 'atom_banners.banner_code')
+            },
+          },
+        ],
+      },
+      app_platform_id: {
+        category: CAT_NUMERIC,
+        expression: 'COALESCE(app_platform_id, 0) AS app_platform_id',
+      },
+      app_platform_name: {
+        category: CAT_STRING,
+        dependsOn: ['app_platform_id'],
+        viewExpression: `
+          CASE
+            WHEN log.app_platform_id = 1 THEN 'Android'
+            WHEN log.app_platform_id = 2 THEN 'iOs'
+            ELSE 'Unknown/Browser'
+          END
+        `,
+      },
       revenue: {
         category: CAT_NUMERIC,
         access: ACCESS_INTERNAL,
@@ -151,8 +264,8 @@ const accessMap = {
  * query. [cacheColumns, queryColumns]
  */
 const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOMER) => {
-  const cacheColumns = new Set() // aliases are substituted with the columns they reference
-  const queryColumns = new Set() // aliases not substituted
+  const cacheColumns = new Set() // aliases/dependents substituted with the columns they reference
+  const queryColumns = new Set() // aliases/dependents not substituted
   const queue = [query]
   while (queue.length) {
     const item = queue.shift()
@@ -164,31 +277,46 @@ const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOME
       continue
     }
     if (item.type === 'column' && item.view === viewID && item.column in viewColumns) {
-      const { access, aliasFor } = viewColumns[item.column]
-      if (!access || access === accessType) {
-        queryColumns.add(item.column)
-        cacheColumns.add(aliasFor || item.column)
+      const { access, aliasFor, dependsOn } = viewColumns[item.column]
+      if (access && access !== accessType) {
+        continue
       }
+      queryColumns.add(item.column)
+      if (dependsOn) {
+        dependsOn.forEach(column => cacheColumns.add(column))
+        continue
+      }
+      cacheColumns.add(aliasFor || item.column)
       continue
     }
     if (
       Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && item[1] === viewID
     ) {
       if (item[0] === '*') {
-        Object.entries(viewColumns).forEach(([col, { access, aliasFor }]) => {
-          if (!access || access === accessType) {
-            queryColumns.add(col)
-            cacheColumns.add(aliasFor || col)
+        Object.entries(viewColumns).forEach(([col, { access, aliasFor, dependsOn }]) => {
+          if (access && access !== accessType) {
+            return
           }
+          queryColumns.add(col)
+          if (dependsOn) {
+            dependsOn.forEach(column => cacheColumns.add(column))
+            return
+          }
+          cacheColumns.add(aliasFor || col)
         })
         continue
       }
       if (item[0] in viewColumns) {
-        const { access, aliasFor } = viewColumns[item[0]]
-        if (!access || access === accessType) {
-          queryColumns.add(item[0])
-          cacheColumns.add(aliasFor || item[0])
+        const { access, aliasFor, dependsOn } = viewColumns[item[0]]
+        if (access && access !== accessType) {
+          continue
         }
+        queryColumns.add(item[0])
+        if (dependsOn) {
+          dependsOn.forEach(column => cacheColumns.add(column))
+          continue
+        }
+        cacheColumns.add(aliasFor || item[0])
         continue
       }
     }
@@ -457,9 +585,9 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
     // start is exclusive
     let start = cacheDate
       ? new Date(
-        Math.max(new Date(cacheDate).valueOf(), thisHour.valueOf() - (CACHE_DAYS * ONE_DAY_MS)),
+        Math.max(new Date(cacheDate).valueOf(), thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS)),
       )
-      : new Date(thisHour.valueOf() - (CACHE_DAYS * ONE_DAY_MS))
+      : new Date(thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS))
     let end
     const viewColumnsCount = viewColumns.reduce(
       (count, col) => (['view_hash', 'date', 'hour'].includes(col) ? count : count + 1),
@@ -530,26 +658,43 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
 
   const groupByColumns = []
   const aggColumns = []
+  const joinViews = new Map()
   queryColumns.forEach((col) => {
     const { aliasFor } = LOG_TYPES[logType].columns[col]
-    if (LOG_TYPES[logType].columns[aliasFor || col].isAggregate) {
-      aggColumns.push(`SUM("${aliasFor || col}") AS "${col}"`)
+    const { viewExpression, joins, isAggregate } = LOG_TYPES[logType].columns[aliasFor || col]
+    if (joins) {
+      joins.forEach(join => joinViews.set(join.view, join))
+    }
+    if (isAggregate) {
+      aggColumns.push(`${viewExpression || `SUM(log."${aliasFor || col}")`} AS "${col}"`)
       return
     }
-    groupByColumns.push(`"${aliasFor || col}" AS "${col}"`)
+    groupByColumns.push(`${viewExpression || `log."${aliasFor || col}"`} AS "${col}"`)
   })
 
-  reqViews[viewID] = knex.raw(`
-  (
-    SELECT
-      ${[...groupByColumns, ...aggColumns].join(', ')}
-    FROM public.logs_${logType}
-    WHERE
-      customer_id = ?
-      AND view_hash = ?
-    ${groupByColumns.length ? `GROUP BY ${groupByColumns.map((_, i) => i + 1).join(', ')}` : ''}
-  ) as ${viewID}
-`, [customerID, viewHash])
+  reqViews[viewID] = knex
+    .select(knex.raw([...groupByColumns, ...aggColumns].join(', ')))
+    .from({ log: `public.logs_${logType}` })
+    .where({
+      'log.customer_id': customerID,
+      'log.view_hash': viewHash,
+    })
+    .as(viewID)
+
+  if (groupByColumns.length) {
+    reqViews[viewID].groupByRaw(groupByColumns.map((_, i) => i + 1).join(', '))
+  }
+
+  // init connection to atom db
+  if (joinViews.size) {
+    // close conn automatically after 20s
+    await fdwConnect({ connectionName: ATOM_CONNECTION_NAME, timeout: 20 })
+  }
+
+  // join enrich views
+  joinViews.forEach(({ type, view, condition }) => {
+    reqViews[viewID][`${type}Join`](view, condition)
+  })
 
   reqViewColumns[viewID] = getReqViewColumns(logType, accessMap[prefix])
 }
