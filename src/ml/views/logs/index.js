@@ -2,249 +2,27 @@
 /* eslint-disable no-continue */
 const { createHash } = require('crypto')
 
-const { knex, atomPool, fdwConnect } = require('../../util/db')
-const { CAT_STRING, CAT_NUMERIC, CAT_JSON, CAT_DATE } = require('../type')
-const apiError = require('../../util/api-error')
-const { athena } = require('../../util/aws')
-const { pgWithCache } = require('../cache')
+const { knex, atomPool, fdwConnect } = require('../../../util/db')
+const apiError = require('../../../util/api-error')
+const { athena } = require('../../../util/aws')
+const { pgWithCache } = require('../../cache')
+const impView = require('./imp')
+const bcnView = require('./bcn')
+const {
+  PG_CACHE_DAYS,
+  ATHENA_OUTPUT_BUCKET,
+  ATHENA_WORKGROUP,
+  ONE_HOUR_MS,
+  ONE_DAY_MS,
+  CU_AGENCY,
+  ACCESS_INTERNAL,
+  ACCESS_CUSTOMER,
+} = require('./constants')
 
 
-// constants
-const PG_CACHE_DAYS = 90 // days of logs to import into cache
-const ATHENA_OUTPUT_BUCKET = 'ml-fusion-cache'
-const ATHENA_WORKGROUP = 'locus_ml' // use to segregate billing and history
-const ONE_HOUR_MS = 60 * 60 * 1000
-const ONE_DAY_MS = 24 * ONE_HOUR_MS
-const CU_AGENCY = 1 // customer type enum
-const CU_ADVERTISER = 2 // customer type enum
-const ACCESS_INTERNAL = 1 // access type enum
-const ACCESS_CUSTOMER = 2 // access type enum
-
-const ATOM_CONNECTION_NAME = 'locus_atom_fdw'
-const ATOM_VIEW_OS = knex.raw(`
-  (
-    SELECT * FROM dblink(?,'
-      SELECT
-        osid,
-        osname
-      FROM public.os
-    ') AS t(
-      os_id int,
-      os_name text
-    )
-  ) AS atom_os
-`, [ATOM_CONNECTION_NAME])
-const ATOM_VIEW_BROWSERS = knex.raw(`
-  (
-    SELECT * FROM dblink(?,'
-      SELECT
-        browserid,
-        browsername
-      FROM public.browsers
-    ') AS t(
-      browser_id int,
-      browser_name text
-    )
-  ) AS atom_browsers
-`, [ATOM_CONNECTION_NAME])
-const ATOM_VIEW_BANNERS = knex.raw(`
-  (
-    SELECT * FROM dblink(?,'
-      SELECT
-        bannercode,
-        bannername,
-        imgwidth || ''x'' || imgheight
-      FROM public.banners
-    ') AS t(
-      banner_code int,
-      banner_name text,
-      banner_size text
-    )
-  ) AS atom_banners
-`, [ATOM_CONNECTION_NAME])
-
-const LOG_TYPES = {
-  imp: {
-    name: 'ATOM Impressions',
-    table: 'fusion_logs.impression_logs',
-    owner: CU_ADVERTISER,
-    columns: {
-      camp_code: { category: CAT_NUMERIC },
-      date: { category: CAT_DATE },
-      fsa: {
-        category: CAT_STRING,
-        geo_type: 'ca-fsa',
-        expression: 'postal_code AS fsa',
-      },
-      impressions: {
-        category: CAT_NUMERIC,
-        expression: 'count(*) AS impressions',
-        isAggregate: true,
-      },
-      clicks: {
-        category: CAT_NUMERIC,
-        expression: 'count_if(click) AS clicks',
-        isAggregate: true,
-      },
-      user_ip: {
-        category: CAT_STRING,
-        expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20) AS user_ip',
-      },
-      user_id: {
-        category: CAT_STRING,
-        expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20) AS user_id',
-      },
-      hh_id: {
-        category: CAT_STRING,
-        expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20) AS hh_id',
-      },
-      hh_fsa: {
-        category: CAT_STRING,
-        geo_type: 'ca-fsa',
-      },
-      os_id: { category: CAT_NUMERIC },
-      os_name: {
-        category: CAT_STRING,
-        dependsOn: ['os_id'],
-        viewExpression: 'atom_os.os_name',
-        joins: [
-          {
-            type: 'left',
-            view: ATOM_VIEW_OS,
-            condition() {
-              this.on('log.os_id', '=', 'atom_os.os_id')
-            },
-          },
-        ],
-      },
-      browser_id: { category: CAT_NUMERIC },
-      browser_name: {
-        category: CAT_STRING,
-        dependsOn: ['browser_id'],
-        viewExpression: 'atom_browsers.browser_name',
-        joins: [
-          {
-            type: 'left',
-            view: ATOM_VIEW_BROWSERS,
-            condition() {
-              this.on('log.browser_id', '=', 'atom_browsers.browser_id')
-            },
-          },
-        ],
-      },
-      city: { category: CAT_STRING },
-      banner_code: { category: CAT_NUMERIC },
-      banner_name: {
-        category: CAT_STRING,
-        dependsOn: ['banner_code'],
-        viewExpression: 'atom_banners.banner_name',
-        joins: [
-          {
-            type: 'left',
-            view: ATOM_VIEW_BANNERS,
-            condition() {
-              this.on('log.banner_code', '=', 'atom_banners.banner_code')
-            },
-          },
-        ],
-      },
-      banner_size: {
-        category: CAT_STRING,
-        dependsOn: ['banner_code'],
-        viewExpression: 'atom_banners.banner_size',
-        joins: [
-          {
-            type: 'left',
-            view: ATOM_VIEW_BANNERS,
-            condition() {
-              this.on('log.banner_code', '=', 'atom_banners.banner_code')
-            },
-          },
-        ],
-      },
-      app_platform_id: {
-        category: CAT_NUMERIC,
-        expression: 'COALESCE(app_platform_id, 0) AS app_platform_id',
-      },
-      app_platform_name: {
-        category: CAT_STRING,
-        dependsOn: ['app_platform_id'],
-        viewExpression: `
-          CASE
-            WHEN log.app_platform_id = 1 THEN 'Android'
-            WHEN log.app_platform_id = 2 THEN 'iOs'
-            ELSE 'Unknown/Browser'
-          END
-        `,
-      },
-      revenue: {
-        category: CAT_NUMERIC,
-        access: ACCESS_INTERNAL,
-      },
-      revenue_in_currency: {
-        category: CAT_NUMERIC,
-        access: ACCESS_INTERNAL,
-      },
-      spend: {
-        aliasFor: 'revenue',
-        access: ACCESS_CUSTOMER,
-      },
-      spend_in_currency: {
-        aliasFor: 'revenue_in_currency',
-        access: ACCESS_CUSTOMER,
-      },
-      cost: {
-        category: CAT_NUMERIC,
-        access: ACCESS_INTERNAL,
-      },
-      cost_in_currency: {
-        category: CAT_NUMERIC,
-        access: ACCESS_INTERNAL,
-      },
-    },
-  },
-  bcn: {
-    name: 'LOCUS Beacons',
-    table: 'fusion_logs.beacon_logs',
-    owner: CU_AGENCY,
-    columns: {
-      camp_code: { category: CAT_NUMERIC },
-      date: { category: CAT_DATE },
-      fsa: {
-        category: CAT_STRING,
-        geo_type: 'ca-fsa',
-        expression: 'postal_code AS fsa',
-      },
-      beacon_id: { category: CAT_NUMERIC },
-      impressions: {
-        category: CAT_NUMERIC,
-        expression: 'count(*) AS impressions',
-        isAggregate: true,
-      },
-      user_ip: {
-        category: CAT_STRING,
-        expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20) AS user_ip',
-      },
-      user_id: {
-        category: CAT_STRING,
-        expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20) AS user_id',
-      },
-      hh_id: {
-        category: CAT_STRING,
-        expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20) AS hh_id',
-      },
-      hh_fsa: {
-        category: CAT_STRING,
-        geo_type: 'ca-fsa',
-      },
-      os_id: { category: CAT_NUMERIC },
-      browser_id: { category: CAT_NUMERIC },
-      city: { category: CAT_STRING },
-      vendor: { category: CAT_STRING },
-      type: { category: CAT_STRING },
-      content: { category: CAT_JSON },
-    },
-  },
+const logTypes = {
+  imp: impView,
+  bcn: bcnView,
 }
 
 const accessMap = {
@@ -390,12 +168,12 @@ const getViewHash = (cols) => {
  */
 // eslint-disable-next-line arrow-body-style
 const getReqViewColumns = (logType, accessType = ACCESS_CUSTOMER) => {
-  return Object.entries(LOG_TYPES[logType].columns).reduce(
+  return Object.entries(logTypes[logType].columns).reduce(
     (cols, [key, { category, geo_type, access, aliasFor }]) => {
       if (!access || access === accessType) {
         cols[key] = {
-          category: aliasFor ? LOG_TYPES[logType].columns[aliasFor].category : category,
-          geo_type: aliasFor ? LOG_TYPES[logType].columns[aliasFor].geo_type : geo_type,
+          category: aliasFor ? logTypes[logType].columns[aliasFor].category : category,
+          geo_type: aliasFor ? logTypes[logType].columns[aliasFor].geo_type : geo_type,
           key,
         }
       }
@@ -469,7 +247,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
       if (['view_hash', 'date', 'hour'].includes(col)) {
         return
       }
-      const { expression, isAggregate } = LOG_TYPES[logType].columns[col]
+      const { expression, isAggregate } = logTypes[logType].columns[col]
       if (isAggregate) {
         aggColumns.push(expression || `"${col}"`)
         return
@@ -505,7 +283,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
         QueryString: `
           SELECT
             ${[...groupByColumns, ...aggColumns].join(', ')}
-          FROM ${LOG_TYPES[logType].table}
+          FROM ${logTypes[logType].table}
           WHERE
             customer_id = ${customerID}
             AND "date" IS NOT NULL
@@ -622,7 +400,7 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
 }
 
 const getView = async (access, reqViews, reqViewColumns, { logType, query, agencyID }) => {
-  if (!(logType in LOG_TYPES)) {
+  if (!(logType in logTypes)) {
     throw apiError(`Invalid log type: ${logType}`, 403)
   }
   // check access
@@ -630,7 +408,7 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   if (!(Array.isArray(customers) && customers.includes(agencyID)) && customers !== -1) {
     throw apiError('Invalid access permissions', 403)
   }
-  const [{ customerID } = {}] = await getCustomers(whitelabel, [agencyID], LOG_TYPES[logType].owner)
+  const [{ customerID } = {}] = await getCustomers(whitelabel, [agencyID], logTypes[logType].owner)
   if (!customerID) {
     throw apiError('Invalid access permissions', 403)
   }
@@ -638,14 +416,14 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   const viewID = `logs_${logType}_${agencyID}`
   const [cacheColumns, queryColumns] = getQueryColumns(
     viewID,
-    LOG_TYPES[logType].columns,
+    logTypes[logType].columns,
     query,
     accessMap[prefix],
   )
   if (!cacheColumns.length || cacheColumns.length > 10) {
     throw apiError('Log views are restricted to queries pulling between 1 and 10 columns', 403)
   }
-  if (cacheColumns.some(col => !(col in LOG_TYPES[logType].columns))) {
+  if (cacheColumns.some(col => !(col in logTypes[logType].columns))) {
     throw apiError(`Unknow column for log type: ${logType}`, 403)
   }
   const viewHash = getViewHash(cacheColumns)
@@ -660,8 +438,8 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   const aggColumns = []
   const joinViews = new Map()
   queryColumns.forEach((col) => {
-    const { aliasFor } = LOG_TYPES[logType].columns[col]
-    const { viewExpression, joins, isAggregate } = LOG_TYPES[logType].columns[aliasFor || col]
+    const { aliasFor } = logTypes[logType].columns[col]
+    const { viewExpression, joins, isAggregate } = logTypes[logType].columns[aliasFor || col]
     if (joins) {
       joins.forEach(join => joinViews.set(join.view, join))
     }
@@ -685,16 +463,17 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
     reqViews[viewID].groupByRaw(groupByColumns.map((_, i) => i + 1).join(', '))
   }
 
-  // init connection to atom db
-  if (joinViews.size) {
-    // close conn automatically after 20s
-    await fdwConnect({ connectionName: ATOM_CONNECTION_NAME, timeout: 20 })
-  }
-
   // join enrich views
-  joinViews.forEach(({ type, view, condition }) => {
+  const fdwConnections = new Set()
+  joinViews.forEach(({ type, view: { view, fdwConnection }, condition }) => {
+    if (fdwConnection) {
+      fdwConnections.add(fdwConnection)
+    }
     reqViews[viewID][`${type}Join`](view, condition)
   })
+
+  // init connections to foreign db's
+  await Promise.all([...fdwConnections].map(connectionName => fdwConnect({ connectionName })))
 
   reqViewColumns[viewID] = getReqViewColumns(logType, accessMap[prefix])
 }
@@ -704,7 +483,7 @@ const listViews = async ({ access, inclMeta = true }) => {
   const agencies = await getCustomers(whitelabel, customers, CU_AGENCY)
   return agencies.reduce(
     (views, { customerID, customerName }) => views.concat(
-      Object.entries(LOG_TYPES).map(([type, { name }]) => {
+      Object.entries(logTypes).map(([type, { name }]) => {
         const view = {
           name: `${name} - ${customerName} (${customerID})`,
           view: {
@@ -731,7 +510,7 @@ const listView = async (access, viewID) => {
   if (!logType || !agencyID) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
-  if (!(logType in LOG_TYPES)) {
+  if (!(logType in logTypes)) {
     throw apiError(`Invalid log type: ${logType}`, 403)
   }
   // check access
@@ -745,7 +524,7 @@ const listView = async (access, viewID) => {
   }
 
   return {
-    name: `${LOG_TYPES[logType].name} - ${customerName} (${customerID})`,
+    name: `${logTypes[logType].name} - ${customerName} (${customerID})`,
     view: {
       type: 'logs',
       id: `logs_${logType}_${customerID}`,

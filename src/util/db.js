@@ -48,7 +48,8 @@ const fdwConnect = async ({
       // already connected
       return
     }
-    throw err
+    // don't return actual err as it may contain login credentials as bindings
+    throw new Error(`Connection error for ${connectionName}`)
   }
 }
 
