@@ -109,6 +109,7 @@ const getLayerIDs = (wl, cu, reportID) => {
   return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
 }
 
+// TODO: fetch aoi data using another endpoint
 const hasAOIData = async (wl, layerID, reportID) => {
   const whereFilters = [`wi_aoi.report_id = ${reportID}`, `l.layer_id = ${layerID}`]
   if (wl !== -1) whereFilters.push(`l.whitelabel = ${wl}`)
@@ -142,12 +143,14 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
     }
     if (inclMeta) {
       const hasAOI = await hasAOIData(whitelabel, layer_id, report_id)
-      const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+      // const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+      const { columns } = options
       Object.entries(columns).forEach(([key, column]) => { column.key = key })
       Object.assign(view, {
         columns,
         report_type: type,
         dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
+        hasAOI,
       })
     }
     return view
@@ -183,7 +186,8 @@ const listView = async (access, viewID) => {
     }
     const { name, type, dates } = reportLayer
     const hasAOI = await hasAOIData(whitelabel, layer_id, reportID)
-    const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+    // const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+    const { columns } = options
     Object.entries(columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
@@ -196,6 +200,7 @@ const listView = async (access, viewID) => {
       columns,
       report_type: type,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
+      hasAOI,
     }
   }))
   if (viewLayers.filter(v => v).length === 0) {
@@ -269,11 +274,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       wi.unique_xdevice * layer.wi_factor as unique_xdevice,
       wi.unique_hh * layer.wi_factor as unique_hh,
       wi.repeat_visitors_hh * layer.wi_factor as repeat_visitors_hh,
-      wi.outlier,
-      wi_aoi.aoi_type,
-      wi_aoi.aoi_id,
-      wi_aoi.aoi_category,
-      wi_aoi.inflator
+      wi.outlier
     FROM poi
     LEFT JOIN tz_world AS tz ON ST_Contains(
       tz.geom,
@@ -285,13 +286,6 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     INNER JOIN report_wi AS wi ON 
       wi.report_id = r.report_id AND
       wi.poi_id = poi.poi_id
-    LEFT JOIN report_wi_aoi AS wi_aoi ON
-      wi_aoi.poi_id = poi.poi_id AND
-      wi_aoi.report_id = wi.report_id AND
-      wi_aoi.date_type = wi.date_type AND
-      wi_aoi.start_date = wi.start_date AND
-      wi_aoi.end_date = wi.end_date AND
-      wi_aoi.repeat_type = wi.repeat_type
     WHERE ${whereFilters.join(' AND ')}
     ) as ${viewID}
   `)
