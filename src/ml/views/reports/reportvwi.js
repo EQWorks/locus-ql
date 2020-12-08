@@ -134,6 +134,7 @@ const getLayerIDs = (wl, cu, reportID) => {
   return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
 }
 
+// TODO: fetch aoi data using another endpoint
 const hasAOIData = async (wl, layerID, reportID) => {
   const whereFilters = [`vwi_aoi.report_id = ${reportID}`, `l.layer_id = ${layerID}`]
   if (wl !== -1) whereFilters.push(`l.whitelabel = ${wl}`)
@@ -175,7 +176,8 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
     }
     if (inclMeta) {
       const hasAOI = await hasAOIData(whitelabel, layer_id, report_id)
-      const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+      // const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+      const { columns } = options
       Object.entries(columns).forEach(([key, column]) => { column.key = key })
       Object.assign(view, {
         columns,
@@ -183,6 +185,7 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
         dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
         vendors,
         camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
+        hasAOI,
       })
     }
     return view
@@ -218,7 +221,8 @@ const listView = async (access, viewID) => {
     }
     const { name, type, dates, vendors, camps } = reportLayer
     const hasAOI = await hasAOIData(whitelabel, layer_id, reportID)
-    const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+    // const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
+    const { columns } = options
     Object.entries(columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
@@ -233,6 +237,7 @@ const listView = async (access, viewID) => {
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
       vendors,
       camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
+      hasAOI,
     }
   }))
   if (viewLayers.filter(v => v).length === 0) {
@@ -323,11 +328,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       vwi.converted_unique_xdevice * layer.vwi_factor as converted_unique_xdevice,
       vwi.converted_unique_hh * layer.vwi_factor as converted_unique_hh,
       vwi.vendor,
-      vwi.campaign,
-      vwi_aoi.aoi_type,
-      vwi_aoi.aoi_id,
-      vwi_aoi.aoi_category,
-      vwi_aoi.inflator
+      vwi.campaign
     FROM poi
     LEFT JOIN tz_world AS tz ON ST_Contains(
       tz.geom,
@@ -339,13 +340,6 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     INNER JOIN report_vwi as vwi ON
       vwi.report_id = r.report_id AND
       vwi.poi_id = poi.poi_id
-    LEFT JOIN report_vwi_aoi AS vwi_aoi ON
-      vwi_aoi.poi_id = poi.poi_id AND
-      vwi_aoi.report_id = vwi.report_id AND
-      vwi_aoi.date_type = vwi.date_type AND
-      vwi_aoi.start_date = vwi.start_date AND
-      vwi_aoi.end_date = vwi.end_date AND
-      vwi_aoi.repeat_type = vwi.repeat_type
     WHERE ${whereFilters.join(' AND ')}
     ) as ${viewID}
   `)
