@@ -18,6 +18,7 @@ const {
   ACCESS_INTERNAL,
   ACCESS_CUSTOMER,
 } = require('./constants')
+const { getPgView } = require('./pg-views')
 
 
 const logTypes = {
@@ -101,6 +102,43 @@ const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOME
     queue.push(...Object.values(item))
   }
   return [[...cacheColumns], [...queryColumns]]
+}
+
+/**
+ * Returns the intersection of two arrays using strict equality
+ * @param {any[]} a First array
+ * @param {any[]} b Second array
+ * @returns {any[]} A new array being the intersection of a and b
+ */
+const intersectArrays = (a, b) => (
+  a.length < b.length
+    ? a.filter(x => b.includes(x))
+    : b.filter(x => a.includes(x))
+)
+
+/**
+ * Returns a collection of fast views including all the columns in cacheColumns
+ * @param {object} viewColumns An object with column names as keys
+ * @param {string[]} cacheColumns The columns that must be included in the fast views
+ * @returns {object[]} The fast views satisfying the above constraints
+ * query. [cacheColumns, queryColumns]
+ */
+const getFastViews = (viewColumns, cacheColumns) => {
+  let fastViews
+  for (const col of cacheColumns) {
+    if (!viewColumns[col].inFastViews || !viewColumns[col].inFastViews.length) {
+      return []
+    }
+    if (!fastViews) {
+      fastViews = viewColumns[col].inFastViews
+      continue
+    }
+    fastViews = intersectArrays(fastViews, viewColumns[col].inFastViews)
+    if (!fastViews.length) {
+      break
+    }
+  }
+  return fastViews
 }
 
 /**
@@ -291,7 +329,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
             AND (
               ${dateFilter.join(' OR ')}
             )
-          GROUP BY ${groupByColumns.map((_, i) => i + 1).join(', ')}
+          ${aggColumns.length ? `GROUP BY ${groupByColumns.map((_, i) => i + 1).join(', ')}` : ''}
         `,
         ClientRequestToken: token,
         // eslint-disable-next-line max-len
@@ -426,22 +464,33 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   if (cacheColumns.some(col => !(col in logTypes[logType].columns))) {
     throw apiError(`Unknow column for log type: ${logType}`, 403)
   }
-  const viewHash = getViewHash(cacheColumns)
 
-  const cacheIsUpdating = await updateViewCache(customerID, logType, viewHash, cacheColumns)
-  if (cacheIsUpdating) {
-    // async query
-    return false
+  // check if can use camphistory view instead of log
+  const [fastView] = getFastViews(logTypes[logType].columns, cacheColumns)
+
+  // otherwise update pg view cache with log data, as applicable
+  let viewHash
+  if (!fastView) {
+    viewHash = getViewHash(cacheColumns)
+    const cacheIsUpdating = await updateViewCache(customerID, logType, viewHash, cacheColumns)
+    if (cacheIsUpdating) {
+      // async query
+      return false
+    }
   }
 
   const groupByColumns = []
   const aggColumns = []
-  const joinViews = new Map()
+  const joinViews = {}
+  const fdwConnections = new Set()
+
   queryColumns.forEach((col) => {
     const { aliasFor } = logTypes[logType].columns[col]
     const { viewExpression, joins, isAggregate } = logTypes[logType].columns[aliasFor || col]
     if (joins) {
-      joins.forEach(join => joinViews.set(join.view, join))
+      joins.forEach((join) => {
+        joinViews[join.view] = join
+      })
     }
     if (isAggregate) {
       aggColumns.push(`${viewExpression || `SUM(log."${aliasFor || col}")`} AS "${col}"`)
@@ -452,24 +501,34 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
 
   reqViews[viewID] = knex
     .select(knex.raw([...groupByColumns, ...aggColumns].join(', ')))
-    .from({ log: `public.logs_${logType}` })
-    .where({
-      'log.customer_id': customerID,
-      'log.view_hash': viewHash,
-    })
     .as(viewID)
 
-  if (groupByColumns.length) {
+  if (fastView) {
+    const { view, fdwConnection } = getPgView(fastView, customerID)
+    if (fdwConnection) {
+      fdwConnections.add(fdwConnection)
+    }
+    reqViews[viewID].from({ log: knex.select().from(view) })
+  } else {
+    reqViews[viewID]
+      .from({ log: `public.logs_${logType}` })
+      .where({
+        'log.customer_id': customerID,
+        'log.view_hash': viewHash,
+      })
+  }
+
+  if (aggColumns.length) {
     reqViews[viewID].groupByRaw(groupByColumns.map((_, i) => i + 1).join(', '))
   }
 
   // join enrich views
-  const fdwConnections = new Set()
-  joinViews.forEach(({ type, view: { view, fdwConnection }, condition }) => {
+  Object.values(joinViews).forEach(({ type, view, condition }) => {
+    const { view: knexView, fdwConnection } = getPgView(view, customerID)
     if (fdwConnection) {
       fdwConnections.add(fdwConnection)
     }
-    reqViews[viewID][`${type}Join`](view, condition)
+    reqViews[viewID][`${type}Join`](knexView, condition)
   })
 
   // init connections to foreign db's
