@@ -287,7 +287,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
       }
       const { expression, isAggregate } = logTypes[logType].columns[col]
       if (isAggregate) {
-        aggColumns.push(expression || `"${col}"`)
+        aggColumns.push(expression || `SUM("${col}") AS "${col}"`)
         return
       }
       groupByColumns.push(expression || `"${col}"`)
@@ -295,26 +295,32 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
 
     const isoStart = toISODate(start)
     const isoEnd = toISODate(end)
+    const startHour = start.getUTCHours()
+    const endHour = end.getUTCHours()
     const dateFilter = []
     if (isoStart === isoEnd) {
       // eslint-disable-next-line max-len
-      dateFilter.push(`"date" = date '${isoEnd}' AND hour BETWEEN ${start.getUTCHours() + 1} AND ${end.getUTCHours()}`)
+      dateFilter.push(`"date" = date '${isoEnd}' AND hour BETWEEN ${startHour + 1} AND ${endHour}`)
     } else {
       dateFilter.push(`"date" > date '${isoStart}' AND "date" < date '${isoEnd}'`)
       // start is exclusive
-      if (start.getUTCHours() !== 23) {
-        dateFilter.push(`"date" = date '${isoStart}' AND hour > ${start.getUTCHours()}`)
+      if (startHour !== 23) {
+        dateFilter.push(`"date" = date '${isoStart}' AND hour > ${startHour}`)
       }
       // end is inclusive
-      if (end.getUTCHours() !== 23) {
-        dateFilter.push(`"date" = date '${isoEnd}' AND hour <= ${end.getUTCHours()}`)
+      if (endHour !== 23) {
+        dateFilter.push(`"date" = date '${isoEnd}' AND hour <= ${endHour}`)
       } else {
         dateFilter.push(`"date" = date '${isoEnd}'`)
       }
     }
 
     // token is used to cache queries at Athena's end
-    const token = `ml-${logType}-${customerID}-${viewHash}-${isoEnd}-${end.getUTCHours()}`
+    // stable within current hour so queries can potentially be rerun in future
+    const thisHour = new Date()
+    thisHour.setUTCMinutes(0, 0, 0)
+    const thisHourToken = `${toISODate(thisHour)}-${thisHour.getUTCHours()}`
+    const token = `ml-${logType}-${customerID}-${viewHash}-${isoEnd}-${endHour}-${thisHourToken}`
     const { QueryExecutionId } = await retryAthenaOnThrottlingException(
       athena.startQueryExecution.bind(athena),
       [{
@@ -350,39 +356,68 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
 }
 
 /**
- * Returns the latest end date for which an Athena query was sucessfully submitted
+ * Returns the latest end date for which an Athena query was sucessfully submitted along
+ * with the number of pending updates
  * @param {number} customerID Customer
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
- * @returns {Promise<Date>} undefined if the view does not exist in cache
+ * @returns {Promise<{ cacheUntil: Date, pendingUpdates: number }>} undefined if the view does
+ * not exist in cache
  */
-const getViewCacheDate = async (customerID, logType, viewHash) => {
-  const { rows: [{ cachedUntil } = {}] } = await knex.raw(`
+const getViewCacheMeta = async (customerID, logType, viewHash) => {
+  const { rows: [viewMeta] } = await knex.raw(`
     SELECT
-      cached_until::timestamptz as "cachedUntil"
-    FROM public.logs_views
+      v.cached_until::timestamptz AS "cachedUntil",
+      COALESCE(COUNT(vu.*), 0) AS "pendingUpdates"
+    FROM public.logs_views v
+    LEFT JOIN public.logs_view_updates vu ON
+      vu.log_type = v.log_type
+      AND vu.customer_id = v.customer_id
+      AND vu.view_hash = v.view_hash
     WHERE
-      log_type = ?
-      AND customer_id = ?
-      AND view_hash = ?
+      v.log_type = ?
+      AND v.customer_id = ?
+      AND v.view_hash = ?
+    GROUP BY 1
   `, [logType, customerID, viewHash])
-  return cachedUntil
+  return viewMeta
 }
 
 /**
- * Updates the view cache's end date
+ * Updates the view cache's end date and inserts pending update
  * @param {number} customerID Customer
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
- * @param {Date} end New cache end date
+ * @param {string} executionID Athena's query execution ID
+ * @param {Date} start Update start date (exclusive)
+ * @param {Date} end Update end date (inclusive)
+ * @returns {Knex.Transaction}
  */
-const updateViewCacheDate = (customerID, logType, viewHash, end) => knex.raw(`
-  INSERT INTO public.logs_views
-    (log_type, customer_id, view_hash, cached_until)
-    VALUES (:logType, :customerID, :viewHash, :end)
-  ON CONFLICT (log_type, customer_id, view_hash) DO UPDATE
-  SET cached_until = :end;
-`, { logType, customerID, viewHash, end: end.toISOString() })
+const updateViewCacheMeta = (customerID, logType, viewHash, executionID, start, end) => knex
+  .transaction(trx => Promise.all([
+    // insert cache update request in logs_view_updates
+    trx.raw(`
+      INSERT INTO public.logs_view_updates
+        (log_type, customer_id, view_hash, execution_uuid, start_date, end_date)
+        VALUES (:logType, :customerID, :viewHash, :executionID, :start, :end)
+      ON CONFLICT (log_type, customer_id, view_hash, execution_uuid) DO NOTHING
+    `, {
+      logType,
+      customerID,
+      viewHash,
+      executionID,
+      start: start.toISOString(),
+      end: end.toISOString(),
+    }),
+    // update the cached_until date in logs_views
+    trx.raw(`
+      INSERT INTO public.logs_views
+        (log_type, customer_id, view_hash, cached_until)
+        VALUES (:logType, :customerID, :viewHash, :end)
+      ON CONFLICT (log_type, customer_id, view_hash) DO UPDATE
+      SET cached_until = :end;
+    `, { logType, customerID, viewHash, end: end.toISOString() }),
+  ]))
 
 /**
  * Spawns Athena queries to fill the view's PG cache with data for the last CACHE_DAYS days
@@ -394,22 +429,26 @@ const updateViewCacheDate = (customerID, logType, viewHash, end) => knex.raw(`
  */
 const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
   try {
-    // get latest cache date
-    const cacheDate = await getViewCacheDate(customerID, logType, viewHash)
+    // get cache date and readiness
+    const {
+      cachedUntil,
+      pendingUpdates,
+    } = (await getViewCacheMeta(customerID, logType, viewHash)) || {}
     const thisHour = new Date()
     thisHour.setUTCMinutes(0, 0, 0)
     // start is exclusive
-    let start = cacheDate
-      ? new Date(
-        Math.max(new Date(cacheDate).valueOf(), thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS)),
-      )
+    let start = cachedUntil
+      ? new Date(Math.max(
+        new Date(cachedUntil).valueOf(),
+        thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS),
+      ))
       : new Date(thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS))
     let end
     const viewColumnsCount = viewColumns.reduce(
       (count, col) => (['view_hash', 'date', 'hour'].includes(col) ? count : count + 1),
       0,
     )
-    let updated = false
+    let updated = pendingUpdates > 0
     // split time range into multiple queries
     while (start < thisHour) {
       // end is inclusive
@@ -425,9 +464,9 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
       updated = true
       // wait for query to succeed before subitting next one to ensure no gap in dataset
       // eslint-disable-next-line no-await-in-loop
-      await requestViewData(customerID, logType, viewHash, viewColumns, start, end)
+      const execID = await requestViewData(customerID, logType, viewHash, viewColumns, start, end)
       // eslint-disable-next-line no-await-in-loop
-      await updateViewCacheDate(customerID, logType, viewHash, end)
+      await updateViewCacheMeta(customerID, logType, viewHash, execID, start, end)
       start = end
     }
 

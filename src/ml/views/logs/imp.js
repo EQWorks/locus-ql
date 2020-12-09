@@ -179,7 +179,7 @@ module.exports = {
       viewExpression: `
         CASE
           WHEN log.app_platform_id = 1 THEN 'Android'
-          WHEN log.app_platform_id = 2 THEN 'iOs'
+          WHEN log.app_platform_id = 2 THEN 'iOS'
           ELSE 'Unknown/Browser'
         END
       `,
@@ -187,11 +187,13 @@ module.exports = {
     revenue: {
       category: CAT_NUMERIC,
       access: ACCESS_INTERNAL,
+      isAggregate: true,
       inFastViews: allStandardChViews,
     },
     revenue_in_currency: {
       category: CAT_NUMERIC,
       access: ACCESS_INTERNAL,
+      isAggregate: true,
       inFastViews: allStandardChViews,
     },
     spend: {
@@ -205,11 +207,13 @@ module.exports = {
     cost: {
       category: CAT_NUMERIC,
       access: ACCESS_INTERNAL,
+      isAggregate: true,
       inFastViews: allStandardChViews,
     },
     cost_in_currency: {
       category: CAT_NUMERIC,
       access: ACCESS_INTERNAL,
+      isAggregate: true,
       inFastViews: allStandardChViews,
     },
   },
