@@ -14,7 +14,7 @@ const {
   getSegmentView,
 } = require('./locus')
 
-// sorted from lower to higher cardinality
+
 const pgViews = {
   ATOM_CH_AD_POSITION: 1,
   ATOM_CH_BROWSER_ID: 2,

@@ -37,6 +37,7 @@ const allStandardChViews = [
 module.exports = {
   name: 'ATOM Impressions',
   table: 'fusion_logs.impression_logs',
+  partitions: 4,
   owner: CU_ADVERTISER,
   columns: {
     camp_code: {

@@ -6,6 +6,7 @@ const { pgViews } = require('./pg-views')
 module.exports = {
   name: 'LOCUS Beacons',
   table: 'fusion_logs.beacon_logs',
+  partitions: 4,
   owner: CU_AGENCY,
   columns: {
     camp_code: {
