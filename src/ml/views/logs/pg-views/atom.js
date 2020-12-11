@@ -93,6 +93,41 @@ const getBannerView = customerID => ({
   fdwConnection: ATOM_CONNECTION_NAME,
 })
 
+const getAdPositionView = () => ({
+  view: knex.raw(`
+    (
+      SELECT * FROM dblink(?,'
+        SELECT
+          id,
+          name
+        FROM public.bannerpositions
+      ') AS t(
+        ad_position smallint,
+        ad_position_name text
+      )
+    ) AS atom_ad_positions
+  `, [ATOM_CONNECTION_NAME]),
+  fdwConnection: ATOM_CONNECTION_NAME,
+})
+
+const getDomainView = () => ({
+  view: knex.raw(`
+    (
+      SELECT * FROM dblink(?,'
+        SELECT
+          d.domainid,
+          COALESCE(a.name, d.tld)
+        FROM public.domains AS d
+        LEFT JOIN public.apps AS a ON a.domainid = d.domainid AND a.pkgid = d.tld
+      ') AS t(
+        domain_id bigint,
+        domain_name text
+      )
+    ) AS atom_domains
+  `, [ATOM_CONNECTION_NAME]),
+  fdwConnection: ATOM_CONNECTION_NAME,
+})
+
 const makeChView = (chFeature, viewColumn, viewPgType, customerID) => ({
   view: knex.raw(`
     (
@@ -175,5 +210,7 @@ module.exports = {
   getOsView,
   getBrowserView,
   getBannerView,
+  getAdPositionView,
+  getDomainView,
   makeChView,
 }

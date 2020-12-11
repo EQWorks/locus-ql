@@ -19,6 +19,22 @@ const bannerJoin = {
   },
 }
 
+const locusPoiJoin = {
+  type: 'left',
+  view: pgViews.LOCUS_POI,
+  condition() {
+    this.on('log.locus_poi_id', '=', 'locus_poi.poi_id')
+  },
+}
+
+const locusPoiListJoin = {
+  type: 'left',
+  view: pgViews.LOCUS_POI_LISTS,
+  condition() {
+    this.on('log.locus_poi_list_id', '=', 'locus_poi_lists.poi_list_id')
+  },
+}
+
 // sorted from lower to higher cardinality (observed)
 const allStandardChViews = [
   pgViews.ATOM_CH_AD_POSITION,
@@ -216,6 +232,74 @@ module.exports = {
       access: ACCESS_INTERNAL,
       isAggregate: true,
       inFastViews: allStandardChViews,
+    },
+    locus_poi_id: {
+      category: CAT_NUMERIC,
+      // access: ACCESS_INTERNAL,
+    },
+    locus_poi_name: {
+      category: CAT_STRING,
+      dependsOn: ['locus_poi_id'],
+      viewExpression: 'locus_poi.poi_name',
+      joins: [locusPoiJoin],
+    },
+    locus_poi_lat: {
+      category: CAT_NUMERIC,
+      dependsOn: ['locus_poi_id'],
+      viewExpression: 'locus_poi.poi_lat',
+      joins: [locusPoiJoin],
+    },
+    locus_poi_long: {
+      category: CAT_NUMERIC,
+      dependsOn: ['locus_poi_id'],
+      viewExpression: 'locus_poi.poi_long',
+      joins: [locusPoiJoin],
+    },
+    locus_poi_list_id: {
+      category: CAT_NUMERIC,
+      // access: ACCESS_INTERNAL,
+    },
+    locus_poi_list_name: {
+      category: CAT_STRING,
+      dependsOn: ['locus_poi_listid'],
+      viewExpression: 'locus_poi_lists.poi_list_name',
+      joins: [locusPoiListJoin],
+    },
+    ad_position: {
+      category: CAT_NUMERIC,
+      inFastViews: [pgViews.ATOM_AD_POSITIONS, pgViews.ATOM_CH_AD_POSITION],
+    },
+    ad_position_name: {
+      category: CAT_STRING,
+      dependsOn: ['ad_position'],
+      viewExpression: 'atom_ad_positions.ad_position_name',
+      joins: [
+        {
+          type: 'left',
+          view: pgViews.ATOM_AD_POSITIONS,
+          condition() {
+            this.on('log.ad_position', '=', 'atom_ad_positions.ad_position')
+          },
+        },
+      ],
+    },
+    domain_id: {
+      category: CAT_NUMERIC,
+      inFastViews: [pgViews.ATOM_DOMAINS, pgViews.ATOM_CH_DOMAIN_ID],
+    },
+    domain_name: {
+      category: CAT_STRING,
+      dependsOn: ['domain_id'],
+      viewExpression: 'atom_domains.domain_name',
+      joins: [
+        {
+          type: 'left',
+          view: pgViews.ATOM_DOMAINS,
+          condition() {
+            this.on('log.domain_id', '=', 'atom_domains.domain_id')
+          },
+        },
+      ],
     },
   },
 }

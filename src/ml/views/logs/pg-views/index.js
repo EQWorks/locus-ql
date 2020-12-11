@@ -3,6 +3,8 @@ const {
   getOsView,
   getBrowserView,
   getBannerView,
+  getAdPositionView,
+  getDomainView,
   makeChView,
 } = require('./atom')
 const {
@@ -32,6 +34,8 @@ const pgViews = {
   ATOM_OS: 13,
   ATOM_BANNERS: 14,
   ATOM_BROWSERS: 15,
+  ATOM_AD_POSITIONS: 22,
+  ATOM_DOMAINS: 23,
 
   LOCUS_CAMPS: 16,
   LOCUS_BEACONS: 17,
@@ -60,6 +64,8 @@ const pgViewGetters = {
   [pgViews.ATOM_OS]: getOsView,
   [pgViews.ATOM_BANNERS]: getBannerView,
   [pgViews.ATOM_BROWSERS]: getBrowserView,
+  [pgViews.ATOM_AD_POSITIONS]: getAdPositionView,
+  [pgViews.ATOM_DOMAINS]: getDomainView,
 
   [pgViews.LOCUS_CAMPS]: getLocusCampView,
   [pgViews.LOCUS_BEACONS]: getBeaconView,
