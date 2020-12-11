@@ -1,4 +1,5 @@
 const config = require('../../config')
+
 const { Pool } = require('pg')
 const Knex = require('knex')
 
@@ -28,6 +29,7 @@ const fdwConnect = async ({
 } = {}) => {
   try {
     const { user, password, host, database, port } = creds
+    const applicationName = process.env.PGAPPNAME || `firstorder-${process.env.STAGE || 'dev'}`
     const { rows: [{ dblink_connect }] } = await knex.raw(`
       SELECT dblink_connect(
         ?,
@@ -37,9 +39,10 @@ const fdwConnect = async ({
           || ' dbname=' || ?
           || ' port=' || ?
           || ' connect_timeout=' || ?
+          || ' application_name=' || ?
           || ' options=-csearch_path='
       )
-    `, [connectionName, user, password, host, database, port, timeout])
+    `, [connectionName, user, password, host, database, port, timeout, applicationName])
     if (dblink_connect !== 'OK') {
       throw new Error('Connection error')
     }

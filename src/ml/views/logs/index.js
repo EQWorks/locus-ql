@@ -18,6 +18,7 @@ const {
   ACCESS_INTERNAL,
   ACCESS_CUSTOMER,
 } = require('./constants')
+const { getPgView } = require('./pg-views')
 
 
 const logTypes = {
@@ -104,6 +105,43 @@ const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOME
 }
 
 /**
+ * Returns the intersection of two arrays using strict equality
+ * @param {any[]} a First array
+ * @param {any[]} b Second array
+ * @returns {any[]} A new array being the intersection of a and b
+ */
+const intersectArrays = (a, b) => (
+  a.length < b.length
+    ? a.filter(x => b.includes(x))
+    : b.filter(x => a.includes(x))
+)
+
+/**
+ * Returns a collection of fast views including all the columns in cacheColumns
+ * @param {object} viewColumns An object with column names as keys
+ * @param {string[]} cacheColumns The columns that must be included in the fast views
+ * @returns {object[]} The fast views satisfying the above constraints
+ * query. [cacheColumns, queryColumns]
+ */
+const getFastViews = (viewColumns, cacheColumns) => {
+  let fastViews
+  for (const col of cacheColumns) {
+    if (!viewColumns[col].inFastViews || !viewColumns[col].inFastViews.length) {
+      return []
+    }
+    if (!fastViews) {
+      fastViews = viewColumns[col].inFastViews
+      continue
+    }
+    fastViews = intersectArrays(fastViews, viewColumns[col].inFastViews)
+    if (!fastViews.length) {
+      break
+    }
+  }
+  return fastViews
+}
+
+/**
  * Returns string following ISO 8601 'yyyy-mm-dd'
  * @param {Date} date Date to represent as ISO
  * @returns {string} ISO 8601 representation of the date
@@ -158,6 +196,20 @@ const getViewHash = (cols) => {
     hash.update(col)
   })
   return hash.digest('base64')
+}
+
+/**
+ * Randomly assigns a partition number given view type (0-based)
+ * Note: Partitions are not deterministically assigned so that the partition space
+ * can be expanded at little cost (vs. for e.g. reallocation in case of rehashing)
+ * @param {string} logType Log type
+ * @returns {number} The partition number or undefined if supplied logType is not partitioned
+ */
+const assignCachePartition = (logType) => {
+  if (!logTypes[logType].partitions) {
+    return
+  }
+  return Math.floor(Math.random() * logTypes[logType].partitions)
 }
 
 /**
@@ -229,12 +281,15 @@ const retryAthenaOnThrottlingException = async (
  * @param {number} customerID Customer
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
+ * @param {number} partition Cache partition
  * @param {string[]} viewColumns Columns which make up the view
  * @param {Date} start Start date (exclusive) from which to pull data
  * @param {Date} end End date (inclusive) up until which data will be considered
  * @returns {Promise<string>} Athena's 'Query Execution ID'
  */
-const requestViewData = async (customerID, logType, viewHash, viewColumns, start, end) => {
+const requestViewData = async (
+  customerID, logType, viewHash, partition, viewColumns, start, end,
+) => {
   try {
     const groupByColumns = [
       `'${viewHash}' AS view_hash`,
@@ -249,7 +304,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
       }
       const { expression, isAggregate } = logTypes[logType].columns[col]
       if (isAggregate) {
-        aggColumns.push(expression || `"${col}"`)
+        aggColumns.push(expression || `SUM("${col}") AS "${col}"`)
         return
       }
       groupByColumns.push(expression || `"${col}"`)
@@ -257,26 +312,32 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
 
     const isoStart = toISODate(start)
     const isoEnd = toISODate(end)
+    const startHour = start.getUTCHours()
+    const endHour = end.getUTCHours()
     const dateFilter = []
     if (isoStart === isoEnd) {
       // eslint-disable-next-line max-len
-      dateFilter.push(`"date" = date '${isoEnd}' AND hour BETWEEN ${start.getUTCHours() + 1} AND ${end.getUTCHours()}`)
+      dateFilter.push(`"date" = date '${isoEnd}' AND hour BETWEEN ${startHour + 1} AND ${endHour}`)
     } else {
       dateFilter.push(`"date" > date '${isoStart}' AND "date" < date '${isoEnd}'`)
       // start is exclusive
-      if (start.getUTCHours() !== 23) {
-        dateFilter.push(`"date" = date '${isoStart}' AND hour > ${start.getUTCHours()}`)
+      if (startHour !== 23) {
+        dateFilter.push(`"date" = date '${isoStart}' AND hour > ${startHour}`)
       }
       // end is inclusive
-      if (end.getUTCHours() !== 23) {
-        dateFilter.push(`"date" = date '${isoEnd}' AND hour <= ${end.getUTCHours()}`)
+      if (endHour !== 23) {
+        dateFilter.push(`"date" = date '${isoEnd}' AND hour <= ${endHour}`)
       } else {
         dateFilter.push(`"date" = date '${isoEnd}'`)
       }
     }
 
     // token is used to cache queries at Athena's end
-    const token = `ml-${logType}-${customerID}-${viewHash}-${isoEnd}-${end.getUTCHours()}`
+    // stable within current hour so queries can potentially be rerun in future
+    const thisHour = new Date()
+    thisHour.setUTCMinutes(0, 0, 0)
+    const thisHourToken = `${toISODate(thisHour)}-${thisHour.getUTCHours()}`
+    const token = `ml-${logType}-${customerID}-${viewHash}-${isoEnd}-${endHour}-${thisHourToken}`
     const { QueryExecutionId } = await retryAthenaOnThrottlingException(
       athena.startQueryExecution.bind(athena),
       [{
@@ -295,7 +356,7 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
         `,
         ClientRequestToken: token,
         // eslint-disable-next-line max-len
-        ResultConfiguration: { OutputLocation: `s3://${ATHENA_OUTPUT_BUCKET}/${logType}/${customerID}` },
+        ResultConfiguration: { OutputLocation: `s3://${ATHENA_OUTPUT_BUCKET}/${logType}/${customerID}${partition !== undefined ? `/${partition}` : ''}` },
         WorkGroup: ATHENA_WORKGROUP,
       }],
     )
@@ -312,66 +373,119 @@ const requestViewData = async (customerID, logType, viewHash, viewColumns, start
 }
 
 /**
- * Returns the latest end date for which an Athena query was sucessfully submitted
+ * Returns the latest end date for which an Athena query was sucessfully submitted along
+ * with the partition index the view is stored under and the number of pending updates
  * @param {number} customerID Customer
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
- * @returns {Promise<Date>} undefined if the view does not exist in cache
+ * @returns {Promise<{ cacheUntil: Date, partition: number, pendingUpdates: number }>} undefined
+ * if the view does not exist in cache
  */
-const getViewCacheDate = async (customerID, logType, viewHash) => {
-  const { rows: [{ cachedUntil } = {}] } = await knex.raw(`
+const getViewCacheMeta = async (customerID, logType, viewHash) => {
+  const { rows: [viewMeta] } = await knex.raw(`
     SELECT
-      cached_until::timestamptz as "cachedUntil"
-    FROM public.logs_views
+      v.cached_until::timestamptz AS "cachedUntil",
+      v.partition,
+      COALESCE(COUNT(vu.*), 0)::int AS "pendingUpdates"
+    FROM public.logs_views v
+    LEFT JOIN public.logs_view_updates vu ON
+      vu.log_type = v.log_type
+      AND vu.customer_id = v.customer_id
+      AND vu.view_hash = v.view_hash
     WHERE
-      log_type = ?
-      AND customer_id = ?
-      AND view_hash = ?
+      v.log_type = ?
+      AND v.customer_id = ?
+      AND v.view_hash = ?
+    GROUP BY 1, 2
   `, [logType, customerID, viewHash])
-  return cachedUntil
+  if (viewMeta && viewMeta.partition === null) {
+    viewMeta.partition = undefined
+  }
+  return viewMeta
 }
 
 /**
- * Updates the view cache's end date
+ * Updates the view cache's end date and inserts pending update
  * @param {number} customerID Customer
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
- * @param {Date} end New cache end date
+ * @param {number} partition Cache partition (0-based, undefined if the view is not partitioned)
+ * @param {string} executionID Athena's query execution ID
+ * @param {Date} start Update start date (exclusive)
+ * @param {Date} end Update end date (inclusive)
+ * @returns {Knex.Transaction}
  */
-const updateViewCacheDate = (customerID, logType, viewHash, end) => knex.raw(`
-  INSERT INTO public.logs_views
-    (log_type, customer_id, view_hash, cached_until)
-    VALUES (:logType, :customerID, :viewHash, :end)
-  ON CONFLICT (log_type, customer_id, view_hash) DO UPDATE
-  SET cached_until = :end;
-`, { logType, customerID, viewHash, end: end.toISOString() })
+const updateViewCacheMeta = (
+  customerID, logType, viewHash, partition, executionID, start, end,
+) => knex
+  .transaction(trx => Promise.all([
+    // insert cache update request in logs_view_updates
+    trx.raw(`
+      INSERT INTO public.logs_view_updates
+        (log_type, customer_id, view_hash, execution_uuid, start_date, end_date)
+        VALUES (:logType, :customerID, :viewHash, :executionID, :start, :end)
+      ON CONFLICT (log_type, customer_id, view_hash, execution_uuid) DO NOTHING
+    `, {
+      logType,
+      customerID,
+      viewHash,
+      executionID,
+      start: start.toISOString(),
+      end: end.toISOString(),
+    }),
+    // update the cached_until date in logs_views
+    trx.raw(`
+      INSERT INTO public.logs_views
+        (log_type, customer_id, view_hash, cached_until, partition)
+        VALUES (
+          :logType,
+          :customerID,
+          :viewHash,
+          :end,
+          :partition
+        )
+      ON CONFLICT (log_type, customer_id, view_hash) DO UPDATE
+      SET cached_until = :end;
+    `, {
+      logType,
+      customerID,
+      viewHash,
+      end: end.toISOString(),
+      partition: partition !== undefined ? partition : null,
+    }),
+  ]))
 
 /**
  * Spawns Athena queries to fill the view's PG cache with data for the last CACHE_DAYS days
  * @param {number} customerID Customer
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
+ * @param {Object} viewMeta View metadata
  * @param {string[]} viewColumns Columns which make up the view
  * @returns {Promise<boolean>} Whether or not the view's PG cache was updated
  */
-const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
+const updateViewCache = async (customerID, logType, viewHash, viewMeta, viewColumns) => {
   try {
-    // get latest cache date
-    const cacheDate = await getViewCacheDate(customerID, logType, viewHash)
+    const {
+      cachedUntil,
+      partition,
+      pendingUpdates,
+    } = viewMeta
     const thisHour = new Date()
     thisHour.setUTCMinutes(0, 0, 0)
     // start is exclusive
-    let start = cacheDate
-      ? new Date(
-        Math.max(new Date(cacheDate).valueOf(), thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS)),
-      )
+    let start = cachedUntil
+      ? new Date(Math.max(
+        new Date(cachedUntil).valueOf(),
+        thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS),
+      ))
       : new Date(thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS))
     let end
     const viewColumnsCount = viewColumns.reduce(
       (count, col) => (['view_hash', 'date', 'hour'].includes(col) ? count : count + 1),
       0,
     )
-    let updated = false
+    let updated = pendingUpdates > 0
     // split time range into multiple queries
     while (start < thisHour) {
       // end is inclusive
@@ -387,9 +501,11 @@ const updateViewCache = async (customerID, logType, viewHash, viewColumns) => {
       updated = true
       // wait for query to succeed before subitting next one to ensure no gap in dataset
       // eslint-disable-next-line no-await-in-loop
-      await requestViewData(customerID, logType, viewHash, viewColumns, start, end)
+      const executionId = await requestViewData(
+        customerID, logType, viewHash, partition, viewColumns, start, end,
+      )
       // eslint-disable-next-line no-await-in-loop
-      await updateViewCacheDate(customerID, logType, viewHash, end)
+      await updateViewCacheMeta(customerID, logType, viewHash, partition, executionId, start, end)
       start = end
     }
 
@@ -426,22 +542,36 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   if (cacheColumns.some(col => !(col in logTypes[logType].columns))) {
     throw apiError(`Unknow column for log type: ${logType}`, 403)
   }
-  const viewHash = getViewHash(cacheColumns)
 
-  const cacheIsUpdating = await updateViewCache(customerID, logType, viewHash, cacheColumns)
-  if (cacheIsUpdating) {
-    // async query
-    return false
+  // check if can use camphistory view instead of log
+  const [fastView] = getFastViews(logTypes[logType].columns, cacheColumns)
+
+  // otherwise update pg view cache with log data, as applicable
+  let viewHash
+  let viewMeta
+  if (!fastView) {
+    viewHash = getViewHash(cacheColumns)
+    viewMeta = await getViewCacheMeta(customerID, logType, viewHash)
+    viewMeta = viewMeta || { partition: assignCachePartition(logType) }
+    const isUpdating = await updateViewCache(customerID, logType, viewHash, viewMeta, cacheColumns)
+    if (isUpdating) {
+      // async query
+      return false
+    }
   }
 
   const groupByColumns = []
   const aggColumns = []
-  const joinViews = new Map()
+  const joinViews = {}
+  const fdwConnections = new Set()
+
   queryColumns.forEach((col) => {
     const { aliasFor } = logTypes[logType].columns[col]
     const { viewExpression, joins, isAggregate } = logTypes[logType].columns[aliasFor || col]
     if (joins) {
-      joins.forEach(join => joinViews.set(join.view, join))
+      joins.forEach((join) => {
+        joinViews[join.view] = join
+      })
     }
     if (isAggregate) {
       aggColumns.push(`${viewExpression || `SUM(log."${aliasFor || col}")`} AS "${col}"`)
@@ -452,24 +582,38 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
 
   reqViews[viewID] = knex
     .select(knex.raw([...groupByColumns, ...aggColumns].join(', ')))
-    .from({ log: `public.logs_${logType}` })
-    .where({
-      'log.customer_id': customerID,
-      'log.view_hash': viewHash,
-    })
     .as(viewID)
+
+  if (fastView) {
+    const { view, fdwConnection } = getPgView(fastView, customerID)
+    if (fdwConnection) {
+      fdwConnections.add(fdwConnection)
+    }
+    reqViews[viewID].from({ log: knex.select().from(view) })
+  } else {
+    const hasPartition = viewMeta && (viewMeta.partition !== undefined)
+    reqViews[viewID]
+      .from(
+        { log: `public.logs_${logType}${hasPartition ? `_${viewMeta.partition}` : ''}` },
+        { only: true },
+      )
+      .where({
+        'log.customer_id': customerID,
+        'log.view_hash': viewHash,
+      })
+  }
 
   if (groupByColumns.length) {
     reqViews[viewID].groupByRaw(groupByColumns.map((_, i) => i + 1).join(', '))
   }
 
   // join enrich views
-  const fdwConnections = new Set()
-  joinViews.forEach(({ type, view: { view, fdwConnection }, condition }) => {
+  Object.values(joinViews).forEach(({ type, view, condition }) => {
+    const { view: knexView, fdwConnection } = getPgView(view, customerID)
     if (fdwConnection) {
       fdwConnections.add(fdwConnection)
     }
-    reqViews[viewID][`${type}Join`](view, condition)
+    reqViews[viewID][`${type}Join`](knexView, condition)
   })
 
   // init connections to foreign db's
