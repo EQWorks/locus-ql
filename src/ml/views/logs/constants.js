@@ -11,7 +11,8 @@ module.exports = {
   CU_ADVERTISER: 2, // customer type enum
 
   ACCESS_INTERNAL: 1, // access type enum
-  ACCESS_CUSTOMER: 2, // access type
+  ACCESS_CUSTOMER: 2, // access type enum
+  ACCESS_PRIVATE: 3, // access type enum - not exposed to UI
 
   ATOM_CONNECTION_NAME: 'locus_atom_fdw',
 }

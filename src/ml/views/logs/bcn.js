@@ -1,5 +1,5 @@
 const { CAT_STRING, CAT_NUMERIC, CAT_JSON, CAT_DATE } = require('../../type')
-const { CU_AGENCY } = require('./constants')
+const { CU_AGENCY, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
 
 
@@ -17,7 +17,7 @@ module.exports = {
       category: CAT_STRING,
       dependsOn: ['camp_code'],
       viewExpression: 'locus_camps.camp_name',
-      joins: [
+      viewJoins: [
         {
           type: 'left',
           view: pgViews.LOCUS_CAMPS,
@@ -27,9 +27,25 @@ module.exports = {
         },
       ],
     },
+    _date: {
+      category: CAT_DATE,
+      access: ACCESS_PRIVATE,
+      inFastViews: [pgViews.LOCUS_BEACON_HISTORY],
+    },
+    _hour: {
+      category: CAT_NUMERIC,
+      access: ACCESS_PRIVATE,
+      inFastViews: [pgViews.LOCUS_BEACON_HISTORY],
+    },
     date: {
       category: CAT_DATE,
-      inFastViews: [pgViews.LOCUS_BEACON_HISTORY],
+      dependsOn: ['_date'],
+      viewExpression: 'log.time_tz::date',
+    },
+    datetime: {
+      category: CAT_DATE,
+      dependsOn: ['_date', '_hour'],
+      viewExpression: 'log.time_tz',
     },
     fsa: {
       category: CAT_STRING,
@@ -44,7 +60,7 @@ module.exports = {
       category: CAT_STRING,
       dependsOn: ['beacon_id'],
       viewExpression: 'locus_beacons.beacon_name',
-      joins: [
+      viewJoins: [
         {
           type: 'left',
           view: pgViews.LOCUS_BEACONS,
@@ -57,6 +73,7 @@ module.exports = {
     impressions: {
       category: CAT_NUMERIC,
       expression: 'count(*) AS impressions',
+      viewExpression: 'SUM(COALESCE(log.impressions, 0))',
       isAggregate: true,
       inFastViews: [pgViews.LOCUS_BEACON_HISTORY],
     },
@@ -71,13 +88,13 @@ module.exports = {
     household_id: {
       category: CAT_STRING,
       expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20) AS hh_id',
-      viewExpression: 'log.hh_id AS household_id',
+      viewExpression: 'log.hh_id',
     },
     household_fsa: {
       category: CAT_STRING,
       geo_type: 'ca-fsa',
       expression: 'hh_fsa',
-      viewExpression: 'hh_fsa AS household_fsa',
+      viewExpression: 'hh_fsa AS',
     },
     os_id: {
       category: CAT_NUMERIC,
@@ -87,7 +104,7 @@ module.exports = {
       category: CAT_STRING,
       dependsOn: ['os_id'],
       viewExpression: 'atom_os.os_name',
-      joins: [
+      viewJoins: [
         {
           type: 'left',
           view: pgViews.ATOM_OS,
@@ -105,7 +122,7 @@ module.exports = {
       category: CAT_STRING,
       dependsOn: ['browser_id'],
       viewExpression: 'atom_browsers.browser_name',
-      joins: [
+      viewJoins: [
         {
           type: 'left',
           view: pgViews.ATOM_BROWSERS,
@@ -116,6 +133,24 @@ module.exports = {
       ],
     },
     city: { category: CAT_STRING },
+    connection_type: {
+      category: CAT_NUMERIC,
+      inFastViews: [pgViews.MAXMIND_CONNECTION_TYPES],
+    },
+    connection_type_name: {
+      category: CAT_STRING,
+      dependsOn: ['connection_type'],
+      viewExpression: 'maxmind_connection_types.connection_type_name',
+      viewJoins: [
+        {
+          type: 'left',
+          view: pgViews.MAXMIND_CONNECTION_TYPES,
+          condition() {
+            this.on('log.connection_type', '=', 'maxmind_connection_types.connection_type')
+          },
+        },
+      ],
+    },
     vendor: {
       category: CAT_STRING,
       inFastViews: [pgViews.LOCUS_BEACONS, pgViews.LOCUS_BEACON_HISTORY],
@@ -124,13 +159,14 @@ module.exports = {
       category: CAT_STRING,
       inFastViews: [pgViews.LOCUS_BEACONS],
     },
+    referrer: { category: CAT_STRING },
     content: { category: CAT_JSON },
     // TODO: expose default fields once convention agreed upon
     // example:
     // content_ga_id: {
     //   category: CAT_STRING,
     //   dependsOn: ['content'],
-    //   viewExpression: "log.content->'ga_id' AS content_ga_id",
+    //   viewExpression: "log.content->'ga_id'",
     // },
   },
 }
