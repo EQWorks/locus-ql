@@ -15,6 +15,7 @@ const {
   ONE_HOUR_MS,
   ONE_DAY_MS,
   CU_AGENCY,
+  CU_ADVERTISER,
   ACCESS_INTERNAL,
   ACCESS_CUSTOMER,
 } = require('./constants')
@@ -32,6 +33,10 @@ const accessMap = {
   wl: ACCESS_CUSTOMER,
   customers: ACCESS_CUSTOMER,
 }
+
+// columns excluded from the viewHash and included in all log pulls from Athena (the
+// underscored/private vars resolve to their non-underscored counterparts)
+const excludedViewColumns = ['view_hash', '_view_hash', 'date', '_date', 'hour', '_hour']
 
 /**
  * Extracts all columns from a query or an expression for a specific view
@@ -183,6 +188,23 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
 }
 
 /**
+ * Returns the customer's time zone
+ * @param {number} customerID Customer ID
+ * @returns {Promise<string>} Time zone
+ */
+const getCustomerTimeZone = async (customerID) => {
+  const { rows: [{ timeZone } = {}] } = await pgWithCache(`
+    SELECT
+      timezone AS "timeZone"
+    FROM public.customers
+    WHERE
+      customerid = $1
+    LIMIT 1
+  `, [customerID], atomPool, { ttl: 600, gzip: false }) // 10 minutes
+  return timeZone
+}
+
+/**
  * Returns a unique hash per unordered collection of columns
  * @param {string[]} cols The view's columns
  * @returns {string} The view's hash
@@ -190,7 +212,7 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
 const getViewHash = (cols) => {
   const hash = createHash('sha256')
   cols.sort().forEach((col) => {
-    if (['view_hash', 'date', 'hour'].includes(col)) {
+    if (excludedViewColumns.includes(col)) {
       return
     }
     hash.update(col)
@@ -220,19 +242,30 @@ const assignCachePartition = (logType) => {
  */
 // eslint-disable-next-line arrow-body-style
 const getReqViewColumns = (logType, accessType = ACCESS_CUSTOMER) => {
-  return Object.entries(logTypes[logType].columns).reduce(
-    (cols, [key, { category, geo_type, access, aliasFor }]) => {
-      if (!access || access === accessType) {
-        cols[key] = {
-          category: aliasFor ? logTypes[logType].columns[aliasFor].category : category,
-          geo_type: aliasFor ? logTypes[logType].columns[aliasFor].geo_type : geo_type,
-          key,
-        }
+  return Object.entries(logTypes[logType].columns)
+    // order will be honoured by the most common browsers but is not guaranteed by JS specs
+    .sort(([a], [b]) => {
+      if (a > b) {
+        return 1
       }
-      return cols
-    },
-    {},
-  )
+      if (a < b) {
+        return -1
+      }
+      return 0
+    })
+    .reduce(
+      (cols, [key, { category, geo_type, access, aliasFor }]) => {
+        if (!access || access === accessType) {
+          cols[key] = {
+            category: aliasFor ? logTypes[logType].columns[aliasFor].category : category,
+            geo_type: aliasFor ? logTypes[logType].columns[aliasFor].geo_type : geo_type,
+            key,
+          }
+        }
+        return cols
+      },
+      {},
+    )
 }
 
 /**
@@ -278,7 +311,8 @@ const retryAthenaOnThrottlingException = async (
 
 /**
  * Submits a query to Athena to retrieve a view's data
- * @param {number} customerID Customer
+ * @param {number} agencyID Customer ID (agency)
+ * @param {number} advertiserID Customer ID (advertiser)
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
  * @param {number} partition Cache partition
@@ -288,7 +322,7 @@ const retryAthenaOnThrottlingException = async (
  * @returns {Promise<string>} Athena's 'Query Execution ID'
  */
 const requestViewData = async (
-  customerID, logType, viewHash, partition, viewColumns, start, end,
+  agencyID, advertiserID, logType, viewHash, partition, viewColumns, start, end,
 ) => {
   try {
     const groupByColumns = [
@@ -297,12 +331,16 @@ const requestViewData = async (
       'hour',
     ]
     const aggColumns = []
+    const crossJoins = []
 
     viewColumns.forEach((col) => {
-      if (['view_hash', 'date', 'hour'].includes(col)) {
+      if (excludedViewColumns.includes(col)) {
         return
       }
-      const { expression, isAggregate } = logTypes[logType].columns[col]
+      const { expression, isAggregate, crossJoin } = logTypes[logType].columns[col]
+      if (crossJoin) {
+        crossJoins.push(crossJoin)
+      }
       if (isAggregate) {
         aggColumns.push(expression || `SUM("${col}") AS "${col}"`)
         return
@@ -337,7 +375,8 @@ const requestViewData = async (
     const thisHour = new Date()
     thisHour.setUTCMinutes(0, 0, 0)
     const thisHourToken = `${toISODate(thisHour)}-${thisHour.getUTCHours()}`
-    const token = `ml-${logType}-${customerID}-${viewHash}-${isoEnd}-${endHour}-${thisHourToken}`
+    const token = `ml-${logType}-${agencyID}-${viewHash}-${isoEnd}-${endHour}-${thisHourToken}`
+    const customerID = logTypes[logType].owner === CU_ADVERTISER ? advertiserID : agencyID
     const { QueryExecutionId } = await retryAthenaOnThrottlingException(
       athena.startQueryExecution.bind(athena),
       [{
@@ -345,6 +384,7 @@ const requestViewData = async (
           SELECT
             ${[...groupByColumns, ...aggColumns].join(', ')}
           FROM ${logTypes[logType].table}
+          ${crossJoins.join(', ')}
           WHERE
             customer_id = ${customerID}
             AND "date" IS NOT NULL
@@ -356,7 +396,7 @@ const requestViewData = async (
         `,
         ClientRequestToken: token,
         // eslint-disable-next-line max-len
-        ResultConfiguration: { OutputLocation: `s3://${ATHENA_OUTPUT_BUCKET}/${logType}/${customerID}${partition !== undefined ? `/${partition}` : ''}` },
+        ResultConfiguration: { OutputLocation: `s3://${ATHENA_OUTPUT_BUCKET}/${logType}/${agencyID}${partition !== undefined ? `/${partition}` : ''}` },
         WorkGroup: ATHENA_WORKGROUP,
       }],
     )
@@ -375,13 +415,13 @@ const requestViewData = async (
 /**
  * Returns the latest end date for which an Athena query was sucessfully submitted along
  * with the partition index the view is stored under and the number of pending updates
- * @param {number} customerID Customer
+ * @param {number} agencyID Customer ID (agency)
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
  * @returns {Promise<{ cacheUntil: Date, partition: number, pendingUpdates: number }>} undefined
  * if the view does not exist in cache
  */
-const getViewCacheMeta = async (customerID, logType, viewHash) => {
+const getViewCacheMeta = async (agencyID, logType, viewHash) => {
   const { rows: [viewMeta] } = await knex.raw(`
     SELECT
       v.cached_until::timestamptz AS "cachedUntil",
@@ -397,7 +437,7 @@ const getViewCacheMeta = async (customerID, logType, viewHash) => {
       AND v.customer_id = ?
       AND v.view_hash = ?
     GROUP BY 1, 2
-  `, [logType, customerID, viewHash])
+  `, [logType, agencyID, viewHash])
   if (viewMeta && viewMeta.partition === null) {
     viewMeta.partition = undefined
   }
@@ -406,7 +446,7 @@ const getViewCacheMeta = async (customerID, logType, viewHash) => {
 
 /**
  * Updates the view cache's end date and inserts pending update
- * @param {number} customerID Customer
+ * @param {number} agencyID Customer ID (agency)
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
  * @param {number} partition Cache partition (0-based, undefined if the view is not partitioned)
@@ -416,18 +456,18 @@ const getViewCacheMeta = async (customerID, logType, viewHash) => {
  * @returns {Knex.Transaction}
  */
 const updateViewCacheMeta = (
-  customerID, logType, viewHash, partition, executionID, start, end,
+  agencyID, logType, viewHash, partition, executionID, start, end,
 ) => knex
   .transaction(trx => Promise.all([
     // insert cache update request in logs_view_updates
     trx.raw(`
       INSERT INTO public.logs_view_updates
         (log_type, customer_id, view_hash, execution_uuid, start_date, end_date)
-        VALUES (:logType, :customerID, :viewHash, :executionID, :start, :end)
+        VALUES (:logType, :agencyID, :viewHash, :executionID, :start, :end)
       ON CONFLICT (log_type, customer_id, view_hash, execution_uuid) DO NOTHING
     `, {
       logType,
-      customerID,
+      agencyID,
       viewHash,
       executionID,
       start: start.toISOString(),
@@ -439,7 +479,7 @@ const updateViewCacheMeta = (
         (log_type, customer_id, view_hash, cached_until, partition)
         VALUES (
           :logType,
-          :customerID,
+          :agencyID,
           :viewHash,
           :end,
           :partition
@@ -448,7 +488,7 @@ const updateViewCacheMeta = (
       SET cached_until = :end;
     `, {
       logType,
-      customerID,
+      agencyID,
       viewHash,
       end: end.toISOString(),
       partition: partition !== undefined ? partition : null,
@@ -457,14 +497,17 @@ const updateViewCacheMeta = (
 
 /**
  * Spawns Athena queries to fill the view's PG cache with data for the last CACHE_DAYS days
- * @param {number} customerID Customer
+ * @param {number} agencyID Customer ID (agency)
+ * @param {number} advertiserID Customer ID (advertiser)
  * @param {string} logType Log type
  * @param {string} viewHash Hash representation of the view
  * @param {Object} viewMeta View metadata
  * @param {string[]} viewColumns Columns which make up the view
  * @returns {Promise<boolean>} Whether or not the view's PG cache was updated
  */
-const updateViewCache = async (customerID, logType, viewHash, viewMeta, viewColumns) => {
+const updateViewCache = async (
+  agencyID, advertiserID, logType, viewHash, viewMeta, viewColumns,
+) => {
   try {
     const {
       cachedUntil,
@@ -482,11 +525,12 @@ const updateViewCache = async (customerID, logType, viewHash, viewMeta, viewColu
       : new Date(thisHour.valueOf() - (PG_CACHE_DAYS * ONE_DAY_MS))
     let end
     const viewColumnsCount = viewColumns.reduce(
-      (count, col) => (['view_hash', 'date', 'hour'].includes(col) ? count : count + 1),
+      (count, col) => (excludedViewColumns.includes(col) ? count : count + 1),
       0,
     )
     let updated = pendingUpdates > 0
     // split time range into multiple queries
+    const daysOfDataMs = Math.ceil(2 ** Math.max(4 - (0.75 * viewColumnsCount), 1)) * ONE_DAY_MS
     while (start < thisHour) {
       // end is inclusive
       // except for the last day 'end' ends at 23h so that it queries full
@@ -494,7 +538,7 @@ const updateViewCache = async (customerID, logType, viewHash, viewMeta, viewColu
       // the more fields the view includes the less dates the athena query spans
       end = new Date(Math.min(
         start.valueOf()
-        + ((2 ** Math.max(4 - viewColumnsCount, 0)) * ONE_DAY_MS)
+        + daysOfDataMs
         + ((23 - start.getUTCHours()) * ONE_HOUR_MS),
         thisHour.valueOf(),
       ))
@@ -502,10 +546,10 @@ const updateViewCache = async (customerID, logType, viewHash, viewMeta, viewColu
       // wait for query to succeed before subitting next one to ensure no gap in dataset
       // eslint-disable-next-line no-await-in-loop
       const executionId = await requestViewData(
-        customerID, logType, viewHash, partition, viewColumns, start, end,
+        agencyID, advertiserID, logType, viewHash, partition, viewColumns, start, end,
       )
       // eslint-disable-next-line no-await-in-loop
-      await updateViewCacheMeta(customerID, logType, viewHash, partition, executionId, start, end)
+      await updateViewCacheMeta(agencyID, logType, viewHash, partition, executionId, start, end)
       start = end
     }
 
@@ -524,8 +568,10 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   if (!(Array.isArray(customers) && customers.includes(agencyID)) && customers !== -1) {
     throw apiError('Invalid access permissions', 403)
   }
-  const [{ customerID } = {}] = await getCustomers(whitelabel, [agencyID], logTypes[logType].owner)
-  if (!customerID) {
+  const [
+    { customerID: advertiserID } = {},
+  ] = await getCustomers(whitelabel, [agencyID], CU_ADVERTISER)
+  if (!advertiserID) {
     throw apiError('Invalid access permissions', 403)
   }
 
@@ -551,10 +597,12 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   let viewMeta
   if (!fastView) {
     viewHash = getViewHash(cacheColumns)
-    viewMeta = await getViewCacheMeta(customerID, logType, viewHash)
+    viewMeta = await getViewCacheMeta(agencyID, logType, viewHash)
     viewMeta = viewMeta || { partition: assignCachePartition(logType) }
-    const isUpdating = await updateViewCache(customerID, logType, viewHash, viewMeta, cacheColumns)
-    if (isUpdating) {
+    const cacheIsUpdating = await updateViewCache(
+      agencyID, advertiserID, logType, viewHash, viewMeta, cacheColumns,
+    )
+    if (cacheIsUpdating) {
       // async query
       return false
     }
@@ -562,15 +610,15 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
 
   const groupByColumns = []
   const aggColumns = []
-  const joinViews = {}
+  const joins = {}
   const fdwConnections = new Set()
 
   queryColumns.forEach((col) => {
     const { aliasFor } = logTypes[logType].columns[col]
-    const { viewExpression, joins, isAggregate } = logTypes[logType].columns[aliasFor || col]
-    if (joins) {
-      joins.forEach((join) => {
-        joinViews[join.view] = join
+    const { viewExpression, viewJoins, isAggregate } = logTypes[logType].columns[aliasFor || col]
+    if (viewJoins) {
+      viewJoins.forEach((viewJoin) => {
+        joins[viewJoin.view] = viewJoin
       })
     }
     if (isAggregate) {
@@ -585,21 +633,31 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
     .as(viewID)
 
   if (fastView) {
-    const { view, fdwConnection } = getPgView(fastView, customerID)
+    const { view, fdwConnection } = getPgView(fastView, agencyID, advertiserID)
     if (fdwConnection) {
       fdwConnections.add(fdwConnection)
     }
     reqViews[viewID].from({ log: knex.select().from(view) })
   } else {
     const hasPartition = viewMeta && (viewMeta.partition !== undefined)
+    const timeZone = await getCustomerTimeZone(agencyID)
     reqViews[viewID]
-      .from(
-        { log: `public.logs_${logType}${hasPartition ? `_${viewMeta.partition}` : ''}` },
-        { only: true },
-      )
-      .where({
-        'log.customer_id': customerID,
-        'log.view_hash': viewHash,
+      // convert dates from utc to customer's tz
+      .from({
+        log: knex.select('*', knex.raw(`
+            timezone(
+              ?,
+              timezone('UTC', date + hour * INTERVAL '1 hour')
+            )::timestamptz AS time_tz
+          `, timeZone))
+          .from(
+            `public.logs_${logType}${hasPartition ? `_${viewMeta.partition}` : ''}`,
+            { only: true }, // don't pull from children tables
+          )
+          .where({
+            customer_id: agencyID,
+            view_hash: viewHash,
+          }),
       })
   }
 
@@ -608,8 +666,8 @@ const getView = async (access, reqViews, reqViewColumns, { logType, query, agenc
   }
 
   // join enrich views
-  Object.values(joinViews).forEach(({ type, view, condition }) => {
-    const { view: knexView, fdwConnection } = getPgView(view, customerID)
+  Object.values(joins).forEach(({ type, view, condition }) => {
+    const { view: knexView, fdwConnection } = getPgView(view, agencyID, advertiserID)
     if (fdwConnection) {
       fdwConnections.add(fdwConnection)
     }
