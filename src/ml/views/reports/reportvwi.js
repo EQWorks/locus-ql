@@ -111,9 +111,9 @@ const getReportLayers = (wl, cu, filter) => {
   layerQuery.where(whereFilters)
   layerQuery.whereNull('parent_layer')
   if (wl !== -1) {
-    layerQuery.where({ whitelabel: wl[0] })
+    layerQuery.where({ 'layer.whitelabel': wl[0] })
     if (cu !== -1) {
-      layerQuery.where({ agencyid: cu[0] })
+      layerQuery.where({ 'layer.customer': cu[0] }).orWhere({ 'customers.agencyid': cu[0] })
     }
   }
   layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
@@ -128,7 +128,7 @@ const getLayerIDs = (wl, cu, reportID) => {
   if (wl !== -1) {
     layerIDQuery.where({ whitelabel: wl[0] })
     if (cu !== -1) {
-      layerIDQuery.where({ agencyid: cu[0] })
+      layerIDQuery.where({ customer: cu[0] })
     }
   }
   return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes

@@ -94,7 +94,7 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
       query.values.push(customers[0])
       query.text = `
         ${query.text}
-        AND c.agencyid = $${query.values.length}
+        AND c.customer = $${query.values.length}
       `
     }
   }
@@ -176,7 +176,7 @@ const listView = async (access, viewID) => {
       query.values.push(customers[0])
       query.text = `
         ${query.text}
-        AND c.agencyid = $${query.values.length}
+        AND c.customer = $${query.values.length}
       `
     }
   }
