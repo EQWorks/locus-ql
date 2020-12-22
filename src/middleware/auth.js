@@ -23,10 +23,11 @@ function jwtMiddleware(req, _, next) {
     email = '',
     api_access = {},
     prefix,
-  } = jwt.decode(uJWT)
+    product: tokenProduct,
+  } = req.authorizerAccess || jwt.decode(uJWT)
 
   const { write = 0, read = 0 } = api_access
-  let { wl: whitelabel = 0, customers = 0 } = api_access
+  let { wl: whitelabel = [], customers = [] } = api_access
 
   // both are integers
   const { _wl, _customer } = req.query
@@ -36,7 +37,7 @@ function jwtMiddleware(req, _, next) {
   // validate _wl and _customer
   if (_wl && wlID && (!_customer || cuID)) {
     const isInternal = whitelabel === -1 && customers === -1
-    if (isInternal || whitelabel.includes(_wl)) {
+    if (isInternal || whitelabel.includes(wlID)) {
       whitelabel = [wlID]
     }
 
@@ -51,11 +52,19 @@ function jwtMiddleware(req, _, next) {
 
   const product = _product && ['atom', 'locus'].includes(_product) ? _product : 'locus'
 
+  // if went through lambda authorizer, go to next
+  if (req.authorizerAccess) {
+    if (tokenProduct !== product) {
+      return next(apiError('Invalid JWT', 401))
+    }
+    return next()
+  }
+  // else confirm access
   axios({
     url: `${KEY_WARDEN_BASE}/confirm`,
     method: 'get',
     headers: { 'eq-api-jwt': uJWT },
-    params: { light: 1, product },
+    params: { product },
   }).then(() => next()).catch(next)
 }
 

@@ -48,8 +48,8 @@ const getKnexLayerQuery = async (access, filter = {}) => {
     && whitelabel.length > 0
     && customers === -1) {
     layerQuery.whereRaw(`(
-      whitelabel = -1
-      OR (whitelabel = ANY (?) AND account in ('0', '-1')))
+      layer.whitelabel = -1
+      OR (layer.whitelabel = ANY (?) AND layer.account in ('0', '-1')))
     `, [whitelabel])
   } else if (Array.isArray(whitelabel)
     && whitelabel.length > 0
@@ -61,24 +61,24 @@ const getKnexLayerQuery = async (access, filter = {}) => {
         SELECT type_id
         FROM market_ownership_flat MO
         WHERE MO.type = 'layer' AND MO.whitelabel = ? AND MO.customer = ?
-      `, whitelabel[0], customers[0]),
+      `, [whitelabel[0], customers[0]]),
       { ttl: 1800 }, // 30 minutes
     )
     const subscribeLayerIDs = rows.map(layer => layer.type_id)
     layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
     layerQuery.whereRaw(`
       (
-        whitelabel = -1
+        layer.whitelabel = -1
         OR
         (
-          whitelabel = ANY (?)
-          AND (customer = ANY (?) OR agencyid = ANY (?))
-          AND account in ('0', '-1', ?)
+          layer.whitelabel = ANY (?)
+          AND (layer.customer = ANY (?) OR CU.agencyid = ANY (?))
+          AND layer.account in ('0', '-1', ?)
         )
         OR
-        layer_id = ANY (?)
+        layer.layer_id = ANY (?)
       )
-    `, [whitelabel], [customers], [customers], email, subscribeLayerIDs)
+    `, [whitelabel, customers, customers, email, subscribeLayerIDs])
   }
   return knexWithCache(layerQuery, { ttl: 600 }) // 30 minutes
 }
