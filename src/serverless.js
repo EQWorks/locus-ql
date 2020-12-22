@@ -15,7 +15,7 @@ module.exports.handler = serverless(app, {
     try {
       const { access } = event.requestContext.authorizer
       req.authorizerAccess = JSON.parse(access)
-    } catch (err) {
+    } catch (_) {
       req.authorizerAccess = undefined
     }
   },

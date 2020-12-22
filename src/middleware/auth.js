@@ -23,6 +23,7 @@ function jwtMiddleware(req, _, next) {
     email = '',
     api_access = {},
     prefix,
+    product: tokenProduct,
   } = req.authorizerAccess || jwt.decode(uJWT)
 
   const { write = 0, read = 0 } = api_access
@@ -53,7 +54,10 @@ function jwtMiddleware(req, _, next) {
 
   // if went through lambda authorizer, go to next
   if (req.authorizerAccess) {
-    next()
+    if (tokenProduct !== product) {
+      return next(apiError('Invalid JWT', 401))
+    }
+    return next()
   }
   // else confirm access
   axios({
