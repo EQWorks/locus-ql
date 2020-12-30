@@ -38,11 +38,16 @@ const getKnexLayerQuery = async (access, filter = {}) => {
   const layerTypes = [18, 19, 20] // demo, prop and persona
 
   const layerQuery = knex('layer')
-  layerQuery.column(['name', 'layer_id', 'layer_type_id', 'layer_categories'])
+  layerQuery.column([
+    'layer.name',
+    'layer.layer_id',
+    'layer.layer_type_id',
+    'layer.layer_categories',
+  ])
   layerQuery.where(filter)
-  layerQuery.whereIn('layer_type_id', layerTypes)
-  layerQuery.whereNotNull('layer_categories')
-  layerQuery.whereNull('parent_layer')
+  layerQuery.whereIn('layer.layer_type_id', layerTypes)
+  layerQuery.whereNotNull('layer.layer_categories')
+  layerQuery.whereNull('layer.parent_layer')
   // subscription logic
   if (Array.isArray(whitelabel)
     && whitelabel.length > 0
@@ -106,15 +111,15 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey
     (
       SELECT
         GM.ggid as id,
-        geo_id,
-        total,
-        summary_data::json #>> '{main_number_pcnt, title}' AS title,
-        summary_data::json #>> '{main_number_pcnt, value}' AS value,
-        summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
-        summary_data::json #>> '{main_number_pcnt, units}' AS units
-      FROM ${table || slug}
-      INNER JOIN config.ggid_map as GM ON GM.type = '${resolution}' AND GM.local_id = geo_id
-      INNER JOIN ${geoTable} as GT ON GT.${geoIDColumn} = geo_id
+        L.geo_id,
+        L.total,
+        L.summary_data::json #>> '{main_number_pcnt, title}' AS title,
+        L.summary_data::json #>> '{main_number_pcnt, value}' AS value,
+        L.summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
+        L.summary_data::json #>> '{main_number_pcnt, units}' AS units
+      FROM ${table || slug} as L
+      INNER JOIN config.ggid_map as GM ON GM.type = '${resolution}' AND GM.local_id = L.geo_id
+      INNER JOIN ${geoTable} as GT ON GT.${geoIDColumn} = L.geo_id
       WHERE GT.wkb_geometry IS NOT NULL
     ) as ${viewID}
   `)

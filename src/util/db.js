@@ -10,12 +10,12 @@ const atomPool = new Pool({ ...config.pgAtom, max: 1 })
 const knex = Knex({
   client: 'pg',
   connection: config.pg,
-  debug: true,
+  debug: ['1', 'true'].includes((process.env.DEBUG || '').toLowerCase()),
 })
 const mapKnex = Knex({
   client: 'pg',
   connection: config.mappingPg,
-  debug: true,
+  debug: ['1', 'true'].includes((process.env.DEBUG || '').toLowerCase()),
 })
 
 // dblink connect functions (foreign-data wrapper)
