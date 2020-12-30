@@ -28,21 +28,17 @@ const fdwConnect = async ({
   // use a timeout of less than 2 seconds.
 } = {}) => {
   try {
-    const { user, password, host, database, port } = creds
+    const { user, password, host, port, database } = creds
     const applicationName = process.env.PGAPPNAME || `firstorder-${process.env.STAGE || 'dev'}`
     const { rows: [{ dblink_connect }] } = await knex.raw(`
       SELECT dblink_connect(
         ?,
-        'user=' || ?
-          || ' password=' || ?
-          || ' host=' || ?
-          || ' dbname=' || ?
-          || ' port=' || ?
-          || ' connect_timeout=' || ?
-          || ' application_name=' || ?
-          || ' options=-csearch_path='
+          'postgresql://' || ? || ':' || ? || '@' || ? || ':' || ? || '/' || ?
+          || '\\?connect_timeout=' || ?
+          || '&application_name=' || ?
+          || '&options=-csearch_path%3D'
       )
-    `, [connectionName, user, password, host, database, port, timeout, applicationName])
+    `, [connectionName, user, password, host, port, database, timeout, applicationName])
     if (dblink_connect !== 'OK') {
       throw new Error('Connection error')
     }
