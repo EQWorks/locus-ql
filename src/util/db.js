@@ -22,7 +22,7 @@ const mapKnex = Knex({
 // https://www.postgresql.org/docs/9.6/dblink.html
 const fdwConnect = async ({
   connectionName = 'locus_atom_fdw',
-  creds = config.pgAtom,
+  creds = config.pgAtomRead, // use read replica
   timeout = 30, // Maximum wait for connection, in seconds (write as a decimal integer string).
   // Zero or not specified means wait indefinitely. It is not recommended to
   // use a timeout of less than 2 seconds.
