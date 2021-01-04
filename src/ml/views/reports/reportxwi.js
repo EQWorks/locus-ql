@@ -77,11 +77,11 @@ const getReportLayers = (wl, cu, filter) => {
   layerQuery.leftJoin('report', 'layer.report_id', 'report.report_id')
   layerQuery.innerJoin('report_xwi', 'report.report_id', 'report_xwi.report_id')
   layerQuery.where(whereFilters)
-  layerQuery.whereNull('parent_layer')
+  layerQuery.whereNull('layer.parent_layer')
   if (wl !== -1) {
-    layerQuery.where({ 'layer.whitelabel': wl[0] })
+    layerQuery.whereRaw('layer.whitelabel = ANY (?)', [wl])
     if (cu !== -1) {
-      layerQuery.where({ 'layer.customer': cu[0] }).orWhere({ 'customers.agencyid': cu[0] })
+      layerQuery.whereRaw('(layer.customer = ANY (?) OR customers.agencyid = ANY (?))', [cu, cu])
     }
   }
   layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
@@ -94,9 +94,9 @@ const getLayerIDs = (wl, cu, reportID) => {
   layerIDQuery.where({ report_id: reportID })
   layerIDQuery.whereNull('parent_layer')
   if (wl !== -1) {
-    layerIDQuery.where({ whitelabel: wl[0] })
+    layerIDQuery.whereRaw('whitelabel = ANY (?)', [wl])
     if (cu !== -1) {
-      layerIDQuery.where({ customer: cu[0] })
+      layerIDQuery.whereRaw('customer = ANY (?)', [cu])
     }
   }
   return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
@@ -104,6 +104,9 @@ const getLayerIDs = (wl, cu, reportID) => {
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const reportLayers = await getReportLayers(whitelabel, customers, filter)
   return reportLayers.map(({ name, layer_id, report_id, type, dates }) => {
     const view = {
@@ -129,6 +132,9 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
 
 const listView = async (access, viewID) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const [, layerIDStr, reportIDStr] = viewID.match(/^reportxwi_(\d+|\w+)_(\d+)$/) || []
   let layerIDs = []
 
@@ -177,6 +183,9 @@ const listView = async (access, viewID) => {
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const viewID = `reportxwi_${layer_id}_${report_id}`
 
   const [layer] = await listLayers(

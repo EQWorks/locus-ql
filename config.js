@@ -14,6 +14,14 @@ module.exports.pgAtom = {
   password: process.env.PG_ATOM_PW,
 }
 
+module.exports.pgAtomRead = {
+  host: process.env.PG_ATOM_HOST_READ,
+  port: process.env.PG_ATOM_PORT,
+  database: process.env.PG_ATOM_DB,
+  user: process.env.PG_ATOM_USER,
+  password: process.env.PG_ATOM_PW,
+}
+
 module.exports.mappingPg = {
   host: process.env.MAPPING_PG_HOST,
   port: process.env.MAPPING_PG_PORT,

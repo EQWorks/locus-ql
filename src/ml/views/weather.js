@@ -68,12 +68,9 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
     reqViewColumns[viewID] = poiListColumns
 
     // inject view
-    let { whitelabel, customers } = access
-    if (whitelabel !== -1) {
-      whitelabel = whitelabel[0]
-    }
-    if (customers !== -1) {
-      customers = customers[0]
+    const { whitelabel, customers } = access
+    if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+      throw apiError('Invalid access permissions', 403)
     }
 
     reqViews[viewID] = knex.raw(`
@@ -86,10 +83,13 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
         LEFT JOIN canada_geo.csd CSD ON
           ST_Contains(CSD.geom, ST_SetSRID(ST_MakePoint(poi.lon, poi.lat), 4326))
         LEFT JOIN dark_sky_${frequency}_stats DS ON DS.csd_gid = CSD.gid
-        WHERE ? in (poi_list.whitelabelid, -1) AND ? in (poi_list.customerid, -1)
-          AND poi_list.poi_list_id = ?
+        WHERE
+          poi_list.poi_list_id = :poiListID
+          ${whitelabel !== -1 ? `AND poi_list.whitelabelid = ANY (:whitelabel)
+            ${customers !== -1 ? 'AND poi_list.customerid = ANY (:customers)' : ''}
+          ` : ''}
       ) as ${viewID}
-    `, [whitelabel, customers, poiListID])
+    `, { poiListID, whitelabel, customers })
   }
 }
 

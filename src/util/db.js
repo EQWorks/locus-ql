@@ -10,39 +10,35 @@ const atomPool = new Pool({ ...config.pgAtom, max: 1 })
 const knex = Knex({
   client: 'pg',
   connection: config.pg,
-  debug: true,
+  debug: ['1', 'true'].includes((process.env.DEBUG || '').toLowerCase()),
 })
 const mapKnex = Knex({
   client: 'pg',
   connection: config.mappingPg,
-  debug: true,
+  debug: ['1', 'true'].includes((process.env.DEBUG || '').toLowerCase()),
 })
 
 // dblink connect functions (foreign-data wrapper)
 // https://www.postgresql.org/docs/9.6/dblink.html
 const fdwConnect = async ({
   connectionName = 'locus_atom_fdw',
-  creds = config.pgAtom,
+  creds = config.pgAtomRead, // use read replica
   timeout = 30, // Maximum wait for connection, in seconds (write as a decimal integer string).
   // Zero or not specified means wait indefinitely. It is not recommended to
   // use a timeout of less than 2 seconds.
 } = {}) => {
   try {
-    const { user, password, host, database, port } = creds
+    const { user, password, host, port, database } = creds
     const applicationName = process.env.PGAPPNAME || `firstorder-${process.env.STAGE || 'dev'}`
     const { rows: [{ dblink_connect }] } = await knex.raw(`
       SELECT dblink_connect(
         ?,
-        'user=' || ?
-          || ' password=' || ?
-          || ' host=' || ?
-          || ' dbname=' || ?
-          || ' port=' || ?
-          || ' connect_timeout=' || ?
-          || ' application_name=' || ?
-          || ' options=-csearch_path='
+          'postgresql://' || ? || ':' || ? || '@' || ? || ':' || ? || '/' || ?
+          || '\\?connect_timeout=' || ?
+          || '&application_name=' || ?
+          || '&options=-csearch_path%3D'
       )
-    `, [connectionName, user, password, host, database, port, timeout, applicationName])
+    `, [connectionName, user, password, host, port, database, timeout, applicationName])
     if (dblink_connect !== 'OK') {
       throw new Error('Connection error')
     }

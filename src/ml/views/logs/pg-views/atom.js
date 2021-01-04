@@ -149,6 +149,7 @@ const getSegmentView = agencyID => ({
     fdwConnection: ATOM_CONNECTION_NAME,
     agencyID,
   }),
+  fdwConnection: ATOM_CONNECTION_NAME,
 })
 
 const getLanguageView = () => ({

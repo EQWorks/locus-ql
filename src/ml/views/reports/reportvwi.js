@@ -109,11 +109,11 @@ const getReportLayers = (wl, cu, filter) => {
   layerQuery.innerJoin('report_vwi', 'report.report_id', 'report_vwi.report_id')
   layerQuery.joinRaw('LEFT JOIN camps on camps.camp_id::text = report_vwi.campaign')
   layerQuery.where(whereFilters)
-  layerQuery.whereNull('parent_layer')
+  layerQuery.whereNull('layer.parent_layer')
   if (wl !== -1) {
-    layerQuery.where({ 'layer.whitelabel': wl[0] })
+    layerQuery.whereRaw('layer.whitelabel = ANY (?)', [wl])
     if (cu !== -1) {
-      layerQuery.where({ 'layer.customer': cu[0] }).orWhere({ 'customers.agencyid': cu[0] })
+      layerQuery.whereRaw('(layer.customer = ANY (?) OR customers.agencyid = ANY (?))', [cu, cu])
     }
   }
   layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
@@ -126,9 +126,9 @@ const getLayerIDs = (wl, cu, reportID) => {
   layerIDQuery.where({ report_id: reportID })
   layerIDQuery.whereNull('parent_layer')
   if (wl !== -1) {
-    layerIDQuery.where({ whitelabel: wl[0] })
+    layerIDQuery.whereRaw('whitelabel = ANY (?)', [wl])
     if (cu !== -1) {
-      layerIDQuery.where({ customer: cu[0] })
+      layerIDQuery.whereRaw('customer = ANY (?)', [cu])
     }
   }
   return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
@@ -136,8 +136,12 @@ const getLayerIDs = (wl, cu, reportID) => {
 
 // TODO: fetch aoi data using another endpoint
 const hasAOIData = async (wl, layerID, reportID) => {
-  const whereFilters = [`vwi_aoi.report_id = ${reportID}`, `l.layer_id = ${layerID}`]
-  if (wl !== -1) whereFilters.push(`l.whitelabel = ${wl}`)
+  const whereFilters = ['vwi_aoi.report_id = ?', 'l.layer_id = ?']
+  const whereValues = [reportID, layerID]
+  if (wl !== -1) {
+    whereFilters.push('l.whitelabel = ANY (?)')
+    whereValues.push(wl)
+  }
   const { rows: [{ exists }] } = await knexWithCache(
     knex.raw(`
       SELECT EXISTS (SELECT
@@ -147,7 +151,7 @@ const hasAOIData = async (wl, layerID, reportID) => {
         JOIN report_vwi_aoi vwi_aoi ON vwi_aoi.report_id = l.report_id
       WHERE ${whereFilters.join(' AND ')}
       )
-    `),
+    `, whereValues),
     { ttl: 600 }, // 10 minutes
   )
   return exists
@@ -155,6 +159,9 @@ const hasAOIData = async (wl, layerID, reportID) => {
 
 const listViews = async ({ access, filter, inclMeta = true }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const reportLayers = await getReportLayers(whitelabel, customers, filter)
   return Promise.all(reportLayers.map(async ({
     name,
@@ -194,6 +201,9 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
 
 const listView = async (access, viewID) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const [, layerIDStr, reportIDStr] = viewID.match(/^reportvwi_(\d+|\w+)_(\d+)$/) || []
   let layerIDs = []
 
@@ -248,6 +258,9 @@ const listView = async (access, viewID) => {
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const viewID = `reportvwi_${layer_id}_${report_id}`
   const [layer] = await listLayers(
     whitelabel,
@@ -265,8 +278,12 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
   })
   reqViewColumns[viewID] = (viewMeta[0] || {}).columns
 
-  const whereFilters = ['r.type = 2', `r.report_id = ${report_id}`, `layer.layer_id = ${layer_id}`]
-  if (whitelabel !== -1) whereFilters.push(`layer.whitelabel = ${whitelabel}`)
+  const whereFilters = ['r.type = 2', 'r.report_id = ?', 'layer.layer_id = ?']
+  const whereValues = [report_id, layer_id]
+  if (whitelabel !== -1) {
+    whereFilters.push('layer.whitelabel = ANY (?)')
+    whereValues.push(whitelabel)
+  }
   // inject view
   reqViews[viewID] = knex.raw(`
     (SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
@@ -335,14 +352,14 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       ST_SetSRID(ST_MakePoint(poi.lon, poi.lat), 4326)
     )
     RIGHT JOIN poi_list_map ON poi.poi_id = poi_list_map.poi_id
-    RIGHT JOIN LAYER ON layer.poi_list_id = poi_list_map.poi_list_id
+    RIGHT JOIN layer ON layer.poi_list_id = poi_list_map.poi_list_id
     LEFT JOIN report AS r ON r.report_id = layer.report_id
     INNER JOIN report_vwi as vwi ON
       vwi.report_id = r.report_id AND
       vwi.poi_id = poi.poi_id
     WHERE ${whereFilters.join(' AND ')}
     ) as ${viewID}
-  `)
+  `, whereValues)
 }
 
 module.exports = {

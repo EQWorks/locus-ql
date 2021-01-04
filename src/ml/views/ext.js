@@ -11,28 +11,30 @@ const SETS_TABLE = 'ext_conn.sets'
 
 const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   const viewID = `ext_${conn_id}`
-
-  let { whitelabel, customers } = access
-  if (whitelabel !== -1) {
-    whitelabel = whitelabel[0]
-  }
-  if (customers !== -1) {
-    customers = customers[0]
+  const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
   }
 
   // check access to ext connection table and get table name
   const connections = await knexWithCache(
     knex(CONNECTION_TABLE)
       .where({ id: conn_id })
-      .whereRaw('? in (connections.whitelabel, -1)', whitelabel)
-      .whereRaw('? in (connections.customer, -1)', customers),
+      .where((builder) => {
+        if (whitelabel === -1) {
+          return
+        }
+        builder.whereRaw('connections.whitelabel = ANY (?)', [whitelabel])
+        if (customers !== -1) {
+          builder.whereRaw('connections.customer = ANY (?)', [customers])
+        }
+      }),
     { ttl: 600 }, // 10 minutes
   )
 
   if (connections.length === 0) {
-    throw apiError('Connection not found', 403)
+    throw apiError(`Connection not found: ${viewID}`, 403)
   }
-
 
   // inject view columns
   const viewMeta = await listViews({ access, filter: { conn_id } })
@@ -50,6 +52,9 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
 
 const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
 
   const query = {
     text: `
@@ -85,16 +90,16 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
   }
 
   if (whitelabel !== -1) {
-    query.values.push(whitelabel[0])
+    query.values.push(whitelabel)
     query.text = `
       ${query.text}
-      AND c.whitelabel = $${query.values.length}
+      AND c.whitelabel = ANY ($${query.values.length})
     `
     if (customers !== -1) {
-      query.values.push(customers[0])
+      query.values.push(customers)
       query.text = `
         ${query.text}
-        AND c.customer = $${query.values.length}
+        AND c.customer = ANY ($${query.values.length})
       `
     }
   }
@@ -136,9 +141,12 @@ const listView = async (access, viewID) => {
   // eslint-disable-next-line radix
   const conn_id = parseInt(idStr, 10)
   if (!conn_id) {
-    throw apiError(`Invalid view: ${viewID}`, 403)
+    throw apiError(`Connection not found: ${viewID}`, 403)
   }
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
 
   const query = {
     text: `
@@ -167,26 +175,29 @@ const listView = async (access, viewID) => {
   }
 
   if (whitelabel !== -1) {
-    query.values.push(whitelabel[0])
+    query.values.push(whitelabel)
     query.text = `
       ${query.text}
-      AND c.whitelabel = $${query.values.length}
+      AND c.whitelabel = ANY ($${query.values.length})
     `
     if (customers !== -1) {
-      query.values.push(customers[0])
+      query.values.push(customers)
       query.text = `
         ${query.text}
-        AND c.customer = $${query.values.length}
+        AND c.customer = ANY ($${query.values.length})
       `
     }
   }
 
-  const { rows: [connection = {}] } = await pgWithCache(
+  const { rows: [connection] } = await pgWithCache(
     query.text,
     query.values,
     pool,
     { ttl: 600 }, // 10 minutes
   )
+  if (!connection) {
+    throw apiError(`Connection not found: ${viewID}`, 403)
+  }
   const { set_id, type, name, columns } = connection
 
   // insert column type category

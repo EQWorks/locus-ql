@@ -38,47 +38,51 @@ const getKnexLayerQuery = async (access, filter = {}) => {
   const layerTypes = [18, 19, 20] // demo, prop and persona
 
   const layerQuery = knex('layer')
-  layerQuery.column(['name', 'layer_id', 'layer_type_id', 'layer_categories'])
+  layerQuery.column([
+    'layer.name',
+    'layer.layer_id',
+    'layer.layer_type_id',
+    'layer.layer_categories',
+  ])
   layerQuery.where(filter)
-  layerQuery.whereIn('layer_type_id', layerTypes)
-  layerQuery.whereNotNull('layer_categories')
-  layerQuery.whereNull('parent_layer')
+  layerQuery.whereIn('layer.layer_type_id', layerTypes)
+  layerQuery.whereNotNull('layer.layer_categories')
+  layerQuery.whereNull('layer.parent_layer')
   // subscription logic
-  if (Array.isArray(whitelabel)
-    && whitelabel.length > 0
-    && customers === -1) {
-    layerQuery.whereRaw(`(
-      layer.whitelabel = -1
-      OR (layer.whitelabel = ANY (?) AND layer.account in ('0', '-1')))
-    `, [whitelabel])
-  } else if (Array.isArray(whitelabel)
-    && whitelabel.length > 0
-    && Array.isArray(customers)
-    && customers.length > 0) {
-    // get subscribe layers
-    const { rows } = await knexWithCache(
-      knex.raw(`
-        SELECT type_id
-        FROM market_ownership_flat MO
-        WHERE MO.type = 'layer' AND MO.whitelabel = ? AND MO.customer = ?
-      `, [whitelabel[0], customers[0]]),
-      { ttl: 1800 }, // 30 minutes
-    )
-    const subscribeLayerIDs = rows.map(layer => layer.type_id)
-    layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
-    layerQuery.whereRaw(`
-      (
+  if (whitelabel !== -1) {
+    if (!whitelabel.length || (customers !== -1 && !customers.length)) {
+      layerQuery.where('layer.whitelabel', -1)
+    } else if (customers === -1) {
+      layerQuery.whereRaw(`(
         layer.whitelabel = -1
-        OR
-        (
-          layer.whitelabel = ANY (?)
-          AND (layer.customer = ANY (?) OR CU.agencyid = ANY (?))
-          AND layer.account in ('0', '-1', ?)
-        )
-        OR
-        layer.layer_id = ANY (?)
+        OR (layer.whitelabel = ANY (?) AND layer.account in ('0', '-1')))
+      `, [whitelabel])
+    } else {
+      // get subscribe layers
+      const { rows } = await knexWithCache(
+        knex.raw(`
+          SELECT type_id
+          FROM market_ownership_flat MO
+          WHERE MO.type = 'layer' AND MO.whitelabel = ANY (?) AND MO.customer = ANY (?)
+        `, [whitelabel, customers]),
+        { ttl: 1800 }, // 30 minutes
       )
-    `, [whitelabel, customers, customers, email, subscribeLayerIDs])
+      const subscribeLayerIDs = rows.map(layer => layer.type_id)
+      layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
+      layerQuery.whereRaw(`
+        (
+          layer.whitelabel = -1
+          OR
+          (
+            layer.whitelabel = ANY (?)
+            AND (layer.customer = ANY (?) OR CU.agencyid = ANY (?))
+            AND layer.account in ('0', '-1', ?)
+          )
+          OR
+          layer.layer_id = ANY (?)
+        )
+      `, [whitelabel, customers, customers, email, subscribeLayerIDs])
+    }
   }
   return knexWithCache(layerQuery, { ttl: 600 }) // 30 minutes
 }
@@ -106,15 +110,15 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey
     (
       SELECT
         GM.ggid as id,
-        geo_id,
-        total,
-        summary_data::json #>> '{main_number_pcnt, title}' AS title,
-        summary_data::json #>> '{main_number_pcnt, value}' AS value,
-        summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
-        summary_data::json #>> '{main_number_pcnt, units}' AS units
-      FROM ${table || slug}
-      INNER JOIN config.ggid_map as GM ON GM.type = '${resolution}' AND GM.local_id = geo_id
-      INNER JOIN ${geoTable} as GT ON GT.${geoIDColumn} = geo_id
+        L.geo_id,
+        L.total,
+        L.summary_data::json #>> '{main_number_pcnt, title}' AS title,
+        L.summary_data::json #>> '{main_number_pcnt, value}' AS value,
+        L.summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
+        L.summary_data::json #>> '{main_number_pcnt, units}' AS units
+      FROM ${table || slug} as L
+      INNER JOIN config.ggid_map as GM ON GM.type = '${resolution}' AND GM.local_id = L.geo_id
+      INNER JOIN ${geoTable} as GT ON GT.${geoIDColumn} = L.geo_id
       WHERE GT.wkb_geometry IS NOT NULL
     ) as ${viewID}
   `)
