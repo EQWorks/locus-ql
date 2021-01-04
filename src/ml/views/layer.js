@@ -49,41 +49,40 @@ const getKnexLayerQuery = async (access, filter = {}) => {
   layerQuery.whereNotNull('layer.layer_categories')
   layerQuery.whereNull('layer.parent_layer')
   // subscription logic
-  if (Array.isArray(whitelabel)
-    && whitelabel.length > 0
-    && customers === -1) {
-    layerQuery.whereRaw(`(
-      layer.whitelabel = -1
-      OR (layer.whitelabel = ANY (?) AND layer.account in ('0', '-1')))
-    `, [whitelabel])
-  } else if (Array.isArray(whitelabel)
-    && whitelabel.length > 0
-    && Array.isArray(customers)
-    && customers.length > 0) {
-    // get subscribe layers
-    const { rows } = await knexWithCache(
-      knex.raw(`
-        SELECT type_id
-        FROM market_ownership_flat MO
-        WHERE MO.type = 'layer' AND MO.whitelabel = ? AND MO.customer = ?
-      `, [whitelabel[0], customers[0]]),
-      { ttl: 1800 }, // 30 minutes
-    )
-    const subscribeLayerIDs = rows.map(layer => layer.type_id)
-    layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
-    layerQuery.whereRaw(`
-      (
+  if (whitelabel !== -1) {
+    if (!whitelabel.length || (customers !== -1 && !customers.length)) {
+      layerQuery.where('layer.whitelabel', -1)
+    } else if (customers === -1) {
+      layerQuery.whereRaw(`(
         layer.whitelabel = -1
-        OR
-        (
-          layer.whitelabel = ANY (?)
-          AND (layer.customer = ANY (?) OR CU.agencyid = ANY (?))
-          AND layer.account in ('0', '-1', ?)
-        )
-        OR
-        layer.layer_id = ANY (?)
+        OR (layer.whitelabel = ANY (?) AND layer.account in ('0', '-1')))
+      `, [whitelabel])
+    } else {
+      // get subscribe layers
+      const { rows } = await knexWithCache(
+        knex.raw(`
+          SELECT type_id
+          FROM market_ownership_flat MO
+          WHERE MO.type = 'layer' AND MO.whitelabel = ANY (?) AND MO.customer = ANY (?)
+        `, [whitelabel, customers]),
+        { ttl: 1800 }, // 30 minutes
       )
-    `, [whitelabel, customers, customers, email, subscribeLayerIDs])
+      const subscribeLayerIDs = rows.map(layer => layer.type_id)
+      layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
+      layerQuery.whereRaw(`
+        (
+          layer.whitelabel = -1
+          OR
+          (
+            layer.whitelabel = ANY (?)
+            AND (layer.customer = ANY (?) OR CU.agencyid = ANY (?))
+            AND layer.account in ('0', '-1', ?)
+          )
+          OR
+          layer.layer_id = ANY (?)
+        )
+      `, [whitelabel, customers, customers, email, subscribeLayerIDs])
+    }
   }
   return knexWithCache(layerQuery, { ttl: 600 }) // 30 minutes
 }

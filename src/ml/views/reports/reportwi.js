@@ -134,6 +134,9 @@ const hasAOIData = async (wl, layerID, reportID) => {
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const reportLayers = await getReportLayers(whitelabel, customers, filter)
   return Promise.all(reportLayers.map(async ({ name, layer_id, report_id, type, dates }) => {
     const view = {
@@ -163,6 +166,9 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
 
 const listView = async (access, viewID) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const [, layerIDStr, reportIDStr] = viewID.match(/^reportwi_(\d+|\w+)_(\d+)$/) || []
   let layerIDs = []
 
@@ -215,6 +221,9 @@ const listView = async (access, viewID) => {
 
 const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
   const viewID = `reportwi_${layer_id}_${report_id}`
   const [layer] = await listLayers(
     whitelabel,

@@ -12,6 +12,9 @@ const SETS_TABLE = 'ext_conn.sets'
 const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   const viewID = `ext_${conn_id}`
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
 
   // check access to ext connection table and get table name
   const connections = await knexWithCache(
@@ -30,7 +33,7 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   )
 
   if (connections.length === 0) {
-    throw apiError('Connection not found', 403)
+    throw apiError(`Connection not found: ${viewID}`, 403)
   }
 
   // inject view columns
@@ -49,6 +52,9 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
 
 const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
 
   const query = {
     text: `
@@ -135,9 +141,12 @@ const listView = async (access, viewID) => {
   // eslint-disable-next-line radix
   const conn_id = parseInt(idStr, 10)
   if (!conn_id) {
-    throw apiError(`Invalid view: ${viewID}`, 403)
+    throw apiError(`Connection not found: ${viewID}`, 403)
   }
   const { whitelabel, customers } = access
+  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
+    throw apiError('Invalid access permissions', 403)
+  }
 
   const query = {
     text: `
@@ -180,12 +189,15 @@ const listView = async (access, viewID) => {
     }
   }
 
-  const { rows: [connection = {}] } = await pgWithCache(
+  const { rows: [connection] } = await pgWithCache(
     query.text,
     query.values,
     pool,
     { ttl: 600 }, // 10 minutes
   )
+  if (!connection) {
+    throw apiError(`Connection not found: ${viewID}`, 403)
+  }
   const { set_id, type, name, columns } = connection
 
   // insert column type category
