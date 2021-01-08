@@ -30,7 +30,6 @@
     "@turf/invariant": "^6.1.2",
     "algoliasearch": "^3.30.0",
     "async": "^3.1.0",
-    "aws-sdk": "^2.293.0",
     "axios": "^0.18.1",
     "body-parser": "^1.18.2",
     "compression": "^1.7.3",
@@ -49,6 +48,7 @@
     "serverless-http": "^1.5.5"
   },
   "devDependencies": {
+    "aws-sdk": "^2.293.0",
     "eslint": "^4.19.1",
     "eslint-config-airbnb": "^16.1.0",
     "eslint-config-airbnb-base": "^12.1.0",
@@ -57,5 +57,8 @@
     "nodemon": "^1.12.1",
     "serverless-domain-manager": "^3.3.1",
     "serverless-offline": "^6.7.0"
+  },
+  "peerDependencies": {
+    "aws-sdk": "^2.293.0"
   }
 }
