@@ -64,9 +64,12 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
         c.type,
         c.name,
         s.columns,
-        pc.reltuples AS records
+        greatest(pc.reltuples, pt.n_live_tup) AS records
       FROM ${CONNECTION_TABLE} AS c
       INNER JOIN ${SETS_TABLE} AS s ON s.id = c.set_id
+      INNER JOIN pg_stat_user_tables AS pt
+        ON pt.relname = c.dest->>'table'
+        AND pt.schemaname = c.dest->>'schema'
       INNER JOIN pg_class AS pc
         ON pc.relname = c.dest->>'table'
       -- this is to ensure filter on schema name as well
@@ -74,7 +77,6 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
         ON n.oid = pc.relnamespace
         AND n.nspname = c.dest->>'schema'
         AND pc.relkind = 'r'
-        AND pc.reltuples > 0
       WHERE c.last_sync IS NOT NULL
         AND c.is_syncing = '0'
     `,
@@ -156,9 +158,12 @@ const listView = async (access, viewID) => {
         c.type,
         c.name,
         s.columns,
-        pc.reltuples AS records
+        greatest(pc.reltuples, pt.n_live_tup) AS records
       FROM ${CONNECTION_TABLE} AS c
       INNER JOIN ${SETS_TABLE} AS s ON s.id = c.set_id
+      INNER JOIN pg_stat_user_tables AS pt
+        ON pt.relname = c.dest->>'table'
+        AND pt.schemaname = c.dest->>'schema'
       INNER JOIN pg_class AS pc
         ON pc.relname = c.dest->>'table'
       -- this is to ensure filter on schema name as well
@@ -166,7 +171,6 @@ const listView = async (access, viewID) => {
         ON n.oid = pc.relnamespace
         AND n.nspname = c.dest->>'schema'
         AND pc.relkind = 'r'
-        AND pc.reltuples > 0
       WHERE c.last_sync IS NOT NULL
         AND c.is_syncing = '0'
         AND c.id = $1
