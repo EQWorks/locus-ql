@@ -111,7 +111,7 @@ const getLayerIDs = (wl, cu, reportID) => {
 
 // TODO: fetch aoi data using another endpoint
 const hasAOIData = async (wl, layerID, reportID) => {
-  const whereFilters = ['vwi_aoi.report_id = ?', 'l.layer_id = ?']
+  const whereFilters = ['wi_aoi.report_id = ?', 'l.layer_id = ?']
   const whereValues = [reportID, layerID]
   if (wl !== -1) {
     whereFilters.push('l.whitelabel = ANY (?)')
