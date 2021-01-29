@@ -17,3 +17,9 @@ module.exports.increment = ({ config, n = 1 }) => lambda.invoke({
   InvocationType: 'RequestResponse',
   Payload: JSON.stringify({ config, n }),
 }).promise()
+
+module.exports.get = ({ config }) => lambda.invoke({
+  FunctionName: 'smaug-dev-get', // TODO: wire-in different stages
+  InvocationType: 'RequestResponse',
+  Payload: JSON.stringify({ config }),
+}).promise()
