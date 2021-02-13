@@ -87,7 +87,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
   return knexWithCache(layerQuery, { ttl: 600 }) // 30 minutes
 }
 
-const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey }) => {
+const getQueryView = async (access, { layer_id, categoryKey }) => {
   const viewID = `layer_${layer_id}_${categoryKey}`
   const [layer] = await getKnexLayerQuery(access, { layer_id })
   if (!layer) {
@@ -101,12 +101,12 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey
 
   // inject view columns
   const viewMeta = await listViews({ access, filter: { layer_id } })
-  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+  const mlViewColumns = (viewMeta[0] || {}).columns
 
   const { table, slug, resolution } = category
   const { table: geoTable, geoIDColumn } = RESOLUTION_TABLE_MAP[resolution]
 
-  reqViews[viewID] = mapKnex.raw(`
+  const mlView = mapKnex.raw(`
     (
       SELECT
         GM.ggid as id,
@@ -122,6 +122,8 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, categoryKey
       WHERE GT.wkb_geometry IS NOT NULL
     ) as ${viewID}
   `)
+
+  return { viewID, mlView, mlViewColumns }
 }
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {
@@ -154,7 +156,7 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   }).reduce((agg, view) => [...agg, ...view], [])
 }
 
-const listView = async (access, viewID) => {
+const getView = async (access, viewID) => {
   const [, layerIDStr, categoryKeyStr] = viewID.match(/^layer_(\d+)_(\d+)$/) || []
   // eslint-disable-next-line radix
   const layer_id = parseInt(layerIDStr, 10)
@@ -206,7 +208,7 @@ const options = {
 }
 
 module.exports = {
-  getView,
+  getQueryView,
   listViews,
-  listView,
+  getView,
 }

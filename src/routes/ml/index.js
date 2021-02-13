@@ -3,49 +3,29 @@
 
 const express = require('express')
 
-const { execute } = require('../../ml/engine')
-const { listViews, listView, loadViews } = require('../../ml/views')
-// const { getResFromS3Cache, putToS3Cache } = require('../../ml/cache')
+const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
+const { queueExecution, runQuery, getExecution, listExecutions } = require('../../ml/executions')
 
 
 const router = express.Router()
 
-const mlHandler = async (req, res, next) => {
-  const { query } = req.body
-  // eslint-disable-next-line radix
-  const cacheMaxAge = parseInt(req.query.cache, 10) || undefined
-
-  try {
-    const result = await execute(req.mlViews, req.mlViewColumns, query, cacheMaxAge)
-    // const resultJSON = JSON.stringify(result)
-    // // store response in cache
-    // if (req.mlCacheKey) {
-    //   await putToS3Cache(req.mlCacheKey, resultJSON)
-    // }
-    console.log('finished')
-    return res.status(200).json(result)
-    // return res.status(200).type('application/json').send(resultJSON)
-  } catch (error) {
-    console.error(error)
-    return next(error)
-  }
-}
-
 // list out all accessible views with column data - legacy (use /views instead)
-router.get('/', (req, res, next) => {
-  listViews(req, true).then(data => res.status(200).json(data)).catch(next)
-})
+router.get('/', (req, _, next) => {
+  req.query.inclMeta = true
+  next()
+}, listViewsMW)
 
 // list out all accessible views without column nor meta data
-router.get('/views/', (req, res, next) => {
-  listViews(req).then(data => res.status(200).json(data)).catch(next)
-})
+router.get('/views/', listViewsMW)
 
 // return view object for viewID
-router.get('/views/:viewID', listView)
+router.get('/views/:viewID', getViewMW)
 
 // main query endpoint
-router.post('/', loadViews, mlHandler)
-// router.post('/', getResFromS3Cache, loadViews, mlHandler)
+router.post('/', loadQueryViews, queueExecution, runQuery)
+
+// executions
+router.get('/executions/:id(\\d+)', getExecution)
+router.get('/executions/', listExecutions)
 
 module.exports = router

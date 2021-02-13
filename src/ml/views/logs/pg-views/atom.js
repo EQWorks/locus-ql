@@ -161,7 +161,7 @@ const getLanguageView = () => ({
           langname
         FROM public.lang
       ') AS t(
-        language text,
+        language_code text,
         language_name text
       )
     ) AS atom_languages
@@ -263,17 +263,17 @@ const getChViewabilityView = (_, advertiserID) => ({
         camp_code int,
         time_tz timestamptz,
         banner_code int,
-        view_measurable int,
-        view_in_view int,
-        view_fully_in_view int,
-        view_time_until_in_view int,
-        view_total_exposure_time int,
-        view_universal_interaction int,
-        view_below_the_fold int,
-        view_did_hover int,
-        view_time_until_hover int,
-        view_did_scroll int,
-        view_time_until_scroll int
+        viewability_measurable int,
+        viewability_in_view int,
+        viewability_fully_in_view int,
+        viewability_time_until_in_view int,
+        viewability_total_exposure_time int,
+        viewability_universal_interaction int,
+        viewability_below_the_fold int,
+        viewability_did_hover int,
+        viewability_time_until_hover int,
+        viewability_did_scroll int,
+        viewability_time_until_scroll int
       )
     ) AS atom_ch_viewability
   `, {
@@ -347,10 +347,10 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
         ${viewColumn} ${viewPgType},
         impressions int,
         clicks int,
-        revenue real,
-        revenue_in_currency real,
-        cost real,
-        cost_in_currency real
+        _revenue real,
+        _revenue_in_currency real,
+        _cost real,
+        _cost_in_currency real
       )
     ) AS atom_ch_${viewColumn}
   `, {

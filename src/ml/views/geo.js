@@ -18,7 +18,7 @@ const GEO_TABLES = {
 }
 
 // public available
-const getView = async (_, reqViews, reqViewColumns, { tableKey }) => {
+const getQueryView = async (_, { tableKey }) => {
   const viewID = `geo_${tableKey}`
   const { schema, table } = GEO_TABLES[tableKey]
 
@@ -28,15 +28,17 @@ const getView = async (_, reqViews, reqViewColumns, { tableKey }) => {
 
   // inject view columns
   const viewMeta = await listViews({ filter: { tableKey } })
-  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+  const mlViewColumns = (viewMeta[0] || {}).columns
 
   // inject view
-  reqViews[viewID] = knex.raw(`
+  const mlView = knex.raw(`
     (
       SELECT *
       FROM ${schema}.${table}
     ) as ${viewID}
   `)
+
+  return { viewID, mlView, mlViewColumns }
 }
 
 const listViews = async ({ filter, inclMeta = true }) => {
@@ -81,7 +83,7 @@ const listViews = async ({ filter, inclMeta = true }) => {
   return Promise.all(tablePromises)
 }
 
-const listView = async (_, viewID) => {
+const getView = async (_, viewID) => {
   const [, tableKey] = viewID.match(/^geo_(\w+)$/) || []
   // eslint-disable-next-line radix
   if (!(tableKey in GEO_TABLES)) {
@@ -117,7 +119,7 @@ const listView = async (_, viewID) => {
 }
 
 module.exports = {
-  getView,
+  getQueryView,
   listViews,
-  listView,
+  getView,
 }

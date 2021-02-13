@@ -26,10 +26,7 @@ const VIEWS = VIEW_LIST.reduce((accViews, view) => {
 }, {})
 
 // returns all views provided (sub) category
-module.exports.listViews = async (
-  { access, query: { viewCategory = 'ext', subCategory } },
-  inclMeta = false,
-) => {
+const listViews = async (access, { viewCategory = 'ext', subCategory, inclMeta = false } = {}) => {
   const view = (subCategory || viewCategory) in VIEWS
     ? await VIEWS[subCategory || viewCategory].listViews({ access, inclMeta })
     : []
@@ -47,62 +44,100 @@ module.exports.listViews = async (
   }, {})
 }
 
-// load views into req object based on request body.views
-module.exports.loadViews = async (req, res, next) => {
-  const { views, query } = req.body
-  const { access } = req
 
-  req.mlViews = {}
-  req.mlViewColumns = {}
+const listViewsMW = async (req, res, next) => {
   try {
-    const loaded = await Promise.all(views.map(async (view) => {
-      const { type, id, ...viewParams } = view
-
-      if (!Object.keys(VIEWS).includes(type)) {
-        throw apiError(`Invalid view type: ${type}`, 403)
-      }
-
-      const viewModule = VIEWS[type]
-      if (!viewModule) {
-        throw apiError(`View type not found: ${type}`, 403)
-      }
-
-      viewParams.query = query || {}
-      // getView must return false if query is async
-      return viewModule.getView(access, req.mlViews, req.mlViewColumns, viewParams)
-    }))
-
-    if (loaded.some(proceed => proceed === false)) {
-      // TODO: agree on payload format to signal async query instead of error
-      return res.status(500)
-        .json({ message: 'We need a moment to load your query\'s data, please try again in 30s' })
-    }
-
-    return next()
-  } catch (error) {
-    // console.error(error)
-    return next(error)
+    const { access, query: { viewCategory = 'ext', subCategory, inclMeta } } = req
+    const views = await listViews(
+      access,
+      { viewCategory, subCategory, inclMeta: ['1', 'true'].includes(inclMeta) },
+    )
+    res.status(200).json(views)
+  } catch (err) {
+    next(err)
   }
 }
 
-// returns single view
-module.exports.listView = async (req, res, next) => {
-  try {
-    const { access } = req
-    const { viewID } = req.params
-    const [, type] = viewID.match(/^([^_]+)_.*$/) || []
+// returns knex query obj
+const getQueryViews = async (access, views, query) => {
+  const mlViews = {}
+  const mlViewColumns = {}
+  const mlViewDependencies = {}
+  const mlViewIsInternal = {}
+  await Promise.all(views.map(async (v) => {
+    const { type, ...viewParams } = v
 
     if (!Object.keys(VIEWS).includes(type)) {
-      throw apiError(`Invalid view type: ${viewID}`, 403)
+      throw apiError(`Invalid view type: ${type}`, 403)
     }
 
     const viewModule = VIEWS[type]
     if (!viewModule) {
       throw apiError(`View type not found: ${type}`, 403)
     }
-    const view = await viewModule.listView(access, viewID)
+
+    viewParams.query = query
+    const view = await viewModule.getQueryView(access, viewParams)
+    const { viewID } = view || {}
+    if (viewID) {
+      mlViews[viewID] = view.mlView
+      mlViewColumns[viewID] = view.mlViewColumns
+      mlViewDependencies[viewID] = view.mlViewDependencies
+      mlViewIsInternal[viewID] = view.mlViewIsInternal
+    }
+  }))
+
+  return { mlViews, mlViewColumns, mlViewDependencies, mlViewIsInternal }
+}
+
+// load views into req object based on request body.views
+const loadQueryViews = async (req, _, next) => {
+  const { views, query } = req.body
+  const { access } = req
+
+  try {
+    const mlViews = await getQueryViews(access, views, query)
+    // attach views to req object
+    Object.assign(req, mlViews)
+    next()
+  } catch (err) {
+    // console.error(error)
+    return next(err)
+  }
+}
+
+// single view
+const getView = (access, viewID) => {
+  const [, type] = viewID.match(/^([^_]+)_.*$/) || []
+
+  if (!Object.keys(VIEWS).includes(type)) {
+    throw apiError(`Invalid view type: ${viewID}`, 403)
+  }
+
+  const viewModule = VIEWS[type]
+  if (!viewModule) {
+    throw apiError(`View type not found: ${type}`, 403)
+  }
+  return viewModule.getView(access, viewID)
+}
+
+// returns single view
+const getViewMW = async (req, res, next) => {
+  try {
+    const { access } = req
+    const { viewID } = req.params
+    const view = await getView(access, viewID)
     res.status(200).json(view)
   } catch (err) {
     return next(err)
   }
+}
+
+module.exports = {
+  listViews,
+  listViewsMW,
+  getQueryViews,
+  loadQueryViews,
+  getView,
+  getViewMW,
 }

@@ -6,11 +6,11 @@ const { pgViews } = require('./pg-views')
 module.exports = {
   name: 'LOCUS Beacons',
   table: 'fusion_logs.beacon_logs',
-  partitions: 4,
   owner: CU_AGENCY,
   columns: {
     camp_code: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       inFastViews: [pgViews.LOCUS_CAMPS, pgViews.LOCUS_BEACON_HISTORY],
     },
     camp_name: {
@@ -49,11 +49,13 @@ module.exports = {
     },
     fsa: {
       category: CAT_STRING,
+      pgType: 'varchar(10)',
       geo_type: 'ca-fsa',
-      expression: 'postal_code AS fsa',
+      expression: 'postal_code',
     },
     beacon_id: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       inFastViews: [pgViews.LOCUS_BEACONS],
     },
     beacon_name: {
@@ -72,32 +74,37 @@ module.exports = {
     },
     impressions: {
       category: CAT_NUMERIC,
-      expression: 'count(*) AS impressions',
+      pgType: 'int',
+      expression: 'count(*)',
       viewExpression: 'SUM(COALESCE(log.impressions, 0))',
       isAggregate: true,
       inFastViews: [pgViews.LOCUS_BEACON_HISTORY],
     },
     user_ip: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20) AS user_ip',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20)',
     },
     user_id: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20) AS user_id',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20)',
     },
     household_id: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20) AS hh_id',
-      viewExpression: 'log.hh_id',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20)',
     },
     household_fsa: {
       category: CAT_STRING,
+      pgType: 'varchar(10)',
       geo_type: 'ca-fsa',
       expression: 'hh_fsa',
-      viewExpression: 'hh_fsa AS',
     },
     os_id: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
+      expression: 'COALESCE(os_id, 1092)',
       inFastViews: [pgViews.ATOM_OS],
     },
     os_name: {
@@ -116,6 +123,8 @@ module.exports = {
     },
     browser_id: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
+      expression: 'COALESCE(browser_id, 63)',
       inFastViews: [pgViews.ATOM_BROWSERS],
     },
     browser_name: {
@@ -132,9 +141,13 @@ module.exports = {
         },
       ],
     },
-    city: { category: CAT_STRING },
+    city: {
+      category: CAT_STRING,
+      pgType: 'varchar(500)',
+    },
     connection_type: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
       inFastViews: [pgViews.MAXMIND_CONNECTION_TYPES],
     },
     connection_type_name: {
@@ -153,14 +166,22 @@ module.exports = {
     },
     vendor: {
       category: CAT_STRING,
+      pgType: 'varchar(255)',
       inFastViews: [pgViews.LOCUS_BEACONS, pgViews.LOCUS_BEACON_HISTORY],
     },
     type: {
       category: CAT_STRING,
+      pgType: 'varchar(20)',
       inFastViews: [pgViews.LOCUS_BEACONS],
     },
-    referrer: { category: CAT_STRING },
-    content: { category: CAT_JSON },
+    referrer: {
+      category: CAT_STRING,
+      pgType: 'text',
+    },
+    content: {
+      category: CAT_JSON,
+      pgType: 'jsonb',
+    },
     // TODO: expose default fields once convention agreed upon
     // example:
     // content_ga_id: {

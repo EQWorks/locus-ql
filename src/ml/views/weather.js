@@ -16,7 +16,7 @@ const FREQ_DAILY = 'daily'
 const FREQ_HOURLY = 'hourly'
 
 
-const getView = async (access, reqViews, reqViewColumns, { filters, frequency, queryBy }) => {
+const getQueryView = async (access, { filters, frequency, queryBy }) => {
   const viewID = `weather_${frequency}_${queryBy}`
 
   if (![QUERY_BY_POINT, QUERY_BY_POI_LIST].includes(queryBy)) {
@@ -28,7 +28,7 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
 
   if (queryBy === QUERY_BY_POINT) {
     // inject view columns, skipping listViews here because columns is fixed
-    reqViewColumns[viewID] = columns
+    const mlViewColumns = columns
 
     // filter validation and normalization
     if (!filters || !filters.lat || !filters.lon) {
@@ -43,7 +43,7 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
     }
 
     // inject view
-    reqViews[viewID] = knex.raw(`
+    const mlView = knex.raw(`
       (
         SELECT DS.csd_gid, DS.local_ts at time zone 'UTC' as local_ts,
           DS.timezone, DS.data
@@ -52,6 +52,8 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
         WHERE ST_Contains(CSD.geom, ST_SetSRID(ST_MakePoint(?, ?), 4326))
       ) as ${viewID}
     `, [lon, lat])
+
+    return { viewID, mlView, mlViewColumns }
   } else if (queryBy === QUERY_BY_POI_LIST) {
     // filter validation and normalization
     if (!filters || !filters['poi-list-id']) {
@@ -65,7 +67,7 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
     }
 
     // inject view columns, skipping listViews here because columns is fixed
-    reqViewColumns[viewID] = poiListColumns
+    const mlViewColumns = poiListColumns
 
     // inject view
     const { whitelabel, customers } = access
@@ -73,7 +75,7 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
       throw apiError('Invalid access permissions', 403)
     }
 
-    reqViews[viewID] = knex.raw(`
+    const mlView = knex.raw(`
       (
         SELECT poi.poi_id, DS.csd_gid, DS.local_ts at time zone 'UTC' as local_ts,
           DS.timezone, DS.data
@@ -90,6 +92,8 @@ const getView = async (access, reqViews, reqViewColumns, { filters, frequency, q
           ` : ''}
       ) as ${viewID}
     `, { poiListID, whitelabel, customers })
+
+    return { viewID, mlView, mlViewColumns }
   }
 }
 
@@ -102,7 +106,7 @@ const listViews = async ({ inclMeta = true }) => Object.values(VIEWS)
     return rest
   })
 
-const listView = async (_, viewID) => {
+const getView = async (_, viewID) => {
   if (!(viewID in VIEWS)) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
@@ -169,7 +173,7 @@ const VIEWS = {
 }
 
 module.exports = {
-  getView,
+  getQueryView,
   listViews,
-  listView,
+  getView,
 }

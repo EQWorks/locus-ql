@@ -199,7 +199,7 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
   }))
 }
 
-const listView = async (access, viewID) => {
+const getView = async (access, viewID) => {
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
@@ -256,7 +256,7 @@ const listView = async (access, viewID) => {
   return viewLayers.filter(v => v)
 }
 
-const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
+const getQueryView = async (access, { layer_id, report_id }) => {
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
@@ -276,7 +276,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     access,
     filter: { layer_id, 'report_vwi.report_id': report_id },
   })
-  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+  const mlViewColumns = (viewMeta[0] || {}).columns
 
   const whereFilters = ['r.type = 2', 'r.report_id = ?', 'layer.layer_id = ?']
   const whereValues = [report_id, layer_id]
@@ -285,7 +285,7 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     whereValues.push(whitelabel)
   }
   // inject view
-  reqViews[viewID] = knex.raw(`
+  const mlView = knex.raw(`
     (SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
       poi.poi_id,
       poi.name AS poi_name,
@@ -360,10 +360,12 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     WHERE ${whereFilters.join(' AND ')}
     ) as ${viewID}
   `, whereValues)
+
+  return { viewID, mlView, mlViewColumns }
 }
 
 module.exports = {
   listViews,
-  listView,
   getView,
+  getQueryView,
 }

@@ -9,7 +9,7 @@ const { knexWithCache, pgWithCache } = require('../cache')
 const CONNECTION_TABLE = 'ext_conn.connections'
 const SETS_TABLE = 'ext_conn.sets'
 
-const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
+const getQueryView = async (access, { conn_id }) => {
   const viewID = `ext_${conn_id}`
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
@@ -38,16 +38,19 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
 
   // inject view columns
   const viewMeta = await listViews({ access, filter: { conn_id } })
-  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+  const mlViewColumns = (viewMeta[0] || {}).columns
 
   // inject view
   const [{ dest: { table, schema } }] = connections
-  reqViews[viewID] = knex.raw(`
+  const mlView = knex.raw(`
     (
       SELECT *
       FROM ${schema}."${table}"
     ) as ${viewID}
   `)
+  const mlViewDependencies = [['ext', conn_id]]
+
+  return { viewID, mlView, mlViewColumns, mlViewDependencies }
 }
 
 const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) => {
@@ -138,7 +141,7 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
   })
 }
 
-const listView = async (access, viewID) => {
+const getView = async (access, viewID) => {
   const [, idStr] = viewID.match(/^ext_(\d+)$/) || []
   // eslint-disable-next-line radix
   const conn_id = parseInt(idStr, 10)
@@ -224,7 +227,7 @@ const listView = async (access, viewID) => {
 }
 
 module.exports = {
-  getView,
+  getQueryView,
   listViews,
-  listView,
+  getView,
 }
