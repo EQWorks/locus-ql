@@ -4,7 +4,9 @@
 const express = require('express')
 
 const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
-const { queueExecution, runQuery, getExecution, listExecutions } = require('../../ml/executions')
+const { queueExecution, getExecution, listExecutions } = require('../../ml/executions')
+const { getQuery, listQueries, postQuery, putQuery, loadQuery } = require('../../ml/queries')
+const { hasCustomerSelector } = require('../../middleware/validation')
 
 
 const router = express.Router()
@@ -22,10 +24,17 @@ router.get('/views/', listViewsMW)
 router.get('/views/:viewID', getViewMW)
 
 // main query endpoint
-router.post('/', loadQueryViews, queueExecution, runQuery)
+router.post('/', hasCustomerSelector, loadQueryViews, queueExecution)
 
-// executions
+// query executions
 router.get('/executions/:id(\\d+)', getExecution)
 router.get('/executions/', listExecutions)
+router.post('/executions/', hasCustomerSelector, loadQuery, loadQueryViews, queueExecution)
+
+// saved queries
+router.get('/queries/:id(\\d+)', getQuery)
+router.put('/queries/:id(\\d+)', hasCustomerSelector, loadQuery, loadQueryViews, putQuery)
+router.get('/queries/', listQueries)
+router.post('/queries/', hasCustomerSelector, loadQueryViews, postQuery)
 
 module.exports = router

@@ -11,3 +11,16 @@ const _hasParams = target => (...params) => (req, res, next) => {
 }
 module.exports.hasQueryParams = _hasParams('query')
 module.exports.hasBodyParams = _hasParams('body')
+
+module.exports.hasCustomerSelector = (req, _, next) => {
+  const { whitelabel, customers } = req.access
+  if (
+    !Array.isArray(whitelabel)
+    || whitelabel.length !== 1
+    || !Array.isArray(customers)
+    || customers.length !== 1
+  ) {
+    next(apiError('Customer cannot be identified'))
+  }
+  next()
+}

@@ -92,7 +92,7 @@ const getQueryViews = async (access, views, query) => {
 
 // load views into req object based on request body.views
 const loadQueryViews = async (req, _, next) => {
-  const { views, query } = req.body
+  const { query, views } = (req.mlQuery && req.mlQuery.body) || req.body
   const { access } = req
 
   try {

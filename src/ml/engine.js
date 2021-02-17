@@ -32,7 +32,7 @@ const getView = (views, viewID) => {
 
 // TODO: think through multiple DB case
 // should db be in views? Should first view determine db etc
-const select = async (
+const select = (
   views,
   viewColumns,
   {
@@ -47,7 +47,6 @@ const select = async (
     limit,
     // db = 'place',
   },
-  maxAge,
 ) => {
   const exp = new Expression(viewColumns)
   let knexDB = knex
@@ -143,17 +142,29 @@ const select = async (
     }
   }
 
+  return knexQuery
+}
+
+// parses query to knex object
+const getKnexQuery = (views, viewColumns, query) => {
+  const { type } = query
+
+  if (type === 'select') {
+    return select(views, viewColumns, query)
+  }
+}
+
+// runs query with cache
+const executeQuery = (views, viewColumns, query, maxAge) => {
+  const knexQuery = getKnexQuery(views, viewColumns, query)
   return knexWithCache(
     knexQuery,
     { ttl: 1800, maxAge, type: cacheTypes.S3 }, // 30 minutes (subject to maxAge)
   )
 }
 
-module.exports.execute = async (views, viewColumns, query, maxAge) => {
-  const { type } = query
-
-  if (type === 'select') {
-    return select(views, viewColumns, query, maxAge)
-  }
+module.exports = {
+  getKnexQuery,
+  executeQuery,
 }
 
