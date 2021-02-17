@@ -12,7 +12,7 @@ const _hasParams = target => (...params) => (req, res, next) => {
 module.exports.hasQueryParams = _hasParams('query')
 module.exports.hasBodyParams = _hasParams('body')
 
-module.exports.hasCustomerSelector = (req, _, next) => {
+module.exports.accessHasSingleCustomer = (req, _, next) => {
   const { whitelabel, customers } = req.access
   if (
     !Array.isArray(whitelabel)

@@ -90,22 +90,6 @@ const getQueryViews = async (access, views, query) => {
   return { mlViews, mlViewColumns, mlViewDependencies, mlViewIsInternal }
 }
 
-// load views into req object based on request body.views
-const loadQueryViews = async (req, _, next) => {
-  const { query, views } = (req.mlQuery && req.mlQuery.body) || req.body
-  const { access } = req
-
-  try {
-    const mlViews = await getQueryViews(access, views, query)
-    // attach views to req object
-    Object.assign(req, mlViews)
-    next()
-  } catch (err) {
-    // console.error(error)
-    return next(err)
-  }
-}
-
 // single view
 const getView = (access, viewID) => {
   const [, type] = viewID.match(/^([^_]+)_.*$/) || []
@@ -121,6 +105,35 @@ const getView = (access, viewID) => {
   return viewModule.getView(access, viewID)
 }
 
+// load views into req object based on request body.views
+const loadQueryViews = async (req, _, next) => {
+  try {
+    const { access } = req
+    let query
+    let views
+    // if a saved query or execution have been attached to req, use it
+    // else use req.body
+    const reqQuery = req.mlQuery || req.mlExecution
+    if (reqQuery) {
+      // get views
+      ({ query } = reqQuery.markup)
+      const { viewIDs } = reqQuery.markup
+      views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
+    } else {
+      ({ query, views } = req.body)
+    }
+    if (!query || !views) {
+      throw apiError('Missing field(s): query and/or view')
+    }
+    const mlViews = await getQueryViews(access, views, query)
+    // attach views to req object
+    Object.assign(req, mlViews)
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
 // returns single view
 const getViewMW = async (req, res, next) => {
   try {
@@ -129,7 +142,7 @@ const getViewMW = async (req, res, next) => {
     const view = await getView(access, viewID)
     res.status(200).json(view)
   } catch (err) {
-    return next(err)
+    next(err)
   }
 }
 

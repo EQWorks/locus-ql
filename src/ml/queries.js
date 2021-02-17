@@ -1,23 +1,12 @@
-const { createHash } = require('crypto')
-
-
 const { knex } = require('../util/db')
 const apiError = require('../util/api-error')
 const { getView } = require('./views')
-const { getKnexQuery } = require('./engine')
+const { updateExecution, getQueryHash } = require('./executions')
 
 
 const { ML_SCHEMA } = process.env
 
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
-
-/**
- * Returns a unique hash per query markup
- * The hash can be used to version queries
- * @param {Object} query Query markup
- * @returns {string} Query hash
- */
-const getQueryHash = query => createHash('sha256').update(JSON.stringify(query)).digest('base64')
 
 /**
  * Returns an array of query metas based on the supplied filters
@@ -58,13 +47,13 @@ const getQueryMetas = async ({
           'status', e.status,
           'statusTS', e.status_ts,
           'isInternal', e.is_internal
-        ) ORDER BY e.execution_id DESC
+        ) ORDER BY e.status_ts DESC
       ) AS "executions"` : ''}
     FROM ${ML_SCHEMA}.queries q
     JOIN public.customers c ON c.customerid = q.customer_id
     ${showExecutions || executionID ? `LEFT JOIN ${ML_SCHEMA}.executions e USING (query_id)` : ''}
     WHERE
-      TRUE
+      q.is_active
       ${queryID ? 'AND q.query_id = :queryID' : ''}
       ${whitelabelIDs && whitelabelIDs !== -1 ? 'AND c.whitelabelid = ANY(:whitelabelIDs)' : ''}
       ${customerIDs && customerIDs !== -1 ? 'AND c.customerid = ANY(:customerIDs)' : ''}
@@ -88,9 +77,18 @@ const getQueryMetas = async ({
  * @param {string[]} markup.viewsIDs List of the query views' IDs
  * @param {boolean} isInternal Whether or not the query accesses views restricted to internal users
  * @param {string} [description] Query description
+ * @param {Knex} [knexClient=knex] Knex client to use to run the SQL query. Defaults to the
+ * global client
  * @returns {Promise<number>} The query ID
  */
-const createQuery = async (customerID, name, markup, isInternal, description) => {
+const createQuery = async (
+  customerID,
+  name,
+  markup,
+  isInternal,
+  description,
+  knexClient = knex,
+) => {
   const queryHash = getQueryHash(markup.query)
   const columns = ['customer_id', 'query_hash', 'name', 'markup', 'is_internal']
   const values = [customerID, queryHash, name, JSON.stringify(markup), isInternal]
@@ -100,7 +98,7 @@ const createQuery = async (customerID, name, markup, isInternal, description) =>
     values.push(description)
   }
 
-  const { rows: [{ queryID }] } = await knex.raw(`
+  const { rows: [{ queryID }] } = await knexClient.raw(`
     INSERT INTO ${ML_SCHEMA}.queries
       (${columns.join(', ')})
     VALUES
@@ -123,132 +121,119 @@ const createQuery = async (customerID, name, markup, isInternal, description) =>
  * @param {boolean} [updates.isInternal] Whether or not the query accesses views restricted to
  * internal users
  * @param {string} [updates.description] Query description
+ * @param {boolean} [updates.isActive] Active status
+ * @param {Knex} [knexClient=knex] Knex client to use to run the SQL query. Defaults to the
+ * global client
  */
-const updateQuery = async (queryID, { name, markup, isInternal, description }) => {
+const updateQuery = async (
+  queryID,
+  { name, markup, isInternal, description, isActive },
+  knexClient = knex,
+) => {
   const columns = []
   const values = []
-
   if (name) {
     columns.push('name')
     values.push(name)
   }
-
   if (markup) {
     columns.push('query_hash', 'markup')
     values.push(getQueryHash(markup.query), markup)
   }
-
   if (isInternal !== undefined) {
     columns.push('is_internal')
     values.push(isInternal)
   }
-
   if (description) {
     columns.push('description')
     values.push(description)
   }
-
+  if (isActive !== undefined) {
+    columns.push('is_active')
+    values.push(isActive)
+  }
   if (!columns.length) {
     // nothing to update
     return
   }
-
-  await knex.raw(`
+  await knexClient.raw(`
     UPDATE ${ML_SCHEMA}.queries
-    SET (${columns.join(', ')}) = (${columns.map(() => '?').join(', ')})
+    SET ${columns.map(col => `${col} = ?`).join(', ')}
     WHERE query_id = ?
   `, [...values, queryID])
 }
 
-
 const postQuery = async (req, res, next) => {
-  const { name, description, query } = req.body
-  const { access, mlViews, mlViewColumns, mlViewIsInternal } = req
-
   try {
+    const { name, description, query } = req.body
+    const { access: { customers }, mlViews, mlViewIsInternal } = req
+    const { markup: reqMarkup } = req.mlQuery || req.mlExecution || {}
+    const { executionID, queryID: executionQueryID, isOrphaned } = req.mlExecution || {}
     if (!name) {
       throw apiError('Query name cannot be empty')
     }
-    // validate query
-    // if no error then query was parsed successfully
-    getKnexQuery(mlViews, mlViewColumns, query)
-
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(mlViewIsInternal).some(is => is)
-    const markup = { query, viewIDs: Object.keys(mlViews) }
-    const queryID = await createQuery(access.customers[0], name, markup, isInternal, description)
+    const markup = reqMarkup || { query, viewIDs: Object.keys(mlViews) }
+
+    // create query + update execution (as applicable) in transaction
+    const queryID = await knex.transaction(async (trx) => {
+      const queryID = await createQuery(customers[0], name, markup, isInternal, description, trx)
+      // if execution supplied, attach it to the created query if not already attached to a query
+      if (executionID && !executionQueryID && !isOrphaned) {
+        await updateExecution(executionID, { queryID }, trx)
+      }
+      return queryID
+    })
+
     res.json({ queryID })
   } catch (err) {
-    return next(err)
+    next(err)
   }
 }
 
 const putQuery = async (req, res, next) => {
-  const { queryID } = req.mlQuery
-  const { name, description, query } = req.body
-  const { mlViews, mlViewColumns, mlViewIsInternal } = req
   try {
+    const { queryID } = req.mlQuery
+    const { name, description, query } = req.body
+    const { mlViews, mlViewIsInternal } = req
     if (!name) {
       throw apiError('Query name cannot be empty')
     }
-    // validate query
-    // if no error then query was parsed successfully
-    getKnexQuery(mlViews, mlViewColumns, query)
-
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(mlViewIsInternal).some(is => is)
     const markup = { query, viewIDs: Object.keys(mlViews) }
     await updateQuery(queryID, { name, markup, isInternal, description })
     res.json({ queryID })
   } catch (err) {
-    return next(err)
+    next(err)
   }
 }
 
-const loadQuery = async (req, _, next) => {
+const deleteQuery = async (req, res, next) => {
   try {
-    const query = req.params.id || req.query.query
-    // eslint-disable-next-line radix
-    const queryID = parseInt(query, 10)
-    if (Number.isNaN(queryID)) {
-      throw apiError('Invalid query ID')
-    }
-    const { access } = req
-    const { whitelabel: whitelabelIDs, customers: customerIDs, prefix } = access
-    const hideInternal = !isInternalUser(prefix)
-    const [{ markup }] = await getQueryMetas({
-      queryID,
-      whitelabelIDs,
-      customerIDs,
-      hideInternal,
-    })
-    if (!query) {
-      throw apiError('Invalid query ID', 404)
-    }
-
-    // get views
-    const views = await Promise.all(markup.viewIDs.map(id => getView(access, id).then(v => v.view)))
-
-    req.mlQuery = {
-      queryID,
-      body: { query: markup.query, views },
-    }
-    next()
+    const { queryID } = req.mlQuery
+    await updateQuery(queryID, { isActive: false })
+    res.json({ queryID })
   } catch (err) {
     next(err)
   }
 }
 
-
-const getQuery = async (req, res, next) => {
+// isRequired flags whether or not 'query' is a mandatory route/query param
+const loadQuery = (isRequired = true) => async (req, _, next) => {
   try {
-    const { id } = req.params
+    const id = req.params.id || req.query.query
     // eslint-disable-next-line radix
     const queryID = parseInt(id, 10)
     if (Number.isNaN(queryID)) {
-      throw apiError('Invalid query ID')
+      if (isRequired) {
+        throw apiError('Invalid query ID')
+      }
+      return next()
     }
-    const { whitelabel: whitelabelIDs, customers: customerIDs, prefix } = req.access
+    const { access } = req
+    const { whitelabel: whitelabelIDs, customers: customerIDs, prefix } = access
     const hideInternal = !isInternalUser(prefix)
     const [query] = await getQueryMetas({
       queryID,
@@ -260,11 +245,61 @@ const getQuery = async (req, res, next) => {
     if (!query) {
       throw apiError('Invalid query ID', 404)
     }
-    res.json(query)
+    // attach to req
+    req.mlQuery = query
+    // set customer to that of the query
+    req.access = {
+      ...access,
+      whitelabel: [query.whitelabelID],
+      customers: [query.customerID],
+    }
+    next()
   } catch (err) {
     next(err)
   }
 }
+
+const respondWithQuery = async (req, res, next) => {
+  try {
+    const { markup } = req.mlQuery
+    // populate views (instead of viewIDs)
+    const { viewIDs } = markup
+    delete markup.viewIDs
+    await Promise.all(viewIDs.map(id => getView(req.access, id).then((v) => {
+      markup.views = markup.views || []
+      markup.views.push(v.view)
+    })))
+    res.json(req.mlQuery)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// const getQuery = async (req, res, next) => {
+//   try {
+//     const { id } = req.params
+//     // eslint-disable-next-line radix
+//     const queryID = parseInt(id, 10)
+//     if (Number.isNaN(queryID)) {
+//       throw apiError('Invalid query ID')
+//     }
+//     const { whitelabel: whitelabelIDs, customers: customerIDs, prefix } = req.access
+//     const hideInternal = !isInternalUser(prefix)
+//     const [query] = await getQueryMetas({
+//       queryID,
+//       whitelabelIDs,
+//       customerIDs,
+//       hideInternal,
+//       showExecutions: true,
+//     })
+//     if (!query) {
+//       throw apiError('Invalid query ID', 404)
+//     }
+//     res.json(query)
+//   } catch (err) {
+//     next(err)
+//   }
+// }
 
 /*
 Query params:
@@ -292,6 +327,23 @@ const listQueries = async (req, res, next) => {
       executionID,
       queryHash: hash,
     })
+    // populate views
+    const viewMemo = {}
+    await Promise.all(queries.reduce((acc, { markup }) => {
+      const { viewIDs } = markup
+      delete markup.viewIDs
+      acc.push(...viewIDs.map((id) => {
+        // memoize promises
+        if (!(id in viewMemo)) {
+          viewMemo[id] = getView(req.access, id)
+        }
+        return viewMemo[id].then(({ view }) => {
+          markup.views = markup.views || []
+          markup.views.push(view)
+        })
+      }))
+      return acc
+    }, []))
     res.json(queries)
   } catch (err) {
     next(err)
@@ -302,8 +354,9 @@ module.exports = {
   createQuery,
   postQuery,
   putQuery,
+  deleteQuery,
   loadQuery,
-  getQuery,
+  respondWithQuery,
+  // getQuery,
   listQueries,
-  getQueryHash,
 }

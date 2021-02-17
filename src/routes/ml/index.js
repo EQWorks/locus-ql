@@ -4,37 +4,84 @@
 const express = require('express')
 
 const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
-const { queueExecution, getExecution, listExecutions } = require('../../ml/executions')
-const { getQuery, listQueries, postQuery, putQuery, loadQuery } = require('../../ml/queries')
-const { hasCustomerSelector } = require('../../middleware/validation')
+const {
+  queueExecution,
+  listExecutions,
+  loadExecution,
+  respondWithExecution,
+} = require('../../ml/executions')
+const {
+  listQueries,
+  postQuery,
+  putQuery,
+  deleteQuery,
+  loadQuery,
+  respondWithQuery,
+} = require('../../ml/queries')
+const { validateQuery } = require('../../ml/engine')
+const { accessHasSingleCustomer } = require('../../middleware/validation')
 
 
 const router = express.Router()
 
-// list out all accessible views with column data - legacy (use /views instead)
+// LEGACY ROUTES
+// list out all accessible views with column data -> replaced by GET /views
 router.get('/', (req, _, next) => {
   req.query.inclMeta = true
   next()
 }, listViewsMW)
+// main query endpoint -> replaced by POST /executions
+router.post(
+  '/executions/',
+  loadQuery(false), // run saved query
+  loadExecution(false), // duplicate execution (superseded by saved query)
+  accessHasSingleCustomer,
+  loadQueryViews,
+  validateQuery, queueExecution,
+)
 
+// VIEWS
 // list out all accessible views without column nor meta data
 router.get('/views/', listViewsMW)
-
 // return view object for viewID
 router.get('/views/:viewID', getViewMW)
 
-// main query endpoint
-router.post('/', hasCustomerSelector, loadQueryViews, queueExecution)
 
-// query executions
-router.get('/executions/:id(\\d+)', getExecution)
+// QUERY EXECUTIONS
+router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
 router.get('/executions/', listExecutions)
-router.post('/executions/', hasCustomerSelector, loadQuery, loadQueryViews, queueExecution)
+router.post(
+  '/executions/',
+  loadQuery(false), // run saved query
+  loadExecution(false), // duplicate execution (superseded by saved query)
+  accessHasSingleCustomer,
+  loadQueryViews,
+  validateQuery, queueExecution,
+)
 
-// saved queries
-router.get('/queries/:id(\\d+)', getQuery)
-router.put('/queries/:id(\\d+)', hasCustomerSelector, loadQuery, loadQueryViews, putQuery)
+// SAVED QUERIES
+router.get('/queries/:id(\\d+)', loadQuery(true), respondWithQuery)
+router.put(
+  '/queries/:id(\\d+)',
+  loadQuery(true),
+  loadQueryViews,
+  validateQuery,
+  putQuery,
+)
+router.delete(
+  '/queries/:id(\\d+)',
+  loadQuery(true),
+  deleteQuery,
+)
 router.get('/queries/', listQueries)
-router.post('/queries/', hasCustomerSelector, loadQueryViews, postQuery)
+router.post(
+  '/queries/',
+  loadQuery(false), // use saved query as template
+  loadExecution(false), // use execution as template (superseded by saved query)
+  accessHasSingleCustomer,
+  loadQueryViews,
+  validateQuery,
+  postQuery,
+)
 
 module.exports = router

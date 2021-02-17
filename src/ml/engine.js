@@ -148,7 +148,6 @@ const select = (
 // parses query to knex object
 const getKnexQuery = (views, viewColumns, query) => {
   const { type } = query
-
   if (type === 'select') {
     return select(views, viewColumns, query)
   }
@@ -163,8 +162,26 @@ const executeQuery = (views, viewColumns, query, maxAge) => {
   )
 }
 
+// throws an error if the query cannot be parsed
+const validateQuery = (req, _, next) => {
+  try {
+    // if a saved query or execution have been attached to req, use it
+    // else use req.body
+    const reqQuery = req.mlQuery || req.mlExecution
+    const { query } = reqQuery ? reqQuery.markup : req.body
+    const { mlViews, mlViewColumns } = req
+
+    // if no error then query was parsed successfully
+    getKnexQuery(mlViews, mlViewColumns, query)
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   getKnexQuery,
   executeQuery,
+  validateQuery,
 }
 
