@@ -1,5 +1,3 @@
-const { createHash } = require('crypto')
-
 const { knex } = require('../util/db')
 const apiError = require('../util/api-error')
 const { getView, getQueryViews } = require('./views')
@@ -18,21 +16,14 @@ const STATUS_FAILED = 'FAILED'
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
 /**
- * Returns a unique hash per query markup
- * The hash can be used to version queries
- * @param {Object} query Query markup
- * @returns {string} Query hash
- */
-const getQueryHash = query => createHash('sha256').update(JSON.stringify(query)).digest('base64')
-
-/**
  * Returns an array of execution metas based on the supplied filters
  * @param {Object} [filters]
  * @param {number} [filters.executionID] Execution ID
  * @param {-1|number[]} [filters.whitelabelIDs] Array of whitelabel IDs (agency ID)
  * @param {-1|number[]} [filters.customerIDs] Array of customer IDs (agency ID)
  * @param {number} [filters.queryID] Saved query ID
- * @param {number} [filters.queryHash] Query hash
+ * @param {string} [filters.queryHash] Query hash (unique to the query)
+ * @param {string} [filters.columnHash] Column hash (unique to the name/type of the results)
  * @param {string} [filters.status] Status of interest
  * @param {number} [filters.start] Unix timestamp (in seconds) from which to consider records
  * @param {number} [filters.end] Unix timestamp (in seconds) up to which to consider records
@@ -47,6 +38,7 @@ const getExecutionMetas = async ({
   customerIDs,
   queryID,
   queryHash,
+  columnHash,
   status,
   start,
   end,
@@ -60,12 +52,14 @@ const getExecutionMetas = async ({
       c.whitelabelid AS "whitelabelID",
       c.customerid AS "customerID",
       e.query_hash AS "queryHash",
+      e.column_hash AS "columnHash",
       e.status,
       e.status_ts AS "statusTS",
       q.query_id AS "queryID",
       e.markup,
+      e.columns,
       e.is_internal AS "isInternal",
-      e.query_id <> q.query_id AS "isOrphaned",
+      e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
       e.cost
     FROM ${ML_SCHEMA}.executions e
     JOIN public.customers c ON c.customerid = e.customer_id
@@ -77,13 +71,25 @@ const getExecutionMetas = async ({
       ${customerIDs && customerIDs !== -1 ? 'AND e.customer_id = ANY(:customerIDs)' : ''}
       ${queryID ? 'AND q.query_id = :queryID' : ''}
       ${queryHash ? 'AND e.query_hash = :queryHash' : ''}
+      ${columnHash ? 'AND e.column_hash = :columnHash' : ''}
       ${status ? 'AND e.status = :status' : ''}
       ${start ? 'AND e.status_ts >= to_timestamp(:start)' : ''}
       ${end ? 'AND e.status_ts <= to_timestamp(:end)' : ''}
       ${hideInternal ? 'AND e.is_internal <> TRUE' : ''}
-    ORDER BY 6 DESC
+    ORDER BY 1 DESC
     ${limit ? 'LIMIT :limit' : ''}
-  `, { executionID, whitelabelIDs, customerIDs, queryID, queryHash, status, start, end, limit })
+  `, {
+    executionID,
+    whitelabelIDs,
+    customerIDs,
+    queryID,
+    queryHash,
+    columnHash,
+    status,
+    start,
+    end,
+    limit,
+  })
   return rows
 }
 
@@ -100,8 +106,13 @@ const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
 /**
  * Creates an execution
  * @param {number} customerID Customer ID (agency ID)
- * @param {{ query: Object, views: string[] }} markup The query object along with a list
+ * @param {string} queryHash Query hash (unique to the query)
+ * @param {string} columnHash Column hash (unique to the name/type of the results)
+ * @param {Object} markup The query object along with a list
  * of the query views
+ * @param {Object} markup.query Query object
+ * @param {string[]} markup.viewsIDs List of the query views' IDs
+ * @param {[string, string][]} columns List of the query columns formatted as [name, category]
  * @param {boolean} isInternal Whether or not the query accesses views restricted to internal users
  * @param {Object.<string, number[]>} dependencies Dynamic views the query depends on (e.g. log or
  * ext views). In the form {dep_type: dep_id[]}
@@ -112,32 +123,41 @@ const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
  */
 const createExecution = async (
   customerID,
+  queryHash,
+  columnHash,
   markup,
+  columns,
   isInternal,
   dependencies,
   queryID,
   knexClient = knex,
 ) => {
-  const queryHash = getQueryHash(markup.query)
-  const columns = ['customer_id', 'query_hash', 'markup', 'is_internal']
-  const values = [customerID, queryHash, JSON.stringify(markup), isInternal]
+  const cols = ['customer_id', 'query_hash', 'column_hash', 'markup', 'columns', 'is_internal']
+  const values = [
+    customerID,
+    queryHash,
+    columnHash,
+    JSON.stringify(markup),
+    JSON.stringify(columns),
+    isInternal,
+  ]
 
   // if (dependencies && dependencies.length) {
   if (dependencies && Object.keys(dependencies).length) {
-    columns.push('dependencies')
+    cols.push('dependencies')
     values.push(JSON.stringify(dependencies))
   }
 
   if (queryID) {
-    columns.push('query_id')
+    cols.push('query_id')
     values.push(queryID)
   }
 
   const { rows: [{ executionID }] } = await knexClient.raw(`
     INSERT INTO ${ML_SCHEMA}.executions
-      (${columns.join(', ')})
+      (${cols.join(', ')})
     VALUES
-      (${columns.map(() => '?').join(', ')})
+      (${cols.map(() => '?').join(', ')})
     RETURNING execution_id AS "executionID"
   `, values)
 
@@ -203,7 +223,15 @@ const queueExecution = async (req, res, next) => {
   try {
     const { queryID, markup: reqMarkup } = req.mlQuery || {}
     const { query } = req.body
-    const { access, mlViews, mlViewDependencies, mlViewIsInternal } = req
+    const {
+      access,
+      mlViews,
+      mlViewDependencies,
+      mlViewIsInternal,
+      mlQueryHash,
+      mlQueryColumnHash,
+      mlQueryColumns,
+    } = req
     const dependencies = sortViewDependencies(mlViewDependencies)
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(mlViewIsInternal).some(is => is)
@@ -211,7 +239,10 @@ const queueExecution = async (req, res, next) => {
     // insert into executions
     const executionID = await createExecution(
       access.customers[0],
+      mlQueryHash,
+      mlQueryColumnHash,
       markup,
+      mlQueryColumns,
       isInternal,
       dependencies,
       queryID,
@@ -222,19 +253,6 @@ const queueExecution = async (req, res, next) => {
   }
 }
 
-// executes the query synchronously
-// const runQuery = async (req, res, next) => {
-//   const { query } = req.body
-//   // eslint-disable-next-line radix
-//   const cacheMaxAge = parseInt(req.query.cache, 10) || undefined
-//   try {
-//     const results = await executeQuery(req.mlViews, req.mlViewColumns, query, cacheMaxAge)
-//     return res.status(200).json(results)
-//   } catch (err) {
-//     next(err)
-//   }
-// }
-
 // let errors bubble up so the query can be restried
 const runExecution = async (executionID) => {
   try {
@@ -243,8 +261,8 @@ const runExecution = async (executionID) => {
       throw apiError('Invalid execution ID')
     }
     const { whitelabelID, customerID, markup, isInternal, status } = execution
-    if (![STATUS_RUNNING, STATUS_RETRYING].includes(status)) {
-      // only run queued or failed queries
+    if (status !== STATUS_RUNNING) {
+      // don't run unless the status was set to running beforehand
       return
     }
     const access = {
@@ -325,24 +343,25 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
   }
 }
 
-/*
-Query params:
- - results = 1|true
-*/
 const respondWithExecution = async (req, res, next) => {
   try {
-    const { executionID, customerID, status, markup } = req.mlExecution
+    const { executionID, customerID, status, markup, columns } = req.mlExecution
     const { results } = req.query
     // attach results
-    if (['1', 'true'].includes(results) && status === STATUS_SUCCEEDED) {
+    if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
       req.mlExecution.results = await getExecutionResults(customerID, executionID)
     }
+
+    // convert columns from array to object
+    req.mlExecution.columns = columns.map(([name, category]) => ({ name, category }))
+
     // populate views
     const { viewIDs } = markup
     delete markup.viewIDs
-    await Promise.all(viewIDs.map(id => getView(req.access, id).then((v) => {
+    await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
       markup.views = markup.views || []
-      markup.views.push(v.view)
+      view.name = name
+      markup.views.push(view)
     })))
     res.json(req.mlExecution)
   } catch (err) {
@@ -350,60 +369,9 @@ const respondWithExecution = async (req, res, next) => {
   }
 }
 
-/*
-Query params:
- - results = 1|true
-*/
-// const getExecution = async (req, res, next) => {
-//   try {
-//     const { id } = req.params
-//     // eslint-disable-next-line radix
-//     const executionID = parseInt(id, 10)
-//     if (Number.isNaN(executionID)) {
-//       throw apiError('Invalid execution ID')
-//     }
-//     const { whitelabel: whitelabelIDs, customers: customerIDs, prefix } = req.access
-//     const hideInternal = !isInternalUser(prefix)
-//     const [execution] = await getExecutionMetas({
-//       executionID,
-//       whitelabelIDs,
-//       customerIDs,
-//       hideInternal,
-//     })
-//     if (!execution) {
-//       throw apiError('Invalid execution ID', 404)
-//     }
-//     const { customerID, status, markup } = execution
-//     const { results } = req.query
-//     if (['1', 'true'].includes(results) && status === STATUS_SUCCEEDED) {
-//       execution.results = await getExecutionResults(customerID, executionID)
-//     }
-//     // populate views
-//     const { viewIDs } = markup
-//     delete markup.viewIDs
-//     await Promise.all(viewIDs.map(id => getView(req.access, id).then((v) => {
-//       markup.views = markup.views || []
-//       markup.views.push(v.view)
-//     })))
-//     res.json(execution)
-//   } catch (err) {
-//     next(err)
-//   }
-// }
-
-/*
-Query params:
- - query = ID
- - results = 1|true -> apply if executions.length === 1
- - limit = max # of executions
- - hash
- - status
- - start
- - end
-*/
 const listExecutions = async (req, res, next) => {
   try {
-    const { query, results, limit, hash, status, start, end } = req.query
+    const { query, results, limit, qhash, chash, status, start, end } = req.query
     // sanitize query params
     let queryID
     if (query) {
@@ -458,14 +426,15 @@ const listExecutions = async (req, res, next) => {
       customerIDs,
       hideInternal,
       queryID,
-      queryHash: hash,
+      queryHash: qhash,
+      columnHash: chash,
       status: safeStatus,
       stat: safeStart,
       end: safeEnd,
       limit: safeLimit,
     })
     if (
-      ['1', 'true'].includes(results)
+      ['1', 'true'].includes((results || '').toLowerCase())
       && executions.length === 1
       && executions[0].status === STATUS_SUCCEEDED
     ) {
@@ -475,8 +444,15 @@ const listExecutions = async (req, res, next) => {
       )
     }
     // populate views
+    // prepare response
     const viewMemo = {}
-    await Promise.all(executions.reduce((acc, { markup }) => {
+    await Promise.all(executions.reduce((acc, e) => {
+      const { markup, columns } = e
+
+      // convert columns from array to object
+      e.columns = columns.map(([name, category]) => ({ name, category }))
+
+      // populate views
       const { viewIDs } = markup
       delete markup.viewIDs
       acc.push(...viewIDs.map((id) => {
@@ -484,8 +460,9 @@ const listExecutions = async (req, res, next) => {
         if (!(id in viewMemo)) {
           viewMemo[id] = getView(req.access, id)
         }
-        return viewMemo[id].then(({ view }) => {
+        return viewMemo[id].then(({ name, view }) => {
           markup.views = markup.views || []
+          view.name = name
           markup.views.push(view)
         })
       }))
@@ -498,17 +475,14 @@ const listExecutions = async (req, res, next) => {
 }
 
 // to test out handler (replace ID)
-// executionHandler({ executionID: 5 }).then(() => console.log('ml execution done'))
+// executionHandler({ executionID: 19 }).then(() => console.log('ml execution done'))
 
 module.exports = {
   createExecution,
   updateExecution,
   queueExecution,
-  // runQuery,
   executionHandler,
-  // getExecution,
   loadExecution,
   respondWithExecution,
   listExecutions,
-  getQueryHash,
 }

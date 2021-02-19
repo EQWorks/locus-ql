@@ -1,7 +1,7 @@
-const config = require('../../config')
-
-const { Pool } = require('pg')
+const { Pool, types } = require('pg')
 const Knex = require('knex')
+
+const config = require('../../config')
 
 
 const pool = new Pool({ ...config.pg, max: 1 })
@@ -17,6 +17,9 @@ const mapKnex = Knex({
   connection: config.mappingPg,
   debug: ['1', 'true'].includes((process.env.DEBUG || '').toLowerCase()),
 })
+
+// register pg parsers
+types.setTypeParser(types.builtins.NUMERIC, val => Number(val))
 
 // dblink connect functions (foreign-data wrapper)
 // https://www.postgresql.org/docs/9.6/dblink.html
@@ -70,4 +73,21 @@ const fdwDisconnect = async (connectionName = 'locus_atom_fdw') => {
   }
 }
 
-module.exports = { pool, mapPool, atomPool, knex, mapKnex, fdwConnect, fdwDisconnect }
+// converts a knex.QueryBuilder into a knex.Raw
+// useful to expose the underlying pool's response
+const knexBuilderToRaw = (builder) => {
+  const { client } = builder
+  const { sql, bindings } = builder.toSQL()
+  return client.raw(sql, bindings)
+}
+
+module.exports = {
+  pool,
+  mapPool,
+  atomPool,
+  knex,
+  mapKnex,
+  fdwConnect,
+  fdwDisconnect,
+  knexBuilderToRaw,
+}

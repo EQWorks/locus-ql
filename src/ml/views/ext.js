@@ -109,7 +109,7 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
     }
   }
 
-  const { rows: connections } = await pgWithCache(
+  const connections = await pgWithCache(
     query.text,
     query.values,
     pool,
@@ -196,7 +196,7 @@ const getView = async (access, viewID) => {
     }
   }
 
-  const { rows: [connection] } = await pgWithCache(
+  const [connection] = await pgWithCache(
     query.text,
     query.values,
     pool,

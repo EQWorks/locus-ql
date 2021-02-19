@@ -50,7 +50,11 @@ const listViewsMW = async (req, res, next) => {
     const { access, query: { viewCategory = 'ext', subCategory, inclMeta } } = req
     const views = await listViews(
       access,
-      { viewCategory, subCategory, inclMeta: ['1', 'true'].includes(inclMeta) },
+      {
+        viewCategory,
+        subCategory,
+        inclMeta: ['1', 'true'].includes((inclMeta || '').toLowerCase()),
+      },
     )
     res.status(200).json(views)
   } catch (err) {

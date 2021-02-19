@@ -1,16 +1,26 @@
 /* eslint-disable valid-typeof */
 /* eslint-disable func-names */
 /* eslint-disable no-nested-ternary */
+const { createHash } = require('crypto')
 
-const { knex, mapKnex } = require('../util/db')
+const { knex, mapKnex, knexBuilderToRaw } = require('../util/db')
 const { Expression } = require('./expressions')
 const apiError = require('../util/api-error')
 const { knexWithCache, cacheTypes } = require('./cache')
+const { typeToCatMap, CAT_STRING } = require('./type')
 
 
 // const TYPE_STRING = 'string'
 
 const JOIN_TYPES = ['left', 'right', 'inner']
+
+/**
+ * Computes a hash for an object based on its JSON value
+ * The hash can be used to version the object
+ * @param {Object} object Object
+ * @returns {string} Hash
+ */
+const getObjectHash = object => createHash('sha256').update(JSON.stringify(object)).digest('base64')
 
 const getView = (views, viewID) => {
   if (!views[viewID]) {
@@ -163,7 +173,8 @@ const executeQuery = (views, viewColumns, query, maxAge) => {
 }
 
 // throws an error if the query cannot be parsed
-const validateQuery = (req, _, next) => {
+// attaches queryHash, columnHash and columns to req
+const validateQuery = async (req, _, next) => {
   try {
     // if a saved query or execution have been attached to req, use it
     // else use req.body
@@ -172,7 +183,21 @@ const validateQuery = (req, _, next) => {
     const { mlViews, mlViewColumns } = req
 
     // if no error then query was parsed successfully
-    getKnexQuery(mlViews, mlViewColumns, query)
+    const knexQuery = getKnexQuery(mlViews, mlViewColumns, query)
+
+    // run the query with limit 0
+    knexQuery.limit(0)
+    const { fields } = await knexWithCache(
+      knexBuilderToRaw(knexQuery),
+      { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
+    )
+    const columns = fields.map(({ name, dataTypeID }) => ([
+      name,
+      typeToCatMap.get(dataTypeID) || CAT_STRING,
+    ]))
+    req.mlQueryHash = getObjectHash(query)
+    req.mlQueryColumnHash = getObjectHash(columns)
+    req.mlQueryColumns = columns
     next()
   } catch (err) {
     next(err)

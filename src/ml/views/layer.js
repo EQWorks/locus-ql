@@ -59,7 +59,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
       `, [whitelabel])
     } else {
       // get subscribe layers
-      const { rows } = await knexWithCache(
+      const rows = await knexWithCache(
         knex.raw(`
           SELECT type_id
           FROM market_ownership_flat MO

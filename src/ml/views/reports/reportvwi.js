@@ -142,7 +142,7 @@ const hasAOIData = async (wl, layerID, reportID) => {
     whereFilters.push('l.whitelabel = ANY (?)')
     whereValues.push(wl)
   }
-  const { rows: [{ exists }] } = await knexWithCache(
+  const [{ exists } = {}] = await knexWithCache(
     knex.raw(`
       SELECT EXISTS (SELECT
         l.layer_id,

@@ -216,7 +216,7 @@ const putToS3Cache = async (
 /**
  * Pulls query results from cache if available, otherwise, executes query and persists
  * results to cache
- * @param {string} keys Single key (string) or array of keys which must be serializable
+ * @param {string|any[]]} keys Single key (string) or array of keys which must be serializable
  * into JSON
  * @param {function} runQuery Callback to invoke in order to fetch SQL results (must
  * resolve to an object)
@@ -298,8 +298,10 @@ const queryWithCache = async (
 /**
  * Pulls query results from cache if available, otherwise, executes query and persists
  * results to cache
+ * By defaults only the results' rows are cached and returned
  * @param {Knex.QueryBuilder} knexQuery Knex QueryBuilder object
  * @param {Object} options
+ * @param {number} [options.rows=true] Whether or not to limit caching to the results' rows
  * @param {number} [options.maxAge=600] Max age (in seconds) of SQL results when pulling from the
  * cache (typically same as ttl)
  * @param {number} [options.ttl=600] TTL (in seconds) of the cached results
@@ -307,19 +309,22 @@ const queryWithCache = async (
  * @param {boolean} [options.gzip=true] Whether or not the value in cache is compressed
  * @returns {Promise<Object>} Query results
  */
-const knexWithCache = async (knexQuery, options) => {
+const knexWithCache = async (knexQuery, { rows = true, ...options }) => {
   const { sql, bindings } = knexQuery.toSQL()
   const runQuery = () => knexQuery
+    .then(res => (rows && res && !Array.isArray(res) && res.rows ? res.rows : res))
   return queryWithCache([sql, bindings], runQuery, options)
 }
 
 /**
  * Pulls query results from cache if available, otherwise, executes query and persists
  * results to cache
+ * By defaults only the results' rows are cached and returned
  * @param {string} sql Query string
  * @param {Object|Array} bindings Query variable bindings
  * @param {pg.Pool|pg.Client} pool Node-pg pool or client
  * @param {Object} options
+ * @param {number} [options.rows=true] Whether or not to limit caching to the results' rows
  * @param {number} [options.maxAge=600] Max age (in seconds) of SQL results when pulling from the
  * cache (typically same as ttl)
  * @param {number} [options.ttl=600] TTL (in seconds) of the cached results
@@ -327,8 +332,10 @@ const knexWithCache = async (knexQuery, options) => {
  * @param {boolean} [options.gzip=true] Whether or not the value in cache is compressed
  * @returns {Promise<Object>} Query results
  */
-const pgWithCache = (sql, bindings, pool, options) => {
-  const runQuery = () => pool.query(sql, bindings)
+const pgWithCache = (sql, bindings, pool, { rows = true, ...options }) => {
+  const runQuery = () => pool
+    .query(sql, bindings)
+    .then(res => (rows && res && !Array.isArray(res) && res.rows ? res.rows : res))
   return queryWithCache([sql, bindings], runQuery, options)
 }
 

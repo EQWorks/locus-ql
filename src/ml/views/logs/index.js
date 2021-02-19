@@ -166,7 +166,7 @@ const getFastViews = (viewColumns, cacheColumns) => {
  * @param {number} [type=1] Customer type. See customer enum values.
  * @returns {Promise<{ customerID: number, customerName: string }[]>} Array of customers
  */
-const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY) => {
+const getCustomers = (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY) => {
   const filters = ['isactive', 'whitelabelid <> 0']
   const filterValues = []
   filters.push(type === CU_AGENCY ? 'agencyid = 0' : 'agencyid <> 0')
@@ -179,7 +179,7 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
     filters.push('whitelabelid = ANY(?)')
   }
 
-  const { rows } = await knexWithCache(
+  return knexWithCache(
     knex.raw(`
       SELECT
         customerid AS "customerID",
@@ -189,7 +189,6 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
         ${filters.join(' AND ')}
     `, filterValues)
     , { ttl: 600, gzip: false }) // 10 minutes
-  return rows
 }
 
 /**
@@ -198,7 +197,7 @@ const getCustomers = async (whitelabelIDs = -1, agencyIDs = -1, type = CU_AGENCY
  * @returns {Promise<string>} Time zone
  */
 const getCustomerTimeZone = async (customerID) => {
-  const { rows: [{ timeZone } = {}] } = await knexWithCache(
+  const [{ timeZone } = {}] = await knexWithCache(
     knex.raw(`
       SELECT
         timezone AS "timeZone"

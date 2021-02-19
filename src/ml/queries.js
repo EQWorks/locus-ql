@@ -1,7 +1,7 @@
 const { knex } = require('../util/db')
 const apiError = require('../util/api-error')
 const { getView } = require('./views')
-const { updateExecution, getQueryHash } = require('./executions')
+const { updateExecution } = require('./executions')
 
 
 const { ML_SCHEMA } = process.env
@@ -15,7 +15,8 @@ const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
  * @param {-1|number[]} [filters.whitelabelIDs] Array of whitelabel IDs (agency ID)
  * @param {-1|number[]} [filters.customerIDs] Array of customer IDs (agency ID)
  * @param {number} [filters.executionID] Execution ID
- * @param {number} [filters.queryHash] Query hash
+ * @param {string} [filters.queryHash] Query hash (unique to the query)
+ * @param {string} [filters.columnHash] Column hash (unique to the name/type of the results)
  * @param {boolean} [filters.hideInternal=false] Whether or not to filter out queries
  * using internal fields
  * @param {boolean} [filters.showExecutions=false] Whether or not to append the list of
@@ -28,6 +29,7 @@ const getQueryMetas = async ({
   customerIDs,
   executionID,
   queryHash,
+  columnHash,
   hideInternal = false,
   showExecutions = false,
 } = {}) => {
@@ -37,17 +39,23 @@ const getQueryMetas = async ({
       c.whitelabelid AS "whitelabelID",
       c.customerid AS "customerID",
       q.query_hash AS "queryHash",
+      q.column_hash AS "columnHash",
       q.name,
       q.description,
-      q.markup
-      ${showExecutions ? `, array_agg(
-        json_build_object(
-          'executionID', e.execution_id,
-          'queryHash', e.query_hash,
-          'status', e.status,
-          'statusTS', e.status_ts,
-          'isInternal', e.is_internal
-        ) ORDER BY e.status_ts DESC
+      q.markup,
+      q.columns,
+      q.is_internal AS "isInternal"
+      ${showExecutions ? `, coalesce(
+        array_agg(
+          json_build_object(
+            'executionID', e.execution_id,
+            'queryHash', e.query_hash,
+            'status', e.status,
+            'statusTS', e.status_ts,
+            'isInternal', e.is_internal
+          ) ORDER BY e.execution_id DESC
+        ) FILTER (WHERE e.execution_id IS NOT NULL),
+        '{}'
       ) AS "executions"` : ''}
     FROM ${ML_SCHEMA}.queries q
     JOIN public.customers c ON c.customerid = q.customer_id
@@ -59,22 +67,26 @@ const getQueryMetas = async ({
       ${customerIDs && customerIDs !== -1 ? 'AND c.customerid = ANY(:customerIDs)' : ''}
       ${executionID ? 'AND e.execution_id = :executionID' : ''}
       ${queryHash ? 'AND q.query_hash = :queryHash' : ''}
+      ${columnHash ? 'AND q.column_hash = :columnHash' : ''}
       ${hideInternal ? 'AND q.is_internal <> TRUE' : ''}
       ${showExecutions && hideInternal ? 'AND e.is_internal <> TRUE' : ''}
     ${showExecutions ? 'GROUP BY 1, 2, 3, 4, 5, 6, 7' : ''}
   ORDER BY 1 DESC
-  `, { queryID, whitelabelIDs, customerIDs, executionID, queryHash })
+  `, { queryID, whitelabelIDs, customerIDs, executionID, queryHash, columnHash })
   return rows
 }
 
 /**
  * Creates a query
  * @param {number} customerID Customer ID (agency ID)
+ * @param {string} queryHash Query hash (unique to the query)
+ * @param {string} columnHash Column hash (unique to the name/type of the results)
  * @param {string} name Query name
  * @param {Object} markup The query object along with a list
  * of the query views
  * @param {Object} markup.query Query object
  * @param {string[]} markup.viewsIDs List of the query views' IDs
+ * @param {[string, string][]} columns List of the query columns formatted as [name, category]
  * @param {boolean} isInternal Whether or not the query accesses views restricted to internal users
  * @param {string} [description] Query description
  * @param {Knex} [knexClient=knex] Knex client to use to run the SQL query. Defaults to the
@@ -83,26 +95,44 @@ const getQueryMetas = async ({
  */
 const createQuery = async (
   customerID,
+  queryHash,
+  columnHash,
   name,
   markup,
+  columns,
   isInternal,
   description,
   knexClient = knex,
 ) => {
-  const queryHash = getQueryHash(markup.query)
-  const columns = ['customer_id', 'query_hash', 'name', 'markup', 'is_internal']
-  const values = [customerID, queryHash, name, JSON.stringify(markup), isInternal]
+  const cols = [
+    'customer_id',
+    'query_hash',
+    'column_hash',
+    'name',
+    'markup',
+    'columns',
+    'is_internal',
+  ]
+  const values = [
+    customerID,
+    queryHash,
+    columnHash,
+    name,
+    JSON.stringify(markup),
+    JSON.stringify(columns),
+    isInternal,
+  ]
 
   if (description) {
-    columns.push('description')
+    cols.push('description')
     values.push(description)
   }
 
   const { rows: [{ queryID }] } = await knexClient.raw(`
     INSERT INTO ${ML_SCHEMA}.queries
-      (${columns.join(', ')})
+      (${cols.join(', ')})
     VALUES
-      (${columns.map(() => '?').join(', ')})
+      (${cols.map(() => '?').join(', ')})
     RETURNING query_id AS "queryID"
   `, values)
 
@@ -113,11 +143,15 @@ const createQuery = async (
  * Updates a query based on its id
  * @param {number} queryID Query ID
  * @param {Object} updates
+ * @param {string} [updates.queryHash] Query hash (unique to the query)
+ * @param {string} [updates.columnHash] Column hash (unique to the name/type of the results)
  * @param {string} [updates.name] Query name
  * @param {Object} [updates.markup] The query object along with a list
  * of the query views
  * @param {Object} updates.markup.query Query object
  * @param {string[]} updates.markup.viewsIDs List of the query views' IDs
+ * @param {[string, string][]} [updates.columns] List of the query columns
+ * formatted as [name, category]
  * @param {boolean} [updates.isInternal] Whether or not the query accesses views restricted to
  * internal users
  * @param {string} [updates.description] Query description
@@ -127,38 +161,50 @@ const createQuery = async (
  */
 const updateQuery = async (
   queryID,
-  { name, markup, isInternal, description, isActive },
+  { queryHash, columnHash, name, markup, columns, isInternal, description, isActive },
   knexClient = knex,
 ) => {
-  const columns = []
+  const cols = []
   const values = []
+  if (queryHash) {
+    cols.push('query_hash')
+    values.push(queryHash)
+  }
+  if (columnHash) {
+    cols.push('column_hash')
+    values.push(columnHash)
+  }
   if (name) {
-    columns.push('name')
+    cols.push('name')
     values.push(name)
   }
   if (markup) {
-    columns.push('query_hash', 'markup')
-    values.push(getQueryHash(markup.query), markup)
+    cols.push('markup')
+    values.push(markup)
+  }
+  if (columns) {
+    cols.push('columns')
+    values.push(columns)
   }
   if (isInternal !== undefined) {
-    columns.push('is_internal')
+    cols.push('is_internal')
     values.push(isInternal)
   }
   if (description) {
-    columns.push('description')
+    cols.push('description')
     values.push(description)
   }
   if (isActive !== undefined) {
-    columns.push('is_active')
+    cols.push('is_active')
     values.push(isActive)
   }
-  if (!columns.length) {
+  if (!cols.length) {
     // nothing to update
     return
   }
   await knexClient.raw(`
     UPDATE ${ML_SCHEMA}.queries
-    SET ${columns.map(col => `${col} = ?`).join(', ')}
+    SET ${cols.map(col => `${col} = ?`).join(', ')}
     WHERE query_id = ?
   `, [...values, queryID])
 }
@@ -166,7 +212,14 @@ const updateQuery = async (
 const postQuery = async (req, res, next) => {
   try {
     const { name, description, query } = req.body
-    const { access: { customers }, mlViews, mlViewIsInternal } = req
+    const {
+      access: { customers },
+      mlViews,
+      mlViewIsInternal,
+      mlQueryHash,
+      mlQueryColumnHash,
+      mlQueryColumns,
+    } = req
     const { markup: reqMarkup } = req.mlQuery || req.mlExecution || {}
     const { executionID, queryID: executionQueryID, isOrphaned } = req.mlExecution || {}
     if (!name) {
@@ -178,7 +231,17 @@ const postQuery = async (req, res, next) => {
 
     // create query + update execution (as applicable) in transaction
     const queryID = await knex.transaction(async (trx) => {
-      const queryID = await createQuery(customers[0], name, markup, isInternal, description, trx)
+      const queryID = await createQuery(
+        customers[0],
+        mlQueryHash,
+        mlQueryColumnHash,
+        name,
+        markup,
+        mlQueryColumns,
+        isInternal,
+        description,
+        trx,
+      )
       // if execution supplied, attach it to the created query if not already attached to a query
       if (executionID && !executionQueryID && !isOrphaned) {
         await updateExecution(executionID, { queryID }, trx)
@@ -196,14 +259,22 @@ const putQuery = async (req, res, next) => {
   try {
     const { queryID } = req.mlQuery
     const { name, description, query } = req.body
-    const { mlViews, mlViewIsInternal } = req
+    const { mlViews, mlViewIsInternal, mlQueryHash, mlQueryColumnHash, mlQueryColumns } = req
     if (!name) {
       throw apiError('Query name cannot be empty')
     }
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(mlViewIsInternal).some(is => is)
     const markup = { query, viewIDs: Object.keys(mlViews) }
-    await updateQuery(queryID, { name, markup, isInternal, description })
+    await updateQuery(queryID, {
+      name,
+      queryHash: mlQueryHash,
+      columnHash: mlQueryColumnHash,
+      markup,
+      columns: mlQueryColumns,
+      isInternal,
+      description,
+    })
     res.json({ queryID })
   } catch (err) {
     next(err)
@@ -261,13 +332,18 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
 
 const respondWithQuery = async (req, res, next) => {
   try {
-    const { markup } = req.mlQuery
+    const { markup, columns } = req.mlQuery
+
+    // convert columns from array to object
+    req.mlQuery.columns = columns.map(([name, category]) => ({ name, category }))
+
     // populate views (instead of viewIDs)
     const { viewIDs } = markup
     delete markup.viewIDs
-    await Promise.all(viewIDs.map(id => getView(req.access, id).then((v) => {
+    await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
       markup.views = markup.views || []
-      markup.views.push(v.view)
+      view.name = name
+      markup.views.push(view)
     })))
     res.json(req.mlQuery)
   } catch (err) {
@@ -275,40 +351,9 @@ const respondWithQuery = async (req, res, next) => {
   }
 }
 
-// const getQuery = async (req, res, next) => {
-//   try {
-//     const { id } = req.params
-//     // eslint-disable-next-line radix
-//     const queryID = parseInt(id, 10)
-//     if (Number.isNaN(queryID)) {
-//       throw apiError('Invalid query ID')
-//     }
-//     const { whitelabel: whitelabelIDs, customers: customerIDs, prefix } = req.access
-//     const hideInternal = !isInternalUser(prefix)
-//     const [query] = await getQueryMetas({
-//       queryID,
-//       whitelabelIDs,
-//       customerIDs,
-//       hideInternal,
-//       showExecutions: true,
-//     })
-//     if (!query) {
-//       throw apiError('Invalid query ID', 404)
-//     }
-//     res.json(query)
-//   } catch (err) {
-//     next(err)
-//   }
-// }
-
-/*
-Query params:
- - execution = ID
- - hash
-*/
 const listQueries = async (req, res, next) => {
   try {
-    const { execution, hash } = req.query
+    const { execution, qhash, chash } = req.query
     // sanitize query params
     let executionID
     if (execution) {
@@ -323,13 +368,21 @@ const listQueries = async (req, res, next) => {
     const queries = await getQueryMetas({
       whitelabelIDs,
       customerIDs,
-      hideInternal,
       executionID,
-      queryHash: hash,
+      queryHash: qhash,
+      columnHash: chash,
+      hideInternal,
+      showExecutions: true,
     })
-    // populate views
+    // prepare response
     const viewMemo = {}
-    await Promise.all(queries.reduce((acc, { markup }) => {
+    await Promise.all(queries.reduce((acc, q) => {
+      const { markup, columns } = q
+
+      // convert columns from array to object
+      q.columns = columns.map(([name, category]) => ({ name, category }))
+
+      // populate views
       const { viewIDs } = markup
       delete markup.viewIDs
       acc.push(...viewIDs.map((id) => {
@@ -337,8 +390,9 @@ const listQueries = async (req, res, next) => {
         if (!(id in viewMemo)) {
           viewMemo[id] = getView(req.access, id)
         }
-        return viewMemo[id].then(({ view }) => {
+        return viewMemo[id].then(({ name, view }) => {
           markup.views = markup.views || []
+          view.name = name
           markup.views.push(view)
         })
       }))
@@ -357,6 +411,5 @@ module.exports = {
   deleteQuery,
   loadQuery,
   respondWithQuery,
-  // getQuery,
   listQueries,
 }
