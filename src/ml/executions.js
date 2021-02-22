@@ -3,6 +3,7 @@ const apiError = require('../util/api-error')
 const { getView, getQueryViews } = require('./views')
 const { executeQuery } = require('./engine')
 const { putToS3Cache, getFromS3Cache, EXECUTION_BUCKET } = require('./cache')
+const { typeToCatMap, CAT_STRING } = require('./type')
 
 
 const { ML_SCHEMA } = process.env
@@ -56,7 +57,8 @@ const getExecutionMetas = async ({
       e.status,
       e.status_ts AS "statusTS",
       q.query_id AS "queryID",
-      e.markup,
+      e.query,
+      e.view_ids AS "viewIDs",
       e.columns,
       e.is_internal AS "isInternal",
       e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
@@ -108,11 +110,9 @@ const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
  * @param {number} customerID Customer ID (agency ID)
  * @param {string} queryHash Query hash (unique to the query)
  * @param {string} columnHash Column hash (unique to the name/type of the results)
- * @param {Object} markup The query object along with a list
- * of the query views
- * @param {Object} markup.query Query object
- * @param {string[]} markup.viewsIDs List of the query views' IDs
- * @param {[string, string][]} columns List of the query columns formatted as [name, category]
+ * @param {Object} query Query object
+ * @param {string[]} viewsIDs List of the query views' IDs
+ * @param {[string, number][]} columns List of the query columns formatted as [name, pgTypeOID]
  * @param {boolean} isInternal Whether or not the query accesses views restricted to internal users
  * @param {Object.<string, number[]>} dependencies Dynamic views the query depends on (e.g. log or
  * ext views). In the form {dep_type: dep_id[]}
@@ -125,19 +125,29 @@ const createExecution = async (
   customerID,
   queryHash,
   columnHash,
-  markup,
+  query,
+  viewIDs,
   columns,
   isInternal,
   dependencies,
   queryID,
   knexClient = knex,
 ) => {
-  const cols = ['customer_id', 'query_hash', 'column_hash', 'markup', 'columns', 'is_internal']
+  const cols = [
+    'customer_id',
+    'query_hash',
+    'column_hash',
+    'query',
+    'view_ids',
+    'columns',
+    'is_internal',
+  ]
   const values = [
     customerID,
     queryHash,
     columnHash,
-    JSON.stringify(markup),
+    JSON.stringify(query),
+    JSON.stringify(viewIDs),
     JSON.stringify(columns),
     isInternal,
   ]
@@ -221,7 +231,7 @@ const sortViewDependencies = (viewDependencies) => {
 // extracts async and saved queries and queues them as executions
 const queueExecution = async (req, res, next) => {
   try {
-    const { queryID, markup: reqMarkup } = req.mlQuery || {}
+    const { queryID, query: loadedQuery, viewIDs: loadedViewIDs } = req.mlQuery || {}
     const { query } = req.body
     const {
       access,
@@ -235,13 +245,13 @@ const queueExecution = async (req, res, next) => {
     const dependencies = sortViewDependencies(mlViewDependencies)
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(mlViewIsInternal).some(is => is)
-    const markup = reqMarkup || { query, viewIDs: Object.keys(mlViews) }
     // insert into executions
     const executionID = await createExecution(
       access.customers[0],
       mlQueryHash,
       mlQueryColumnHash,
-      markup,
+      loadedQuery || query,
+      loadedViewIDs || Object.keys(mlViews),
       mlQueryColumns,
       isInternal,
       dependencies,
@@ -260,7 +270,7 @@ const runExecution = async (executionID) => {
     if (!execution) {
       throw apiError('Invalid execution ID')
     }
-    const { whitelabelID, customerID, markup, isInternal, status } = execution
+    const { whitelabelID, customerID, query, viewIDs, isInternal, status } = execution
     if (status !== STATUS_RUNNING) {
       // don't run unless the status was set to running beforehand
       return
@@ -270,8 +280,6 @@ const runExecution = async (executionID) => {
       customers: [customerID],
       prefix: isInternal ? 'internal' : 'customers',
     }
-
-    const { query, viewIDs } = markup
 
     // get views
     const views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
@@ -299,7 +307,15 @@ const runExecution = async (executionID) => {
 }
 
 // lambda handler
-const executionHandler = ({ executionID }) => runExecution(executionID)
+const executionHandler = ({ execution_id }) => {
+  // eslint-disable-next-line radix
+  const id = parseInt(execution_id, 10)
+  if (Number.isNaN(id)) {
+    throw apiError(`Invalid execution ID: ${execution_id}`)
+  }
+  console.log('execution id', id)
+  return runExecution(id)
+}
 
 // isRequired flags whether or not 'query' is a mandatory route/query param
 const loadExecution = (isRequired = true) => async (req, _, next) => {
@@ -345,7 +361,7 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
 
 const respondWithExecution = async (req, res, next) => {
   try {
-    const { executionID, customerID, status, markup, columns } = req.mlExecution
+    const { executionID, customerID, status, viewIDs, columns } = req.mlExecution
     const { results } = req.query
     // attach results
     if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
@@ -353,15 +369,17 @@ const respondWithExecution = async (req, res, next) => {
     }
 
     // convert columns from array to object
-    req.mlExecution.columns = columns.map(([name, category]) => ({ name, category }))
+    req.mlExecution.columns = columns.map(([name, pgType]) => ({
+      name,
+      category: typeToCatMap.get(pgType) || CAT_STRING,
+    }))
 
     // populate views
-    const { viewIDs } = markup
-    delete markup.viewIDs
+    delete req.mlExecution.viewIDs
     await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
-      markup.views = markup.views || []
+      req.mlExecution.views = req.mlExecution.views || []
       view.name = name
-      markup.views.push(view)
+      req.mlExecution.views.push(view)
     })))
     res.json(req.mlExecution)
   } catch (err) {
@@ -447,23 +465,25 @@ const listExecutions = async (req, res, next) => {
     // prepare response
     const viewMemo = {}
     await Promise.all(executions.reduce((acc, e) => {
-      const { markup, columns } = e
+      const { viewIDs, columns } = e
 
       // convert columns from array to object
-      e.columns = columns.map(([name, category]) => ({ name, category }))
+      e.columns = columns.map(([name, pgType]) => ({
+        name,
+        category: typeToCatMap.get(pgType) || CAT_STRING,
+      }))
 
       // populate views
-      const { viewIDs } = markup
-      delete markup.viewIDs
+      delete e.viewIDs
       acc.push(...viewIDs.map((id) => {
         // memoize promises
         if (!(id in viewMemo)) {
           viewMemo[id] = getView(req.access, id)
         }
         return viewMemo[id].then(({ name, view }) => {
-          markup.views = markup.views || []
+          e.views = e.views || []
           view.name = name
-          markup.views.push(view)
+          e.views.push(view)
         })
       }))
       return acc
@@ -475,7 +495,7 @@ const listExecutions = async (req, res, next) => {
 }
 
 // to test out handler (replace ID)
-// executionHandler({ executionID: 19 }).then(() => console.log('ml execution done'))
+// executionHandler({ executionID: 55 }).then(() => console.log('ml execution done'))
 
 module.exports = {
   createExecution,

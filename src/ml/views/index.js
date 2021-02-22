@@ -110,18 +110,18 @@ const getView = (access, viewID) => {
 }
 
 // load views into req object based on request body.views
-const loadQueryViews = async (req, _, next) => {
+const loadQueryViews = (onlyUseBodyQuery = false) => async (req, _, next) => {
   try {
     const { access } = req
     let query
     let views
     // if a saved query or execution have been attached to req, use it
     // else use req.body
-    const reqQuery = req.mlQuery || req.mlExecution
-    if (reqQuery) {
+    const loadedQuery = !onlyUseBodyQuery && (req.mlQuery || req.mlExecution)
+    if (loadedQuery) {
       // get views
-      ({ query } = reqQuery.markup)
-      const { viewIDs } = reqQuery.markup
+      ({ query } = loadedQuery)
+      const { viewIDs } = loadedQuery
       views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
     } else {
       ({ query, views } = req.body)

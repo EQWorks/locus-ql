@@ -7,7 +7,6 @@ const { knex, mapKnex, knexBuilderToRaw } = require('../util/db')
 const { Expression } = require('./expressions')
 const apiError = require('../util/api-error')
 const { knexWithCache, cacheTypes } = require('./cache')
-const { typeToCatMap, CAT_STRING } = require('./type')
 
 
 // const TYPE_STRING = 'string'
@@ -15,12 +14,41 @@ const { typeToCatMap, CAT_STRING } = require('./type')
 const JOIN_TYPES = ['left', 'right', 'inner']
 
 /**
+ * Converts all non-array objects to sorted arrays of key/value pairs
+ * Can be used to obtain a normalized value of an object
+ * @param {Object} object Object
+ * @returns {any} Array, null or non-object value
+ */
+const sortObject = (object) => {
+  // return non-object as is
+  if (typeof object !== 'object' || object === null) {
+    return object
+  }
+  // sort array elements and filter out undefined/null elements
+  if (Array.isArray(object)) {
+    return object.map(i => sortObject(i)).filter(i => ![undefined, null].includes(i))
+  }
+  // return object as sorted array of key/value pairs
+  return Object.entries(object).map(([k, v]) => [k, sortObject(v)]).sort(([kA], [kB]) => {
+    if (kA < kB) {
+      return -1
+    }
+    if (kA > kB) {
+      return 1
+    }
+    return 0
+  })
+}
+
+/**
  * Computes a hash for an object based on its JSON value
  * The hash can be used to version the object
  * @param {Object} object Object
  * @returns {string} Hash
  */
-const getObjectHash = object => createHash('sha256').update(JSON.stringify(object)).digest('base64')
+const getObjectHash = object => createHash('sha256')
+  .update(JSON.stringify(sortObject(object)))
+  .digest('base64')
 
 const getView = (views, viewID) => {
   if (!views[viewID]) {
@@ -174,12 +202,12 @@ const executeQuery = (views, viewColumns, query, maxAge) => {
 
 // throws an error if the query cannot be parsed
 // attaches queryHash, columnHash and columns to req
-const validateQuery = async (req, _, next) => {
+const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
   try {
     // if a saved query or execution have been attached to req, use it
     // else use req.body
-    const reqQuery = req.mlQuery || req.mlExecution
-    const { query } = reqQuery ? reqQuery.markup : req.body
+    const loadedQuery = !onlyUseBodyQuery && (req.mlQuery || req.mlExecution)
+    const { query } = loadedQuery || req.body
     const { mlViews, mlViewColumns } = req
 
     // if no error then query was parsed successfully
@@ -191,10 +219,7 @@ const validateQuery = async (req, _, next) => {
       knexBuilderToRaw(knexQuery),
       { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
     )
-    const columns = fields.map(({ name, dataTypeID }) => ([
-      name,
-      typeToCatMap.get(dataTypeID) || CAT_STRING,
-    ]))
+    const columns = fields.map(({ name, dataTypeID }) => [name, dataTypeID])
     req.mlQueryHash = getObjectHash(query)
     req.mlQueryColumnHash = getObjectHash(columns)
     req.mlQueryColumns = columns

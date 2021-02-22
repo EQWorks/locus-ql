@@ -37,8 +37,8 @@ router.post(
   loadQuery(false), // run saved query
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
-  loadQueryViews,
-  validateQuery,
+  loadQueryViews(),
+  validateQuery(),
   queueExecution,
 )
 
@@ -92,8 +92,8 @@ router.post(
   loadQuery(false), // run saved query
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
-  loadQueryViews,
-  validateQuery,
+  loadQueryViews(),
+  validateQuery(),
   queueExecution,
 )
 
@@ -118,8 +118,8 @@ Returns an object with the `queryID`
 router.put(
   '/queries/:id(\\d+)',
   loadQuery(true),
-  loadQueryViews,
-  validateQuery,
+  loadQueryViews(true),
+  validateQuery(true),
   putQuery,
 )
 
@@ -160,8 +160,8 @@ router.post(
   loadQuery(false), // use saved query as template
   loadExecution(false), // use execution as template (superseded by saved query)
   accessHasSingleCustomer,
-  loadQueryViews,
-  validateQuery,
+  loadQueryViews(),
+  validateQuery(),
   postQuery,
 )
 
