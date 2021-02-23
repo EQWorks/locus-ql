@@ -6,7 +6,7 @@ const { createHash } = require('crypto')
 const { knex, mapKnex, knexBuilderToRaw } = require('../util/db')
 const { Expression } = require('./expressions')
 const apiError = require('../util/api-error')
-const { knexWithCache, cacheTypes } = require('./cache')
+const { knexWithCache, queryWithCache, cacheTypes } = require('./cache')
 
 
 // const TYPE_STRING = 'string'
@@ -17,19 +17,38 @@ const JOIN_TYPES = ['left', 'right', 'inner']
  * Converts all non-array objects to sorted arrays of key/value pairs
  * Can be used to obtain a normalized value of an object
  * @param {Object} object Object
- * @returns {any} Array, null or non-object value
+ * @returns {any} Array or non-object value
  */
 const sortObject = (object) => {
   // return non-object as is
-  if (typeof object !== 'object' || object === null) {
+  if (typeof object !== 'object') {
     return object
   }
-  // sort array elements and filter out undefined/null elements
+  // return null as undefined
+  if (object === null) {
+    return
+  }
+  // sort array elements and filter out undefined elements
+  // return undefined if empty array
   if (Array.isArray(object)) {
-    return object.map(i => sortObject(i)).filter(i => ![undefined, null].includes(i))
+    const objectvalue = object.map(i => sortObject(i)).filter(i => i !== undefined)
+    return objectvalue.length ? objectvalue : undefined
   }
   // return object as sorted array of key/value pairs
-  return Object.entries(object).map(([k, v]) => [k, sortObject(v)]).sort(([kA], [kB]) => {
+  // remove undefined keys (e.g. undefined, empty array, null, array with only null entries...)
+  const objectValue = Object.entries(object).reduce((value, [k, v]) => {
+    const sorted = sortObject(v)
+    if (sorted !== undefined) {
+      value.push([k, sorted])
+    }
+    return value
+  }, [])
+  // return undefined if empty array
+  if (!objectValue.length) {
+    return
+  }
+  // sort so results are consistent across calls
+  return objectValue.sort(([kA], [kB]) => {
     if (kA < kB) {
       return -1
     }
@@ -215,8 +234,10 @@ const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
 
     // run the query with limit 0
     knexQuery.limit(0)
-    const { fields } = await knexWithCache(
-      knexBuilderToRaw(knexQuery),
+    const { sql, bindings } = knexQuery.toSQL()
+    const fields = await queryWithCache(
+      [sql, bindings],
+      () => knexBuilderToRaw(knexQuery).then(({ fields }) => fields), // only cache fields
       { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
     )
     const columns = fields.map(({ name, dataTypeID }) => [name, dataTypeID])

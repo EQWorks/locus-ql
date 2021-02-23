@@ -495,7 +495,7 @@ const listExecutions = async (req, res, next) => {
 }
 
 // to test out handler (replace ID)
-// executionHandler({ executionID: 55 }).then(() => console.log('ml execution done'))
+// executionHandler({ execution_id: '44' }).then(() => console.log('ml execution done'))
 
 module.exports = {
   createExecution,

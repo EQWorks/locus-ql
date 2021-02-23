@@ -26,9 +26,12 @@ const VIEWS = VIEW_LIST.reduce((accViews, view) => {
 }, {})
 
 // returns all views provided (sub) category
-const listViews = async (access, { viewCategory = 'ext', subCategory, inclMeta = false } = {}) => {
+const listViews = async (
+  access,
+  { viewCategory = 'ext', subCategory, inclMeta = false, filter } = {},
+) => {
   const view = (subCategory || viewCategory) in VIEWS
-    ? await VIEWS[subCategory || viewCategory].listViews({ access, inclMeta })
+    ? await VIEWS[subCategory || viewCategory].listViews({ access, inclMeta, filter })
     : []
 
   return VIEW_LIST.reduce((acc, viewCat) => {
@@ -47,13 +50,26 @@ const listViews = async (access, { viewCategory = 'ext', subCategory, inclMeta =
 
 const listViewsMW = async (req, res, next) => {
   try {
-    const { access, query: { viewCategory = 'ext', subCategory, inclMeta } } = req
+    const { access, query: { viewCategory = 'ext', subCategory, inclMeta, report } } = req
+
+    // set filters
+    const filter = {}
+    if (report) {
+      // eslint-disable-next-line radix
+      const reportID = parseInt(report, 10)
+      if (!Number.isNaN(reportID) && reportID > 0) {
+        filter.reportID = reportID
+      }
+    }
+
+    // get views
     const views = await listViews(
       access,
       {
         viewCategory,
         subCategory,
         inclMeta: ['1', 'true'].includes((inclMeta || '').toLowerCase()),
+        filter,
       },
     )
     res.status(200).json(views)

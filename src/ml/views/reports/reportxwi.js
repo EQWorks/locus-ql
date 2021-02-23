@@ -55,10 +55,13 @@ const options = {
   },
 }
 
-const getReportLayers = (wl, cu, filter) => {
-  const whereFilters = {
-    ...filter,
-    'report.type': 4, // xwi
+const getReportLayers = (wl, cu, { layerID, reportID }) => {
+  const whereFilters = { 'report.type': 4 } // xwi
+  if (reportID) {
+    whereFilters['report_xwi.report_id'] = reportID
+  }
+  if (layerID) {
+    whereFilters.layer_id = layerID
   }
   const layerQuery = knex('layer')
   layerQuery.column(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
@@ -138,11 +141,19 @@ const getView = async (access, viewID) => {
   const [, layerIDStr, reportIDStr] = viewID.match(/^reportxwi_(\d+|\w+)_(\d+)$/) || []
   let layerIDs = []
 
+  // UNCOMMENT WHEN layer_id = 'any' is deprecated
+  // eslint-disable-next-line radix
+  // const layerID = parseInt(layerIDStr, 10)
+  // if (!layerID) {
+  //   throw apiError(`Invalid view: ${viewID}`, 403)
+  // }
+
   // eslint-disable-next-line radix
   const reportID = parseInt(reportIDStr, 10)
   if (!reportID) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
+  // TO BE DEPRECATED - Filtering by report now available via `report` query param
   // optional layer_id param
   if (layerIDStr === 'any') {
     layerIDs = await getLayerIDs(whitelabel, customers, reportID)
@@ -155,7 +166,7 @@ const getView = async (access, viewID) => {
     const [reportLayer] = await getReportLayers(
       whitelabel,
       customers,
-      { layer_id, 'report_xwi.report_id': reportID },
+      { layerID: layer_id, reportID },
     )
     if (!reportLayer) {
       return null
@@ -175,10 +186,15 @@ const getView = async (access, viewID) => {
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
   }))
-  if (viewLayers.filter(v => v).length === 0) {
-    throw apiError('Access to layer(s) not allowed.', 403)
+
+  const views = viewLayers.filter(v => v)
+  if (views.length === 0) {
+    throw apiError('Access to layer(s) not allowed', 403)
   }
-  return viewLayers.filter(v => v)
+  if (layerIDStr === 'any') {
+    return views
+  }
+  return views[0]
 }
 
 const getQueryView = async (access, { layer_id, report_id }) => {
