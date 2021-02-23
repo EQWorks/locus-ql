@@ -1,4 +1,4 @@
-const apiError = require('../util/api-error')
+const { apiError } = require('../util/api-error')
 
 
 const _hasParams = target => (...params) => (req, res, next) => {
@@ -20,7 +20,7 @@ module.exports.accessHasSingleCustomer = (req, _, next) => {
     || !Array.isArray(customers)
     || customers.length !== 1
   ) {
-    next(apiError('Customer cannot be identified'))
+    next(apiError('Failed to identify customer; use the `_wl` and `_customer` query parameters'))
   }
   next()
 }

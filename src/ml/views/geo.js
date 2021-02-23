@@ -2,7 +2,7 @@
 
 const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
-const apiError = require('../../util/api-error')
+const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
 
 

@@ -1,5 +1,5 @@
 const { knex } = require('../util/db')
-const apiError = require('../util/api-error')
+const { apiError, APIError } = require('../util/api-error')
 const { getView, getQueryViews } = require('./views')
 const { executeQuery } = require('./engine')
 const { putToS3Cache, getFromS3Cache, EXECUTION_BUCKET } = require('./cache')
@@ -259,7 +259,10 @@ const queueExecution = async (req, res, next) => {
     )
     res.json({ executionID })
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Query execution could not be started', 500))
   }
 }
 
@@ -355,7 +358,10 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
     }
     next()
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to load the execution', 500))
   }
 }
 
@@ -383,7 +389,10 @@ const respondWithExecution = async (req, res, next) => {
     })))
     res.json(req.mlExecution)
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to retrieve the execution', 500))
   }
 }
 
@@ -490,7 +499,10 @@ const listExecutions = async (req, res, next) => {
     }, []))
     res.json(executions)
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to retrieve the executions', 500))
   }
 }
 

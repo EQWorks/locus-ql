@@ -2,7 +2,7 @@
 
 const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
-const apiError = require('../../util/api-error')
+const { apiError } = require('../../util/api-error')
 const { knexWithCache, pgWithCache } = require('../cache')
 
 

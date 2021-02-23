@@ -1,5 +1,5 @@
 const { knex } = require('../util/db')
-const apiError = require('../util/api-error')
+const { apiError, APIError } = require('../util/api-error')
 const { getView } = require('./views')
 const { updateExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
@@ -237,7 +237,7 @@ const updateQuery = async (
 
 const postQuery = async (req, res, next) => {
   try {
-    const { name, description, query } = req.body
+    const { name, description = '', query } = req.body
     const {
       access: { customers },
       mlViews,
@@ -260,12 +260,12 @@ const postQuery = async (req, res, next) => {
         customers[0],
         mlQueryHash,
         mlQueryColumnHash,
-        name,
+        name.trim(),
         loadedQuery || query,
         loadedViewIDs || Object.keys(mlViews),
         mlQueryColumns,
         isInternal,
-        description,
+        description.trim(),
         trx,
       )
       // if execution supplied, attach it to the created query if not already attached to a query
@@ -277,14 +277,17 @@ const postQuery = async (req, res, next) => {
 
     res.json({ queryID })
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to save the query', 500))
   }
 }
 
 const putQuery = async (req, res, next) => {
   try {
     const { queryID } = req.mlQuery
-    const { name, description, query } = req.body
+    const { name, description = '', query } = req.body
     const { mlViews, mlViewIsInternal, mlQueryHash, mlQueryColumnHash, mlQueryColumns } = req
     if (!name) {
       throw apiError('Query name cannot be empty')
@@ -292,18 +295,21 @@ const putQuery = async (req, res, next) => {
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(mlViewIsInternal).some(is => is)
     await updateQuery(queryID, {
-      name,
+      name: name.trim(),
       queryHash: mlQueryHash,
       columnHash: mlQueryColumnHash,
       query,
       viewIDs: Object.keys(mlViews),
       columns: mlQueryColumns,
       isInternal,
-      description,
+      description: description.trim(),
     })
     res.json({ queryID })
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to update the query', 500))
   }
 }
 
@@ -313,7 +319,10 @@ const deleteQuery = async (req, res, next) => {
     await updateQuery(queryID, { isActive: false })
     res.json({ queryID })
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to delete the query', 500))
   }
 }
 
@@ -352,7 +361,10 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
     }
     next()
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to load the query', 500))
   }
 }
 
@@ -375,7 +387,10 @@ const respondWithQuery = async (req, res, next) => {
     })))
     res.json(req.mlQuery)
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to retrieve the query', 500))
   }
 }
 
@@ -430,7 +445,10 @@ const listQueries = async (req, res, next) => {
     }, []))
     res.json(queries)
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to retrieve the queries', 500))
   }
 }
 

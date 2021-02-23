@@ -3,7 +3,7 @@
 const { createHash } = require('crypto')
 
 const { knex, fdwConnect } = require('../../../util/db')
-const apiError = require('../../../util/api-error')
+const { apiError } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 const impView = require('./imp')
 const bcnView = require('./bcn')

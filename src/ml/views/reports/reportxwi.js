@@ -6,7 +6,7 @@ const {
   CAT_DATE,
   CAT_JSON,
 } = require('../../type')
-const apiError = require('../../../util/api-error')
+const { apiError } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 
 

@@ -2,7 +2,7 @@ const { createHash } = require('crypto')
 const { gzip, gunzip } = require('zlib')
 const { promisify } = require('util')
 
-const { apiError } = require('../util/api-error')
+const { apiError, APIError } = require('../util/api-error')
 const { s3 } = require('../util/aws')
 const { client: redis } = require('../util/redis')
 
@@ -345,7 +345,7 @@ const getResFromS3Cache = async (req, res, next) => {
     // default cache is 10 minutes
     const { access, body: { query }, query: { cache: maxAge = 600 } } = req
     if (typeof maxAge !== 'number') {
-      throw apiError('query parameter "cache" must be of type number', 400)
+      throw apiError('Query parameter "cache" must be of type number', 400)
     }
     if (maxAge === -2) {
       // do not cache
@@ -370,7 +370,10 @@ const getResFromS3Cache = async (req, res, next) => {
 
     next()
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to retrieve data from cache', 500))
   }
 }
 

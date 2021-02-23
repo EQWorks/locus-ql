@@ -5,7 +5,7 @@ const { createHash } = require('crypto')
 
 const { knex, mapKnex, knexBuilderToRaw } = require('../util/db')
 const { Expression } = require('./expressions')
-const apiError = require('../util/api-error')
+const { apiError, APIError } = require('../util/api-error')
 const { knexWithCache, queryWithCache, cacheTypes } = require('./cache')
 
 
@@ -246,7 +246,10 @@ const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
     req.mlQueryColumns = columns
     next()
   } catch (err) {
-    next(err)
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to parse the query'))
   }
 }
 

@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken')
 const axios = require('axios')
 const { get } = require('lodash')
 
-const apiError = require('../util/api-error')
+const { apiError } = require('../util/api-error')
 const { pool } = require('../util/db')
 
 

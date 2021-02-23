@@ -3,7 +3,7 @@
 // comlpex expressions
 // reference: https://github.com/EQWorks/firstorder/wiki/Locus-ML-Expression
 const { knex } = require('../util/db')
-const apiError = require('../util/api-error')
+const { apiError } = require('../util/api-error')
 const { CAT_DATE, CAT_NUMERIC, CAT_JSON } = require('./type')
 
 
