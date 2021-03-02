@@ -1,6 +1,7 @@
+/* eslint-disable indent */
 /* eslint-disable no-use-before-define */
 
-const { knex, mapKnex } = require('../../util/db')
+const { knex, mapKnex, MAPS_FDW_CONNECTION } = require('../../util/db')
 const {
   CAT_STRING,
   CAT_NUMERIC,
@@ -30,7 +31,7 @@ const RESOLUTION_TABLE_MAP = Object.freeze({
 
 
 const getKnexLayerQuery = async (access, filter = {}) => {
-  const { whitelabel, customers, email } = access
+  const { whitelabel, customers, email = '' } = access
   // for all layers that user has access to
   // get all categories and expand it out as a single row
   // each view should be a layer + category
@@ -51,40 +52,53 @@ const getKnexLayerQuery = async (access, filter = {}) => {
   // subscription logic
   if (whitelabel !== -1) {
     if (!whitelabel.length || (customers !== -1 && !customers.length)) {
+      // if no WL and/or no customers, can only see WL= -1
       layerQuery.where('layer.whitelabel', -1)
-    } else if (customers === -1) {
-      layerQuery.whereRaw(`(
-        layer.whitelabel = -1
-        OR (layer.whitelabel = ANY (?) AND layer.account in ('0', '-1')))
-      `, [whitelabel])
     } else {
-      // get subscribe layers
+      // else can see WL = -1 + WL = whitelabel (subject to customers value) + subscribed layers
+
+      // fetch subscribed layers
       const rows = await knexWithCache(
         knex.raw(`
           SELECT type_id
           FROM market_ownership_flat MO
-          WHERE MO.type = 'layer' AND MO.whitelabel = ANY (?) AND MO.customer = ANY (?)
-        `, [whitelabel, customers]),
-        { ttl: 1800 }, // 30 minutes
+          LEFT JOIN customers as CU ON CU.customerid = MO.customer
+          WHERE
+            MO.type = 'layer'
+            AND MO.whitelabel = ANY (:whitelabel)
+            ${customers !== -1
+              ? 'AND (MO.customer = ANY (:customers) OR CU.agencyid = ANY (:customers))'
+              : ''
+            }
+        `, { whitelabel, customers }),
+        { ttl: 60 }, // 1 minute (to reflect new subscriptions)
       )
-      const subscribeLayerIDs = rows.map(layer => layer.type_id)
-      layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
+      const subscribedLayerIDs = rows.map(layer => layer.type_id)
+
+      // join with customers to expose the agency ID
+      if (customers !== -1) {
+        layerQuery.joinRaw('LEFT JOIN customers as CU ON CU.customerid = layer.customer')
+      }
+
       layerQuery.whereRaw(`
         (
           layer.whitelabel = -1
           OR
           (
-            layer.whitelabel = ANY (?)
-            AND (layer.customer = ANY (?) OR CU.agencyid = ANY (?))
-            AND layer.account in ('0', '-1', ?)
+            layer.whitelabel = ANY (:whitelabel)
+            AND layer.account in ('0', '-1', :email)
+            ${customers !== -1
+              ? 'AND (layer.customer = ANY (:customers) OR CU.agencyid = ANY (:customers))'
+              : ''
+            }
           )
           OR
-          layer.layer_id = ANY (?)
+          layer.layer_id = ANY (:subscribedLayerIDs)
         )
-      `, [whitelabel, customers, customers, email, subscribeLayerIDs])
+      `, { whitelabel, customers, email, subscribedLayerIDs })
     }
   }
-  return knexWithCache(layerQuery, { ttl: 600 }) // 30 minutes
+  return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
 }
 
 const getQueryView = async (access, { layer_id, categoryKey }) => {
@@ -106,24 +120,52 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   const { table, slug, resolution } = category
   const { table: geoTable, geoIDColumn } = RESOLUTION_TABLE_MAP[resolution]
 
+  let schema = ''
+  // retrieve schema if missing (usually 'static_layers')
+  if ((table || slug).indexOf('.') === -1) {
+    // [{ schema = 'public' } = {}] = await knexWithCache(
+    //   mapKnex.raw(`
+    //     SELECT table_schema AS schema
+    //     FROM information_schema.tables
+    //     WHERE table_name = ?
+    //     LIMIT 1
+    //   `, [table || slug]),
+    //   { ttl: 3600 }, // 1 hour
+    // )
+    // schema = `${schema}.`
+    schema = 'static_layers.'
+  }
+
   const mlView = mapKnex.raw(`
     (
-      SELECT
-        GM.ggid as id,
-        L.geo_id,
-        L.total,
-        L.summary_data::json #>> '{main_number_pcnt, title}' AS title,
-        L.summary_data::json #>> '{main_number_pcnt, value}' AS value,
-        L.summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
-        L.summary_data::json #>> '{main_number_pcnt, units}' AS units
-      FROM ${table || slug} as L
-      INNER JOIN config.ggid_map as GM ON GM.type = '${resolution}' AND GM.local_id = L.geo_id
-      INNER JOIN ${geoTable} as GT ON GT.${geoIDColumn} = L.geo_id
-      WHERE GT.wkb_geometry IS NOT NULL
+      SELECT * FROM dblink(:fdwConnection, '
+        SELECT
+          GM.ggid AS id,
+          L.geo_id,
+          L.geo_id AS geo_ca_${resolution},
+          L.total,
+          L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
+          L.summary_data::json #>> ''{main_number_pcnt, value}'' AS value,
+          L.summary_data::json #>> ''{main_number_pcnt, percent}'' AS percent,
+          L.summary_data::json #>> ''{main_number_pcnt, units}'' AS units
+        FROM ${schema}${table || slug} as L
+        INNER JOIN config.ggid_map as GM ON GM.type = ''${resolution}'' AND GM.local_id = L.geo_id
+        INNER JOIN ${geoTable} as GT ON GT.${geoIDColumn} = L.geo_id
+        WHERE GT.wkb_geometry IS NOT NULL
+      ') AS t(
+        id int,
+        geo_id text,
+        geo_ca_${resolution} text,
+        total int,
+        title text,
+        value real,
+        percent real,
+        units text
+      )
     ) as ${viewID}
-  `)
+  `, { fdwConnection: MAPS_FDW_CONNECTION })
 
-  return { viewID, mlView, mlViewColumns }
+  return { viewID, mlView, mlViewColumns, mlViewFdwConnections: [MAPS_FDW_CONNECTION] }
 }
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {
@@ -149,7 +191,15 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
           },
         }
         if (inclMeta) {
-          view.columns = options.columns
+          view.columns = {
+            ...options.columns,
+            geo_id: { ...options.columns.geo_id, geo_type: `ca-${resolution}` },
+            [`geo_ca_${resolution}`]: {
+              ...options.columns.geo_id,
+              key: `geo_ca_${resolution}`,
+              geo_type: `ca-${resolution}`,
+            },
+          }
         }
         return view
       })
@@ -190,7 +240,15 @@ const getView = async (access, viewID) => {
       table,
       categoryKey,
     },
-    columns: options.columns,
+    columns: {
+      ...options.columns,
+      geo_id: { ...options.columns.geo_id, geo_type: `ca-${resolution}` },
+      [`geo_ca_${resolution}`]: {
+        ...options.columns.geo_id,
+        key: `geo_ca_${resolution}`,
+        geo_type: `ca-${resolution}`,
+      },
+    },
     // meta
   }
 }
@@ -198,8 +256,8 @@ const getView = async (access, viewID) => {
 const options = {
   columns: {
     total: { category: CAT_NUMERIC },
-    id: { category: CAT_NUMERIC },
-    geo_id: { category: CAT_NUMERIC },
+    id: { category: CAT_NUMERIC }, // geo ggid
+    geo_id: { category: CAT_NUMERIC }, // id of the resolution (e.g. FSA, DA, CT...)
     title: { category: CAT_STRING },
     value: { category: CAT_NUMERIC },
     percent: { category: CAT_NUMERIC },

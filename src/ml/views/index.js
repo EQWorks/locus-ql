@@ -87,6 +87,7 @@ const getQueryViews = async (access, views, query) => {
   const mlViewColumns = {}
   const mlViewDependencies = {}
   const mlViewIsInternal = {}
+  const mlViewFdwConnections = {}
   await Promise.all(views.map(async (v) => {
     const { type, ...viewParams } = v
 
@@ -107,10 +108,11 @@ const getQueryViews = async (access, views, query) => {
       mlViewColumns[viewID] = view.mlViewColumns
       mlViewDependencies[viewID] = view.mlViewDependencies
       mlViewIsInternal[viewID] = view.mlViewIsInternal
+      mlViewFdwConnections[viewID] = view.mlViewFdwConnections
     }
   }))
 
-  return { mlViews, mlViewColumns, mlViewDependencies, mlViewIsInternal }
+  return { mlViews, mlViewColumns, mlViewDependencies, mlViewIsInternal, mlViewFdwConnections }
 }
 
 // single view

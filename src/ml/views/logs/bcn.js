@@ -47,11 +47,23 @@ module.exports = {
       dependsOn: ['_date', '_hour'],
       viewExpression: 'log.time_tz',
     },
-    fsa: {
+    _postal_code: {
       category: CAT_STRING,
       pgType: 'varchar(10)',
-      geo_type: 'ca-fsa',
+      access: ACCESS_PRIVATE,
       expression: 'postal_code',
+    },
+    geo_ca_fsa: {
+      category: CAT_STRING,
+      dependsOn: ['_postal_code'],
+      geo_type: 'ca-fsa',
+      viewExpression: "substring(log._postal_code from '^[A-Z]\\d[A-Z]$')",
+    },
+    geo_us_postalcode: {
+      category: CAT_NUMERIC,
+      dependsOn: ['_postal_code'],
+      // geo_type: 'us-postalcode',
+      viewExpression: "substring(log._postal_code from '^\\d{5}$')::int",
     },
     beacon_id: {
       category: CAT_NUMERIC,
@@ -144,6 +156,35 @@ module.exports = {
     city: {
       category: CAT_STRING,
       pgType: 'varchar(500)',
+    },
+    country: {
+      category: CAT_STRING,
+      dependsOn: ['city'],
+      viewExpression: 'substring(log.city for 2)',
+    },
+    geo_ca_province: {
+      category: CAT_STRING,
+      geo_type: 'ca-province',
+      dependsOn: ['city'],
+      viewExpression: "substring(log.city from '^CA\\$([A-Z]{2})')",
+    },
+    geo_us_state: {
+      category: CAT_STRING,
+      geo_type: 'us-state',
+      dependsOn: ['city'],
+      viewExpression: "substring(log.city from '^US\\$([A-Z]{2})')",
+    },
+    geo_ca_city: {
+      category: CAT_STRING,
+      geo_type: 'ca-city',
+      dependsOn: ['city'],
+      viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$(.*)$'))",
+    },
+    geo_us_city: {
+      category: CAT_STRING,
+      geo_type: 'us-city',
+      dependsOn: ['city'],
+      viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$(.*)$'))",
     },
     connection_type: {
       category: CAT_NUMERIC,

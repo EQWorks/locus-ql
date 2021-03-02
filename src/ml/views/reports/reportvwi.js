@@ -14,7 +14,10 @@ const { knexWithCache } = require('../../cache')
 const options = {
   columns: {
     time_zone: { category: CAT_STRING },
-    poi_id: { category: CAT_NUMERIC },
+    poi_id: {
+      category: CAT_NUMERIC,
+      geo_type: 'poi',
+    },
     poi_name: { category: CAT_STRING },
     chain_id: { category: CAT_NUMERIC },
     type: { category: CAT_NUMERIC },
@@ -29,11 +32,21 @@ const options = {
     address_region: { category: CAT_STRING },
     address_postalcode: { category: CAT_STRING },
     address_country: { category: CAT_STRING },
+    geo_ca_fsa: {
+      category: CAT_STRING,
+      geo_type: 'ca-fsa',
+    },
+    geo_us_postalcode: {
+      category: CAT_NUMERIC,
+      geo_type: 'us-postalcode',
+    },
 
     vwi_factor: { category: CAT_NUMERIC },
     name: { category: CAT_STRING },
 
     report_id: { category: CAT_NUMERIC },
+    beacon_id: { category: CAT_NUMERIC },
+    beacon_name: { category: CAT_STRING },
     date_type: { category: CAT_NUMERIC },
     start_date: { category: CAT_DATE },
     end_date: { category: CAT_DATE },
@@ -64,7 +77,7 @@ const options = {
     converted_unique_xdevice: { category: CAT_NUMERIC },
     converted_unique_hh: { category: CAT_NUMERIC },
     vendor: { category: CAT_STRING },
-    campaign: { category: CAT_STRING },
+    campaign: { category: CAT_NUMERIC },
   },
   aoi: {
     aoi_type: { category: CAT_STRING },
@@ -318,11 +331,15 @@ const getQueryView = async (access, { layer_id, report_id }) => {
       poi.address_region,
       poi.address_postalcode,
       poi.address_country,
+      upper(substring(poi.address_postalcode from '^[A-Z]\\d[A-Z]')) AS geo_ca_fsa,
+      substring(poi.address_postalcode from '^\\d{5}$')::int AS geo_us_postalcode,
 
       layer.vwi_factor,
       layer.name,
 
       vwi.report_id,
+      b.id AS beacon_id,
+      b.name AS beacon_name,
       vwi.date_type,
       vwi.start_date,
       vwi.end_date,
@@ -360,8 +377,8 @@ const getQueryView = async (access, { layer_id, report_id }) => {
         as converted_unique_visitors_multi_visit,
       vwi.converted_unique_xdevice * layer.vwi_factor as converted_unique_xdevice,
       vwi.converted_unique_hh * layer.vwi_factor as converted_unique_hh,
-      vwi.vendor,
-      vwi.campaign
+      NULLIF(vwi.vendor, '') AS vendor,
+      NULLIF(vwi.campaign,'')::int AS campaign
     FROM poi
     LEFT JOIN tz_world AS tz ON ST_Contains(
       tz.geom,
@@ -371,8 +388,11 @@ const getQueryView = async (access, { layer_id, report_id }) => {
     RIGHT JOIN layer ON layer.poi_list_id = poi_list_map.poi_list_id
     LEFT JOIN report AS r ON r.report_id = layer.report_id
     INNER JOIN report_vwi as vwi ON
-      vwi.report_id = r.report_id AND
-      vwi.poi_id = poi.poi_id
+      vwi.report_id = r.report_id
+      AND vwi.poi_id = poi.poi_id
+    LEFT JOIN beacons AS b ON
+      b.camps = vwi.campaign
+      AND b.vendors = vwi.vendor
     WHERE ${whereFilters.join(' AND ')}
     ) as ${viewID}
   `, whereValues)

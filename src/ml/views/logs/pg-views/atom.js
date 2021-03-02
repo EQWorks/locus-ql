@@ -1,5 +1,5 @@
-const { knex } = require('../../../../util/db')
-const { ATOM_CONNECTION_NAME, PG_CACHE_DAYS } = require('../constants')
+const { knex, ATOM_READ_FDW_CONNECTION } = require('../../../../util/db')
+const { PG_CACHE_DAYS } = require('../constants')
 
 
 const getCampView = (_, advertiserID) => ({
@@ -30,10 +30,10 @@ const getCampView = (_, advertiserID) => ({
       )
     ) AS atom_camps
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getOsView = () => ({
@@ -49,8 +49,8 @@ const getOsView = () => ({
         os_name text
       )
     ) AS atom_os
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getBrowserView = () => ({
@@ -66,8 +66,8 @@ const getBrowserView = () => ({
         browser_name text
       )
     ) AS atom_browsers
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getBannerView = (_, advertiserID) => ({
@@ -87,10 +87,10 @@ const getBannerView = (_, advertiserID) => ({
       )
     ) AS atom_banners
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getAdPositionView = () => ({
@@ -106,8 +106,8 @@ const getAdPositionView = () => ({
         ad_position_name text
       )
     ) AS atom_ad_positions
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getDomainView = () => ({
@@ -124,8 +124,8 @@ const getDomainView = () => ({
         domain_name text
       )
     ) AS atom_domains
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getSegmentView = agencyID => ({
@@ -146,10 +146,10 @@ const getSegmentView = agencyID => ({
       )
     ) AS atom_segments
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     agencyID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getLanguageView = () => ({
@@ -165,8 +165,8 @@ const getLanguageView = () => ({
         language_name text
       )
     ) AS atom_languages
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getNetworkView = () => ({
@@ -182,8 +182,8 @@ const getNetworkView = () => ({
         network_name text
       )
     ) AS atom_networks
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getChViewabilityView = (_, advertiserID) => ({
@@ -277,10 +277,10 @@ const getChViewabilityView = (_, advertiserID) => ({
       )
     ) AS atom_ch_viewability
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
@@ -354,10 +354,10 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
       )
     ) AS atom_ch_${viewColumn}
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 module.exports = {

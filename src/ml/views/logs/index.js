@@ -2,7 +2,7 @@
 /* eslint-disable no-continue */
 const { createHash } = require('crypto')
 
-const { knex, fdwConnect } = require('../../../util/db')
+const { knex } = require('../../../util/db')
 const { apiError } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 const impView = require('./imp')
@@ -118,11 +118,7 @@ const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOME
  * @param {any[]} b Second array
  * @returns {any[]} A new array being the intersection of a and b
  */
-const intersectArrays = (a, b) => (
-  a.length < b.length
-    ? a.filter(x => b.includes(x))
-    : b.filter(x => a.includes(x))
-)
+const intersectArrays = (a, b) => a.filter(x => b.includes(x))
 
 /**
  * Returns a collection of fast views including all the columns in cacheColumns
@@ -699,13 +695,18 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
     mlView[`${type}Join`](knexView, condition)
   })
 
-  // init connections to foreign db's
-  await Promise.all([...fdwConnections].map(connectionName => fdwConnect({ connectionName })))
-
   const mlViewColumns = getMlViewColumns(logType, accessMap[prefix])
   const mlViewIsInternal = minAccess >= ACCESS_INTERNAL
+  const mlViewFdwConnections = [...fdwConnections]
 
-  return { viewID, mlView, mlViewColumns, mlViewDependencies, mlViewIsInternal }
+  return {
+    viewID,
+    mlView,
+    mlViewColumns,
+    mlViewDependencies,
+    mlViewIsInternal,
+    mlViewFdwConnections,
+  }
 }
 
 const listViews = async ({ access, inclMeta = true }) => {

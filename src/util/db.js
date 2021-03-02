@@ -73,6 +73,24 @@ const fdwDisconnect = async (connectionName = 'locus_atom_fdw') => {
   }
 }
 
+const ATOM_READ_FDW_CONNECTION = 'locus_atom_fdw'
+const MAPS_FDW_CONNECTION = 'locus_maps_fdw'
+
+const fdwConnectByName = (connectionName, timeout) => {
+  let creds
+  switch (connectionName) {
+    case ATOM_READ_FDW_CONNECTION:
+      creds = config.pgAtom
+      break
+    case MAPS_FDW_CONNECTION:
+      creds = config.mappingPg
+      break
+    default:
+      creds = config.pgAtom
+  }
+  return fdwConnect({ connectionName, timeout, creds })
+}
+
 // converts a knex.QueryBuilder into a knex.Raw
 // useful to expose the underlying pool's response
 const knexBuilderToRaw = (builder) => {
@@ -89,5 +107,8 @@ module.exports = {
   mapKnex,
   fdwConnect,
   fdwDisconnect,
+  ATOM_READ_FDW_CONNECTION,
+  MAPS_FDW_CONNECTION,
+  fdwConnectByName,
   knexBuilderToRaw,
 }

@@ -11,7 +11,5 @@ module.exports = {
   ACCESS_INTERNAL: 2, // access type enum
   ACCESS_PRIVATE: 3, // access type enum - not exposed to UI
 
-  ATOM_CONNECTION_NAME: 'locus_atom_fdw',
-
   ML_SCHEMA: process.env.ML_SCHEMA,
 }

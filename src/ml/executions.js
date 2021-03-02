@@ -1,7 +1,7 @@
 const { knex } = require('../util/db')
 const { apiError, APIError } = require('../util/api-error')
 const { getView, getQueryViews } = require('./views')
-const { executeQuery } = require('./engine')
+const { executeQuery, establishFdwConnections } = require('./engine')
 const { putToS3Cache, getFromS3Cache, EXECUTION_BUCKET } = require('./cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
 
@@ -231,7 +231,11 @@ const sortViewDependencies = (viewDependencies) => {
 // extracts async and saved queries and queues them as executions
 const queueExecution = async (req, res, next) => {
   try {
-    const { queryID, query: loadedQuery, viewIDs: loadedViewIDs } = req.mlQuery || {}
+    const {
+      queryID,
+      query: loadedQuery,
+      viewIDs: loadedViewIDs,
+    } = req.mlQuery || req.mlExecution || {}
     const { query } = req.body
     const {
       access,
@@ -288,7 +292,14 @@ const runExecution = async (executionID) => {
     const views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
 
     // get query views
-    const { mlViews, mlViewColumns } = await getQueryViews(access, views, query)
+    const {
+      mlViews,
+      mlViewColumns,
+      mlViewFdwConnections,
+    } = await getQueryViews(access, views, query)
+
+    // instantiate fdw connections
+    await establishFdwConnections(mlViewFdwConnections)
 
     // run query
     const results = await executeQuery(mlViews, mlViewColumns, query)
@@ -507,7 +518,7 @@ const listExecutions = async (req, res, next) => {
 }
 
 // to test out handler (replace ID)
-// executionHandler({ execution_id: '44' }).then(() => console.log('ml execution done'))
+// executionHandler({ execution_id: '63' }).then(() => console.log('ml execution done'))
 
 module.exports = {
   createExecution,

@@ -3,8 +3,9 @@
 /* eslint-disable no-nested-ternary */
 const { createHash } = require('crypto')
 
-const { knex, mapKnex, knexBuilderToRaw } = require('../util/db')
+const { knex, knexBuilderToRaw, fdwConnectByName } = require('../util/db')
 const { Expression } = require('./expressions')
+const { insertGeo } = require('./geo')
 const { apiError, APIError } = require('../util/api-error')
 const { knexWithCache, queryWithCache, cacheTypes } = require('./cache')
 
@@ -106,61 +107,38 @@ const select = (
   },
 ) => {
   const exp = new Expression(viewColumns)
-  let knexDB = knex
-  // only layers need db to be map(?)
-  // 'layer_958_0' - `layer_${layer_id}_${categoryKey}`
-  if (from.startsWith('layer')) {
-  // if (db === 'map') {
-    knexDB = mapKnex
-  }
-  let knexQuery = knexDB
+  const knexQuery = knex
     // use bind() here to prevent exp instance from getting lost, same for other bind() usage below
     .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
-    .where(function () {
-      where.forEach((whereStatement) => {
-        if (Array.isArray(whereStatement)) {
-          const [argA, operator, argB] = whereStatement
-          this.where(
-            typeof argA === 'object' ? exp.parseExpression(argA) : argA,
-            operator,
-            argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
-          )
-        } else if (whereStatement) {
-          this.whereRaw(exp.parseExpression(whereStatement))
-        }
-      })
-    })
+
+  // Where
+  exp.parseConditions(
+    where,
+    knexQuery.where.bind(knexQuery),
+    knexQuery.whereRaw.bind(knexQuery),
+  )
 
   // Having
-  if (having.length > 0) {
-    having.forEach((havingStatement) => {
-      if (Array.isArray(havingStatement)) {
-        const [argA, operator, argB] = havingStatement
-        knexQuery.having(
-          typeof argA === 'object' ? exp.parseExpression(argA) : argA,
-          operator,
-          argB,
-        )
-      } else if (havingStatement) {
-        knexQuery.havingRaw(exp.parseExpression(havingStatement))
-      }
-    })
-  }
+  exp.parseConditions(
+    having,
+    knexQuery.having.bind(knexQuery),
+    knexQuery.havingRaw.bind(knexQuery),
+  )
 
   // Distinct Flag
   if (distinct) {
-    knexQuery = knexQuery.distinct()
+    knexQuery.distinct()
   }
 
   // Group By
   if (groupBy && groupBy.length > 0) {
-    knexQuery = knexQuery.groupByRaw(groupBy.map(exp.parseExpression.bind(exp)).join(', '))
+    knexQuery.groupByRaw(groupBy.map(exp.parseExpression.bind(exp)).join(', '))
   }
 
   // Order By
   if (orderBy && orderBy.length > 0) {
-    knexQuery = knexQuery.orderByRaw(orderBy.map(exp.parseExpression.bind(exp)).join(', '))
+    knexQuery.orderByRaw(orderBy.map(exp.parseExpression.bind(exp)).join(', '))
   }
 
   // JOINs
@@ -168,32 +146,18 @@ const select = (
     if (!JOIN_TYPES.includes(join.joinType)) {
       throw apiError(`Invalid join type: ${join.joinType}`, 403)
     }
-    const joinFuncName = `${join.joinType}Join`
-
-
-    knexQuery[joinFuncName](getView(views, join.view), function () {
-      const conditions = join.on
-
-      // handle easy array form conditions
-      // where condition is in format of: [argA, operator, argB]
-      if (Array.isArray(conditions)) {
-        conditions.forEach(([argA, operator, argB]) => this.on(
-          // to avoid adding ' ' to argument
-          typeof argA === 'object' ? exp.parseExpression(argA) : argA,
-          operator,
-          argB === null ? argB : (typeof argB === 'object' ? exp.parseExpression(argB) : argB),
-        )) // validate conditions filters?
-      } else {
-        // handle complex conditions
-        this.on(exp.parseExpression(conditions))
-      }
+    knexQuery[`${join.joinType}Join`](getView(views, join.view), function () {
+      exp.parseConditions(
+        join.on,
+        this.on.bind(this),
+      )
     })
   })
 
   // LIMIT
   if (limit || limit === 0) {
     if (Number.isInteger(limit) && limit >= 0) {
-      knexQuery = knexQuery.limit(limit)
+      knexQuery.limit(limit)
     } else {
       throw apiError(`Invalid limit: ${limit}`, 403)
     }
@@ -204,10 +168,22 @@ const select = (
 
 // parses query to knex object
 const getKnexQuery = (views, viewColumns, query) => {
+  const [queryWithGeo, viewsWithGeo] = insertGeo(views, viewColumns, query)
   const { type } = query
   if (type === 'select') {
-    return select(views, viewColumns, query)
+    return select(viewsWithGeo, viewColumns, queryWithGeo)
   }
+}
+
+/**
+ * Establishes connections with foreign databases
+ * @param {Object.<string, string[]>} fdwConnections Map of view ID's and array of connection names
+ * @returns {Promise<undefined>}
+ */
+const establishFdwConnections = (fdwConnections) => {
+  // remove duplicates
+  const uniqueConnections = [...(new Set(Object.values(fdwConnections).flat()))]
+  return Promise.all(uniqueConnections.map(conn => fdwConnectByName(conn)))
 }
 
 // runs query with cache
@@ -227,10 +203,13 @@ const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
     // else use req.body
     const loadedQuery = !onlyUseBodyQuery && (req.mlQuery || req.mlExecution)
     const { query } = loadedQuery || req.body
-    const { mlViews, mlViewColumns } = req
+    const { mlViews, mlViewColumns, mlViewFdwConnections } = req
 
     // if no error then query was parsed successfully
     const knexQuery = getKnexQuery(mlViews, mlViewColumns, query)
+
+    // establish fdw connections
+    await establishFdwConnections(mlViewFdwConnections)
 
     // run the query with limit 0
     knexQuery.limit(0)
@@ -257,5 +236,6 @@ module.exports = {
   getKnexQuery,
   executeQuery,
   validateQuery,
+  establishFdwConnections,
 }
 
