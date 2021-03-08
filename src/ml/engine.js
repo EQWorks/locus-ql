@@ -167,8 +167,8 @@ const select = (
 }
 
 // parses query to knex object
-const getKnexQuery = (views, viewColumns, query) => {
-  const [queryWithGeo, viewsWithGeo] = insertGeo(views, viewColumns, query)
+const getKnexQuery = (access, views, viewColumns, query) => {
+  const [queryWithGeo, viewsWithGeo] = insertGeo(access, views, viewColumns, query)
   const { type } = query
   if (type === 'select') {
     return select(viewsWithGeo, viewColumns, queryWithGeo)
@@ -187,8 +187,8 @@ const establishFdwConnections = (fdwConnections) => {
 }
 
 // runs query with cache
-const executeQuery = (views, viewColumns, query, maxAge) => {
-  const knexQuery = getKnexQuery(views, viewColumns, query)
+const executeQuery = (access, views, viewColumns, query, maxAge) => {
+  const knexQuery = getKnexQuery(access, views, viewColumns, query)
   return knexWithCache(
     knexQuery,
     { ttl: 1800, maxAge, type: cacheTypes.S3 }, // 30 minutes (subject to maxAge)
@@ -203,10 +203,10 @@ const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
     // else use req.body
     const loadedQuery = !onlyUseBodyQuery && (req.mlQuery || req.mlExecution)
     const { query } = loadedQuery || req.body
-    const { mlViews, mlViewColumns, mlViewFdwConnections } = req
+    const { mlViews, mlViewColumns, mlViewFdwConnections, access } = req
 
     // if no error then query was parsed successfully
-    const knexQuery = getKnexQuery(mlViews, mlViewColumns, query)
+    const knexQuery = getKnexQuery(access, mlViews, mlViewColumns, query)
 
     // establish fdw connections
     await establishFdwConnections(mlViewFdwConnections)

@@ -302,7 +302,7 @@ const runExecution = async (executionID) => {
     await establishFdwConnections(mlViewFdwConnections)
 
     // run query
-    const results = await executeQuery(mlViews, mlViewColumns, query)
+    const results = await executeQuery(access, mlViews, mlViewColumns, query)
 
     // persist to S3
     await putToS3Cache(

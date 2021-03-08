@@ -4,13 +4,26 @@ const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
 const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
+const { geoMapping } = require('../geo')
 
+
+// const GEO_TABLES = {
+//   city: {
+//     schema: 'canada_geo',
+//     table: 'city_dev',
+//   },
+//   ggid: {
+//     schema: 'config',
+//     table: 'ggid_map',
+//   },
+//   poi: {
+//     schema: 'public',
+//     table: 'poi',
+//   },
+// }
 
 const GEO_TABLES = {
-  city: {
-    schema: 'canada_geo',
-    table: 'city_dev',
-  },
+  ...geoMapping,
   ggid: {
     schema: 'config',
     table: 'ggid_map',
@@ -18,9 +31,9 @@ const GEO_TABLES = {
 }
 
 // public available
-const getQueryView = async (_, { tableKey }) => {
+const getQueryView = async ({ whitelabel, customers }, { tableKey }) => {
   const viewID = `geo_${tableKey}`
-  const { schema, table } = GEO_TABLES[tableKey]
+  const { schema, table, whitelabelColumn, customerColumn, idColumn } = GEO_TABLES[tableKey]
 
   if (!schema || !table) {
     throw apiError('Invalid geo view', 403)
@@ -31,12 +44,23 @@ const getQueryView = async (_, { tableKey }) => {
   const mlViewColumns = (viewMeta[0] || {}).columns
 
   // inject view
-  const mlView = knex.raw(`
-    (
-      SELECT *
-      FROM ${schema}.${table}
-    ) as ${viewID}
-  `)
+  const mlView = knex
+    .select(idColumn ? { [`geo_${tableKey}`]: idColumn } : '*')
+    .from(`${schema}.${table}`)
+    .as(viewID)
+
+  if (whitelabelColumn && whitelabel !== -1) {
+    mlView.where(knex.raw(
+      `(${whitelabelColumn} IS NULL OR ${whitelabelColumn} = ANY (?))`,
+      [whitelabel],
+    ))
+    if (customerColumn && customers !== -1) {
+      mlView.andWhere(knex.raw(
+        `(${customerColumn} IS NULL OR ${customerColumn} = ANY (?))`,
+        [customers],
+      ))
+    }
+  }
 
   return { viewID, mlView, mlViewColumns }
 }
@@ -51,7 +75,8 @@ const listViews = async ({ filter, inclMeta = true }) => {
     geoTableList = Object.entries(GEO_TABLES)
   }
 
-  const tablePromises = geoTableList.map(async ([tableKey, { schema, table }]) => {
+  // const tablePromises = geoTableList.map(async ([tableKey, { schema, table }]) => {
+  const tablePromises = geoTableList.map(async ([tableKey, { schema, table, idType }]) => {
     const view = {
       name: tableKey,
       view: {
@@ -61,6 +86,17 @@ const listViews = async ({ filter, inclMeta = true }) => {
       },
     }
     if (inclMeta) {
+      if (idType) {
+        view.columns = {
+          [`geo_${tableKey}`]: {
+            category: idType,
+            geo_type: tableKey,
+            key: `geo_${tableKey}`,
+          },
+        }
+        return view
+      }
+
       const tableColumns = await knexWithCache(
         knex('information_schema.columns')
           .columns(['column_name', 'data_type', 'udt_name'])
@@ -84,12 +120,34 @@ const listViews = async ({ filter, inclMeta = true }) => {
 }
 
 const getView = async (_, viewID) => {
-  const [, tableKey] = viewID.match(/^geo_(\w+)$/) || []
+  const [, tableKey] = viewID.match(/^geo_([\w-]+)$/) || []
   // eslint-disable-next-line radix
   if (!(tableKey in GEO_TABLES)) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
-  const { schema, table } = GEO_TABLES[tableKey]
+
+  const view = {
+    name: tableKey,
+    view: {
+      type: 'geo',
+      id: `geo_${tableKey}`,
+      tableKey,
+    },
+  }
+
+  const { schema, table, idType } = GEO_TABLES[tableKey]
+
+  if (idType) {
+    view.columns = {
+      [`geo_${tableKey}`]: {
+        category: idType,
+        geo_type: tableKey,
+        key: `geo_${tableKey}`,
+      },
+    }
+    return view
+  }
+
   const tableColumns = await knexWithCache(
     knex('information_schema.columns')
       .columns(['column_name', 'data_type', 'udt_name'])
@@ -107,15 +165,8 @@ const getView = async (_, viewID) => {
     }
   })
 
-  return {
-    name: tableKey,
-    view: {
-      type: 'geo',
-      id: `geo_${tableKey}`,
-      tableKey,
-    },
-    columns,
-  }
+  view.columns = columns
+  return view
 }
 
 module.exports = {

@@ -1,11 +1,10 @@
 /* eslint-disable no-continue */
 const { knex } = require('../util/db')
 const { apiError } = require('../util/api-error')
+const { CAT_STRING, CAT_NUMERIC } = require('./type')
 
 
-const TYPE_STRING = 'string'
-const TYPE_NUMBER = 'number'
-const DEFAULT_POINT_RADIUS = 20
+const DEFAULT_POINT_RADIUS = 500 // 500 metres
 
 /**
  * @enum
@@ -24,53 +23,55 @@ const geoMapping = {
   [geoTypes.CA_FSA]: {
     schema: 'canada_geo',
     table: 'fsa',
-    idType: TYPE_STRING,
+    idType: CAT_STRING,
     idColumn: 'fsa',
     geometryColumn: 'wkb_geometry',
   },
   [geoTypes.CA_DA]: {
     schema: 'canada_geo',
     table: 'da',
-    idType: TYPE_NUMBER,
+    idType: CAT_NUMERIC,
     idColumn: 'dauid',
     geometryColumn: 'wkb_geometry',
   },
   [geoTypes.CA_CT]: {
     schema: 'canada_geo',
     table: 'ct',
-    idType: TYPE_NUMBER,
+    idType: CAT_NUMERIC,
     idColumn: 'ctuid',
     geometryColumn: 'wkb_geometry',
   },
   [geoTypes.CA_POSTALCODE]: {
     schema: 'canada_geo',
     table: 'postalcode_2018',
-    idType: TYPE_STRING,
+    idType: CAT_STRING,
     idColumn: 'postalcode',
     geometryColumn: 'wkb_geometry',
   },
   [geoTypes.CA_PROVINCE]: {
     schema: 'canada_geo',
     table: 'province',
-    idType: TYPE_STRING,
+    idType: CAT_STRING,
     idColumn: 'province_code',
     geometryColumn: 'wkb_geometry',
   },
   [geoTypes.CA_CITY]: {
     schema: 'canada_geo',
-    table: 'city',
-    idType: TYPE_STRING,
-    idColumn: 'city',
-    geometryColumn: 'wkb_geometry',
+    table: 'city_dev',
+    idType: CAT_STRING,
+    idColumn: 'name',
+    geometryColumn: "geo->>'geom'",
   },
   [geoTypes.POI]: {
     schema: 'public',
     table: 'poi',
-    idType: TYPE_NUMBER,
+    idType: CAT_NUMERIC,
     idColumn: 'poi_id',
     geometryColumn: 'polygon',
     pointColumn: 'display_point',
     radiusColumn: 'default_radius',
+    whitelabelColumn: 'whitelabelid',
+    customerColumn: 'customerid',
   },
 }
 
@@ -111,7 +112,7 @@ const extractColumn = (viewColumns, expression) => {
 // substitue geo id with geometry when there are geo intersections of different types
 // return list of affected geo columns (view_id, column name, geo type) + expression with substitutions
 // returns list of necessary joins + new expression
-const insertGeo = (views, viewColumns, expression) => {
+const insertGeo = ({ whitelabel, customers }, views, viewColumns, expression) => {
   // make copy of expression using JSON stringify + parse so as to not mutate the original object
   const expressionWithGeo = JSON.parse(JSON.stringify(expression))
   const joins = {}
@@ -238,12 +239,32 @@ const insertGeo = (views, viewColumns, expression) => {
       acc[1].push([
         `${geo.schema}.${geo.table} AS ${col}_geo`,
         function joinOnValidGeo() {
-          this.on(
+          if (geo.whitelabelColumn && whitelabel !== -1) {
+            this.andOn(knex.raw(
+              `(${geo.whitelabelColumn} IS NULL OR ${geo.whitelabelColumn} = ANY (?))`,
+              [whitelabel],
+            ))
+            if (geo.customerColumn && customers !== -1) {
+              this.andOn(knex.raw(
+                `(${geo.customerColumn} IS NULL OR ${geo.customerColumn} = ANY (?))`,
+                [customers],
+              ))
+            }
+          }
+          // const joinCondition = this.on(
+          this.andOn(
             `${col}_geo.${geo.idColumn}`,
-            geo.idType === TYPE_STRING ? 'ilike' : '=',
+            geo.idType === CAT_STRING ? 'ilike' : '=',
             `${view}.${col}`,
           ).andOn(knex.raw(`ST_IsValid(COALESCE(${inGeometries.join(', ')}))`)) // make sure
           // geometry is valid
+
+          // if (geo.whitelabelColumn && whitelabel !== -1) {
+          //   joinCondition.andOn(knex.raw(`${geo.whitelabelColumn} = ANY (?)`, whitelabel))
+          //   if (geo.customerColumn && customers !== -1) {
+          //     joinCondition.andOn(knex.raw(`${geo.customerColumn} = ANY (?)`, customers))
+          //   }
+          // }
         },
       ])
       return acc
@@ -271,4 +292,8 @@ const insertGeo = (views, viewColumns, expression) => {
   return [expressionWithMacros, viewsWithGeo]
 }
 
-module.exports = { insertGeo }
+module.exports = {
+  insertGeo,
+  geoTypes,
+  geoMapping,
+}
