@@ -299,7 +299,7 @@ const runExecution = async (executionID) => {
     } = await getQueryViews(access, views, query)
 
     // instantiate fdw connections
-    await establishFdwConnections(mlViewFdwConnections)
+    await establishFdwConnections(mlViewFdwConnections, 60 * 15) // 15-min timeout
 
     // run query
     const results = await executeQuery(access, mlViews, mlViewColumns, query)

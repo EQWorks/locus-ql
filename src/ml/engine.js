@@ -178,12 +178,13 @@ const getKnexQuery = (access, views, viewColumns, query) => {
 /**
  * Establishes connections with foreign databases
  * @param {Object.<string, string[]>} fdwConnections Map of view ID's and array of connection names
+ * @param {number} [timeout] Connection timeout in seconds
  * @returns {Promise<undefined>}
  */
-const establishFdwConnections = (fdwConnections) => {
+const establishFdwConnections = (fdwConnections, timeout) => {
   // remove duplicates
   const uniqueConnections = [...(new Set(Object.values(fdwConnections).flat()))]
-  return Promise.all(uniqueConnections.map(conn => fdwConnectByName(conn)))
+  return Promise.all(uniqueConnections.map(conn => fdwConnectByName(conn, timeout)))
 }
 
 // runs query with cache

@@ -23,8 +23,11 @@ types.setTypeParser(types.builtins.NUMERIC, val => Number(val))
 
 // dblink connect functions (foreign-data wrapper)
 // https://www.postgresql.org/docs/9.6/dblink.html
+const ATOM_READ_FDW_CONNECTION = 'locus_atom_fdw'
+const MAPS_FDW_CONNECTION = 'locus_maps_fdw'
+
 const fdwConnect = async ({
-  connectionName = 'locus_atom_fdw',
+  connectionName = ATOM_READ_FDW_CONNECTION,
   creds = config.pgAtomRead, // use read replica
   timeout = 30, // Maximum wait for connection, in seconds (write as a decimal integer string).
   // Zero or not specified means wait indefinitely. It is not recommended to
@@ -43,7 +46,7 @@ const fdwConnect = async ({
       )
     `, [connectionName, user, password, host, port, database, timeout, applicationName])
     if (dblink_connect !== 'OK') {
-      throw new Error('Connection error')
+      throw new Error(`Connection error for ${connectionName}`)
     }
   } catch (err) {
     if (err.code && err.code === '42710') {
@@ -55,16 +58,16 @@ const fdwConnect = async ({
   }
 }
 
-const fdwDisconnect = async (connectionName = 'locus_atom_fdw') => {
+const fdwDisconnect = async (connectionName = ATOM_READ_FDW_CONNECTION) => {
   try {
     const { rows: [{ dblink_disconnect }] } = await knex.raw(`
       SELECT dblink_disconnect(?)
     `, [connectionName])
     if (dblink_disconnect !== 'OK') {
-      throw new Error('Disconnection error')
+      throw new Error(`Disconnection error for ${connectionName}`)
     }
   } catch (err) {
-    console.log('disconnect error', err)
+    console.log(`Disconnection error for ${connectionName}`, err)
     if (err.code && err.code === '08003') {
       // connection does not exist (e.g. already disconnected)
       return
@@ -72,9 +75,6 @@ const fdwDisconnect = async (connectionName = 'locus_atom_fdw') => {
     throw err
   }
 }
-
-const ATOM_READ_FDW_CONNECTION = 'locus_atom_fdw'
-const MAPS_FDW_CONNECTION = 'locus_maps_fdw'
 
 const fdwConnectByName = (connectionName, timeout) => {
   let creds

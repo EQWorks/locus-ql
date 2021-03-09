@@ -23,7 +23,14 @@ const { geoMapping } = require('../geo')
 // }
 
 const GEO_TABLES = {
-  ...geoMapping,
+  ...Object.entries(geoMapping).reduce((acc, [key, val]) => {
+    const tableKey = key.replace(/-/g, '_')
+    acc[tableKey] = {
+      ...val,
+      geoType: key,
+    }
+    return acc
+  }, {}),
   ggid: {
     schema: 'config',
     table: 'ggid_map',
@@ -76,7 +83,7 @@ const listViews = async ({ filter, inclMeta = true }) => {
   }
 
   // const tablePromises = geoTableList.map(async ([tableKey, { schema, table }]) => {
-  const tablePromises = geoTableList.map(async ([tableKey, { schema, table, idType }]) => {
+  const tablePromises = geoTableList.map(async ([tableKey, { schema, table, idType, geoType }]) => {
     const view = {
       name: tableKey,
       view: {
@@ -90,7 +97,7 @@ const listViews = async ({ filter, inclMeta = true }) => {
         view.columns = {
           [`geo_${tableKey}`]: {
             category: idType,
-            geo_type: tableKey,
+            geo_type: geoType,
             key: `geo_${tableKey}`,
           },
         }
@@ -120,7 +127,7 @@ const listViews = async ({ filter, inclMeta = true }) => {
 }
 
 const getView = async (_, viewID) => {
-  const [, tableKey] = viewID.match(/^geo_([\w-]+)$/) || []
+  const [, tableKey] = viewID.match(/^geo_([\w]+)$/) || []
   // eslint-disable-next-line radix
   if (!(tableKey in GEO_TABLES)) {
     throw apiError(`Invalid view: ${viewID}`, 403)
@@ -135,13 +142,13 @@ const getView = async (_, viewID) => {
     },
   }
 
-  const { schema, table, idType } = GEO_TABLES[tableKey]
+  const { schema, table, idType, geoType } = GEO_TABLES[tableKey]
 
   if (idType) {
     view.columns = {
       [`geo_${tableKey}`]: {
         category: idType,
-        geo_type: tableKey,
+        geo_type: geoType,
         key: `geo_${tableKey}`,
       },
     }

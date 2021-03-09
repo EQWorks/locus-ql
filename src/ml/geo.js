@@ -13,6 +13,7 @@ const geoTypes = {
   CA_FSA: 'ca-fsa',
   CA_DA: 'ca-da',
   CA_CT: 'ca-ct',
+  CA_CSD: 'ca-csd',
   CA_POSTALCODE: 'ca-postalcode',
   CA_PROVINCE: 'ca-province',
   CA_CITY: 'ca-city',
@@ -40,6 +41,13 @@ const geoMapping = {
     idType: CAT_NUMERIC,
     idColumn: 'ctuid',
     geometryColumn: 'wkb_geometry',
+  },
+  [geoTypes.CA_CSD]: {
+    schema: 'canada_geo',
+    table: 'csd',
+    idType: CAT_NUMERIC,
+    idColumn: 'gid',
+    geometryColumn: 'geom',
   },
   [geoTypes.CA_POSTALCODE]: {
     schema: 'canada_geo',
@@ -110,8 +118,8 @@ const extractColumn = (viewColumns, expression) => {
 }
 
 // substitue geo id with geometry when there are geo intersections of different types
-// return list of affected geo columns (view_id, column name, geo type) + expression with substitutions
-// returns list of necessary joins + new expression
+// injects geo into views and expression and returns same as new objects
+// no mutations to args
 const insertGeo = ({ whitelabel, customers }, views, viewColumns, expression) => {
   // make copy of expression using JSON stringify + parse so as to not mutate the original object
   const expressionWithGeo = JSON.parse(JSON.stringify(expression))
@@ -240,7 +248,7 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, expression) =>
         `${geo.schema}.${geo.table} AS ${col}_geo`,
         function joinOnValidGeo() {
           if (geo.whitelabelColumn && whitelabel !== -1) {
-            this.andOn(knex.raw(
+            this.on(knex.raw(
               `(${geo.whitelabelColumn} IS NULL OR ${geo.whitelabelColumn} = ANY (?))`,
               [whitelabel],
             ))
@@ -251,20 +259,12 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, expression) =>
               ))
             }
           }
-          // const joinCondition = this.on(
           this.andOn(
             `${col}_geo.${geo.idColumn}`,
             geo.idType === CAT_STRING ? 'ilike' : '=',
             `${view}.${col}`,
           ).andOn(knex.raw(`ST_IsValid(COALESCE(${inGeometries.join(', ')}))`)) // make sure
           // geometry is valid
-
-          // if (geo.whitelabelColumn && whitelabel !== -1) {
-          //   joinCondition.andOn(knex.raw(`${geo.whitelabelColumn} = ANY (?)`, whitelabel))
-          //   if (geo.customerColumn && customers !== -1) {
-          //     joinCondition.andOn(knex.raw(`${geo.customerColumn} = ANY (?)`, customers))
-          //   }
-          // }
         },
       ])
       return acc
