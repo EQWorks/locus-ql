@@ -151,10 +151,9 @@ const layerAuth = (pathToID = 'params.id', pathToSecondaryID = false) => async (
 const internalAuth = (req, res, next) => {
   const { whitelabel, customers } = req.access
   if (whitelabel === -1 && customers === -1) {
-    next()
-  } else {
-    return next(apiError('Only internal are allowed', 403))
+    return next()
   }
+  return next(apiError('Only internal are allowed', 403))
 }
 
 const dataProviderAuth = (req, res, next) => {
@@ -168,7 +167,7 @@ const dataProviderAuth = (req, res, next) => {
 }
 
 const devAuth = ({ access }, res, next) => {
-  if (access.prefix !== 'dev') {
+  if (access.prefix === 'dev') {
     return next()
   }
   return next(apiError('Only devs are allowed', 403))
@@ -261,6 +260,16 @@ const popularTimesAuth = (req, res, next) => {
   return next(apiError('Access not allowed', 403))
 }
 
+const hubAuth = (req, res, next) => {
+  const { whitelabel, customers, prefix } = req.access
+  const internal = whitelabel === -1 && customers === -1
+  const tester = prefix === 'tester'
+  if (internal || tester) {
+    return next()
+  }
+  return next(apiError('Only internal and testers are allowed', 403))
+}
+
 module.exports = {
   jwt: jwtMiddleware,
   layer: layerAuth,
@@ -273,4 +282,5 @@ module.exports = {
   layerAccess: haveLayerAccess,
   hhSegments: hhSegmentAuth,
   popularTimes: popularTimesAuth,
+  hub: hubAuth,
 }
