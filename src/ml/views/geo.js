@@ -54,19 +54,21 @@ const getQueryView = async ({ whitelabel, customers }, { tableKey }) => {
   const mlView = knex
     .select(idColumn ? { [`geo_${tableKey}`]: idColumn } : '*')
     .from(`${schema}.${table}`)
-    .as(viewID)
 
+  // scoped to WL/CU for now
+  // in the future, might expose POI's where WL IS NULL
+  // issue: slows down geo joins 
   if (whitelabelColumn && whitelabel !== -1) {
-    mlView.where(knex.raw(
-      `(${whitelabelColumn} IS NULL OR ${whitelabelColumn} = ANY (?))`,
-      [whitelabel],
-    ))
-    if (customerColumn && customers !== -1) {
-      mlView.andWhere(knex.raw(
-        `(${customerColumn} IS NULL OR ${customerColumn} = ANY (?))`,
-        [customers],
-      ))
-    }
+    const customerFilter = customerColumn && customers !== -1
+      ? `AND (
+        ${table}.${customerColumn} IS NULL
+        OR ${table}.${customerColumn} = ANY (:customers)
+      )`
+      : ''
+    mlView.where(knex.raw(`(
+      ${table}.${whitelabelColumn} = ANY (:whitelabel)
+      ${customerFilter}
+    )`, { whitelabel, customers }))
   }
 
   return { viewID, mlView, mlViewColumns }

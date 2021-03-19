@@ -135,7 +135,7 @@ class Expression {
     if (column !== '*' && !validView[column]) {
       throw apiError(`Column: ${column} not found for view: ${view}`, 403)
     }
-    return `${view}.${column}`
+    return knex.raw(`"${view}"."${column}"`)
   }
 
   parseComplex({ type, ...exp }) {

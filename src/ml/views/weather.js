@@ -112,14 +112,12 @@ const getQueryView = async (_, { frequency }) => {
 
   // inject view
   const mlView = knex.raw(`
-    (
-      SELECT
-        csd_gid AS geo_ca_csd,
-        local_ts at time zone 'UTC' as local_ts,
-        timezone,
-        data
-      FROM public.dark_sky_${frequency}_stats
-    ) as ${viewID}
+    SELECT
+      csd_gid AS geo_ca_csd,
+      local_ts at time zone 'UTC' as local_ts,
+      timezone,
+      data
+    FROM public.dark_sky_${frequency}_stats
   `)
 
   return { viewID, mlView, mlViewColumns }

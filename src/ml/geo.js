@@ -1,10 +1,12 @@
+/* eslint-disable no-loop-func */
+/* eslint-disable no-plusplus */
 /* eslint-disable no-continue */
-const { knex } = require('../util/db')
+const { knex, MAPS_FDW_CONNECTION } = require('../util/db')
 const { apiError } = require('../util/api-error')
 const { CAT_STRING, CAT_NUMERIC } = require('./type')
 
 
-const DEFAULT_POINT_RADIUS = 500 // 500 metres
+const DEFAULT_RADIUS = 500 // 500 metres
 
 /**
  * @enum
@@ -27,6 +29,8 @@ const geoMapping = {
     idType: CAT_STRING,
     idColumn: 'fsa',
     geometryColumn: 'wkb_geometry',
+    intersectionQueryType: 'fsa',
+    intersectionSourceType: 'fsa',
   },
   [geoTypes.CA_DA]: {
     schema: 'canada_geo',
@@ -34,13 +38,15 @@ const geoMapping = {
     idType: CAT_NUMERIC,
     idColumn: 'dauid',
     geometryColumn: 'wkb_geometry',
+    intersectionSourceType: 'da',
   },
   [geoTypes.CA_CT]: {
     schema: 'canada_geo',
     table: 'ct',
-    idType: CAT_NUMERIC,
+    idType: CAT_STRING,
     idColumn: 'ctuid',
     geometryColumn: 'wkb_geometry',
+    intersectionSourceType: 'ct',
   },
   [geoTypes.CA_CSD]: {
     schema: 'canada_geo',
@@ -55,6 +61,7 @@ const geoMapping = {
     idType: CAT_STRING,
     idColumn: 'postalcode',
     geometryColumn: 'wkb_geometry',
+    intersectionQueryType: 'postalcode',
   },
   [geoTypes.CA_PROVINCE]: {
     schema: 'canada_geo',
@@ -76,22 +83,23 @@ const geoMapping = {
     idType: CAT_NUMERIC,
     idColumn: 'poi_id',
     geometryColumn: 'polygon',
-    pointColumn: 'display_point',
+    latColumn: 'lat',
+    longColumn: 'lon',
     radiusColumn: 'default_radius',
     whitelabelColumn: 'whitelabelid',
     customerColumn: 'customerid',
   },
 }
 
-const makeGeoOverlapMacro = (colA, colB) => ({
-  key: `[GEO_OVERLAP_PCT|${`${colA.view}.${colA.key}|${colB.view}.${colB.key}`.toUpperCase()}]`,
-  expression: colA.geo_type === colB.geo_type
-    ? `((${colA.view}.${colA.key} = ${colB.view}.${colB.key}) OR FALSE)::int`
-    : `
-      ST_Area(
-        ST_Intersection(${colA.view}._${colA.key}_geometry, ${colB.view}._${colB.key}_geometry)
-      ) / ST_Area(${colB.view}._${colB.key}_geometry)`,
-})
+// const makeGeoOverlapMacro = (colA, colB) => ({
+//   key: `[GEO_OVERLAP_PCT|${`${colA.view}.${colA.key}|${colB.view}.${colB.key}`.toUpperCase()}]`,
+//   expression: colA.geo_type === colB.geo_type
+//     ? `((${colA.view}.${colA.key} = ${colB.view}.${colB.key}) OR FALSE)::int`
+//     : `
+//       ST_Area(
+//         ST_Intersection(${colA.view}._${colA.key}_geometry, ${colB.view}._${colB.key}_geometry)
+//       ) / ST_Area(${colB.view}._${colB.key}_geometry)`,
+// })
 
 // extracts explicit column
 // does not handle wildcard *
@@ -120,11 +128,15 @@ const extractColumn = (viewColumns, expression) => {
 // substitue geo id with geometry when there are geo intersections of different types
 // injects geo into views and expression and returns same as new objects
 // no mutations to args
-const insertGeo = ({ whitelabel, customers }, views, viewColumns, expression) => {
+const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections, expression) => {
   // make copy of expression using JSON stringify + parse so as to not mutate the original object
   const expressionWithGeo = JSON.parse(JSON.stringify(expression))
-  const joins = {}
-  const macros = {}
+  const viewsWithGeo = { ...views } // shallow copy
+  const fdwConnectionsWithGeo = { ...fdwConnections } // shallow copy
+  const geoIntersections = {}
+  const geoJoins = {}
+  let geoJoinCount = 0
+  // const macros = {}
   const queue = [expressionWithGeo]
   // look for geo intersections
   while (queue.length) {
@@ -145,7 +157,8 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, expression) =>
     } else if (
       item.type === 'function'
       && item.values.length === 3
-      && ['geo_intersects', 'geo_within'].includes(item.values[0])
+      // && ['geo_intersects', 'geo_within'].includes(item.values[0])
+      && item.values[0] === 'geo_intersects'
     ) {
       [, argA, argB] = item.values
       // args must be 2 geo columns
@@ -183,113 +196,356 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, expression) =>
     }
 
     // add cols to joins and prepare intersect macros
-    [colA, colB].forEach((col) => {
-      // if not same geo type, need to join with geo to get geometry
-      if (colA.geo_type !== colB.geo_type) {
-        joins[col.view] = joins[col.view] || {}
-        joins[col.view][col.key] = geoMapping[col.geo_type]
-      }
+    // [colA, colB].forEach((col) => {
+    //   // if not same geo type, need to join with geo to get geometry
+    //   if (colA.geo_type !== colB.geo_type) {
+    //     joins[col.view] = joins[col.view] || {}
+    //     joins[col.view][col.key] = geoMapping[col.geo_type]
+    //   }
 
-      const { key, expression } = makeGeoOverlapMacro(col, col === colA ? colB : colA)
-      macros[key] = expression
-    })
+    //   const { key, expression } = makeGeoOverlapMacro(col, col === colA ? colB : colA)
+    //   macros[key] = expression
+    // })
 
     // if different geo type need to change equality condition to geo intersection
     if (colA.geo_type === colB.geo_type) {
       continue
     }
 
-    // create new join condition
-    const condition = {
-      type: 'function',
-      values: [
-        'geo_intersects',
-        `${colA.view}._${colA.key}_geometry`,
-        `${colB.view}._${colB.key}_geometry`,
-      ],
+    // add bridge table
+    const intersectionKey = [colA.geo_type, colB.geo_type].sort().join('__')
+    // register id filters for each of the resolutions to limit the size of the bridge table
+    geoIntersections[intersectionKey] = geoIntersections[intersectionKey] || {
+      [colA.geo_type]: {},
+      [colB.geo_type]: {},
     }
+    geoIntersections[intersectionKey][colA.geo_type][`${colA.view}$${colA.key}`] = colA
+    geoIntersections[intersectionKey][colB.geo_type][`${colB.view}$${colB.key}`] = colB
 
-    // mutate expression object
+    // keep track of joins between resolutions
+    const colAJoinKey = `${colA.view}$${colA.key}$${colB.geo_type}`
+    const colBJoinKey = `${colB.view}$${colB.key}$${colA.geo_type}`
+    geoJoins[colAJoinKey] = geoJoins[colAJoinKey] || { joinKeys: new Set(), alias: geoJoinCount++ }
+    geoJoins[colBJoinKey] = geoJoins[colBJoinKey] || { joinKeys: new Set(), alias: geoJoinCount++ }
+    geoJoins[colAJoinKey].joinKeys.add(colBJoinKey)
+    geoJoins[colBJoinKey].joinKeys.add(colAJoinKey)
+
+    // move original views that will need to be rewritten in order to expose join
+    // geo cols as '__source__<view>'
+    viewsWithGeo[`__source__${colA.view}`] = views[colA.view]
+    viewsWithGeo[`__source__${colB.view}`] = views[colB.view]
+
+    // mutate item
+    // should be straight equality condition based on geo_id, no more geometry
+    // we don't know yet where the join to the intersection table will live in order to do
+    // a straigh equality join between the views (using geo id's in the same resolution) so let's
+    // add new columns that will eventually be mapped to the column or to the geo intersection table
     if (Array.isArray(item)) {
-      item.splice(0, item.length, condition)
+      item[0] = `${colA.view}.__geo_id_${geoJoins[colAJoinKey].alias}`
+      item[1] = '='
+      item[2] = `${colB.view}.__geo_id_${geoJoins[colBJoinKey].alias}`
       continue
     }
-    Object.assign(item, condition)
+    Object.assign(item, {
+      type: 'operator',
+      values: [
+        '=',
+        `${colA.view}.__geo_id_${geoJoins[colAJoinKey].alias}`,
+        `${colB.view}.__geo_id_${geoJoins[colBJoinKey].alias}`,
+      ],
+    })
   }
 
-  // rewrite the views to add the geometries
-  const viewsWithGeo = Object.entries(joins).reduce((views, [view, cols]) => {
-    const [geoCols, joinConditions] = Object.entries(cols).reduce((acc, [col, geo]) => {
-      const outGeometries = []
-      const inGeometries = []
-      if (geo.geometryColumn) {
-        outGeometries.push(`${col}_geo.${geo.geometryColumn}`)
-        inGeometries.push(`${col}_geo.${geo.geometryColumn}`)
-      }
-      if (geo.pointColumn) {
-        outGeometries.push(`
-          ST_Transform(
-            ST_Buffer(
-              ST_Transform(
-                ST_SetSRID(${col}_geo.${geo.pointColumn}, 4326),
-                3347
-              ),
-              ${geo.radiusColumn ? `${col}_geo.${geo.radiusColumn}` : DEFAULT_POINT_RADIUS}
-            ),
-            4326
-          )
-        `)
-        inGeometries.push(`${col}_geo.${geo.pointColumn}`)
-      }
-      // geo column with alias
-      acc[0].push({ [`_${col}_geometry`]: knex.raw(`COALESCE(${outGeometries.join(', ')})`) })
-      // join with geo table
-      acc[1].push([
-        `${geo.schema}.${geo.table} AS ${col}_geo`,
-        function joinOnValidGeo() {
-          if (geo.whitelabelColumn && whitelabel !== -1) {
-            this.on(knex.raw(
-              `(${geo.whitelabelColumn} IS NULL OR ${geo.whitelabelColumn} = ANY (?))`,
-              [whitelabel],
-            ))
-            if (geo.customerColumn && customers !== -1) {
-              this.andOn(knex.raw(
-                `(${geo.customerColumn} IS NULL OR ${geo.customerColumn} = ANY (?))`,
-                [customers],
-              ))
-            }
-          }
-          this.andOn(
-            `${col}_geo.${geo.idColumn}`,
-            geo.idType === CAT_STRING ? 'ilike' : '=',
-            `${view}.${col}`,
-          ).andOn(knex.raw(`ST_IsValid(COALESCE(${inGeometries.join(', ')}))`)) // make sure
-          // geometry is valid
-        },
-      ])
-      return acc
-    }, [[], []])
+  // append geo intersections (bridge tables) to views
+  Object.entries(geoIntersections).forEach(([key, geos]) => {
+    const [geoTypeA, geoTypeB] = Object.keys(geos)
+    const geoA = geoMapping[geoTypeA]
+    const geoB = geoMapping[geoTypeB]
 
-    const query = knex.select(`${view}.*`, ...geoCols).from(views[view]).as(view)
-    joinConditions.forEach(j => query.leftJoin(...j))
+    // TODO: normalize filters (e.g. string types such as city names -> case insensitive)
+    const idFilterA = Object.values(geos[geoTypeA]).reduce((filter, col) => {
+      filter.push(`SELECT ${
+        geoA.idType === CAT_STRING ? `upper("${col.key}")` : `"${col.key}"`
+      } AS id FROM "__source__${col.view}"`)
+      return filter
+    }, [])
+    const idFilterB = Object.values(geos[geoTypeB]).reduce((filter, col) => {
+      filter.push(`SELECT ${
+        geoB.idType === CAT_STRING ? `upper("${col.key}")` : `"${col.key}"`
+      } AS id FROM "__source__${col.view}"`)
+      return filter
+    }, [])
+
+    // check if can use pre-computed intersections
+    let intersectionQuery
+    let intersectionSource
+    if (geoA.intersectionQueryType && geoB.intersectionSourceType) {
+      intersectionQuery = { ...geoA, geoType: geoTypeA, idFilter: idFilterA }
+      intersectionSource = { ...geoB, geoType: geoTypeB, idFilter: idFilterB }
+    } else if (geoA.intersectionSourceType && geoB.intersectionQueryType) {
+      intersectionQuery = { ...geoB, geoType: geoTypeB, idFilter: idFilterB }
+      intersectionSource = { ...geoA, geoType: geoTypeA, idFilter: idFilterA }
+    }
+    if (intersectionQuery) {
+      const queryId = intersectionQuery.idType === CAT_STRING ? "'''' || f.id || ''''" : 'f.id'
+      const sourceId = intersectionSource.idType === CAT_STRING ? "'''' || f.id || ''''" : 'f.id'
+      const queryIdFilter = `
+        ${intersectionQuery.idType === CAT_STRING ? 'upper(query_geo_id)' : 'query_geo_id'} IN ('
+        || (
+          SELECT string_agg(${queryId}, ', ')
+          FROM (${intersectionQuery.idFilter.join(' UNION ')}) f
+        ) || ')
+      `
+      const sourceIdFilter = `
+        ${intersectionSource.idType === CAT_STRING ? 'upper(source_geo_id)' : 'source_geo_id'} IN ('
+        || (
+          SELECT string_agg(${sourceId}, ', ')
+          FROM (${intersectionSource.idFilter.join(' UNION ')}) f
+        ) || ')
+      `
+      const queryIdType = intersectionQuery.idType === CAT_NUMERIC ? 'real' : 'text'
+      const sourceIdType = intersectionSource.idType === CAT_NUMERIC ? 'real' : 'text'
+      viewsWithGeo[`__geo__${key}`] = knex.raw(`
+        SELECT * FROM dblink(:fdwConnection, '
+          SELECT
+            ${intersectionQuery.idType === CAT_STRING ? 'upper(query_geo_id)' : 'query_geo_id'},
+            ${intersectionSource.idType === CAT_STRING ? 'upper(source_geo_id)' : 'source_geo_id'}
+          FROM canada_geo.intersection
+          WHERE
+            query_geo_type = ''${intersectionQuery.intersectionQueryType}''
+            AND source_geo_type = ''${intersectionSource.intersectionSourceType}''
+            AND ${queryIdFilter}
+            AND ${sourceIdFilter}
+        ') AS t(
+          "${intersectionQuery.geoType}" ${queryIdType},
+          "${intersectionSource.geoType}" ${sourceIdType}
+        )
+      `, { fdwConnection: MAPS_FDW_CONNECTION })
+
+      fdwConnectionsWithGeo[`__geo__${key}`] = [MAPS_FDW_CONNECTION]
+      return
+    }
+
+    // otherwise join geometries
+    const sourceGeometriesA = []
+    const joinGeometriesA = []
+    const sourceGeometriesB = []
+    const joinGeometriesB = []
+
+    if (geoA.geometryColumn) {
+      sourceGeometriesA.push(`a.${geoA.geometryColumn}`)
+      joinGeometriesA.push(`a.${geoA.geometryColumn}`)
+    }
+    if (geoA.latColumn && geoA.longColumn) {
+      sourceGeometriesA.push(`ST_MakePoint(a.${geoA.longColumn}, a.${geoA.latColumn})`)
+      joinGeometriesA.push(`
+        ST_Transform(
+          ST_Buffer(
+            ST_Transform(
+              ST_SetSRID(ST_MakePoint(a.${geoA.longColumn}, a.${geoA.latColumn}), 4326),
+              3347
+            ),
+            ${geoA.radiusColumn ? `a.${geoA.radiusColumn}` : DEFAULT_RADIUS}
+          ),
+          4326
+        )
+      `)
+    }
+
+    if (geoB.geometryColumn) {
+      sourceGeometriesB.push(`b.${geoB.geometryColumn}`)
+      joinGeometriesB.push(`b.${geoB.geometryColumn}`)
+    }
+    if (geoB.latColumn && geoB.longColumn) {
+      sourceGeometriesB.push(`ST_MakePoint(b.${geoB.longColumn}, b.${geoB.latColumn})`)
+      joinGeometriesB.push(`
+        ST_Transform(
+          ST_Buffer(
+            ST_Transform(
+              ST_SetSRID(ST_MakePoint(b.${geoB.longColumn}, b.${geoB.latColumn}), 4326),
+              3347
+            ),
+            ${geoB.radiusColumn ? `b.${geoB.radiusColumn}` : DEFAULT_RADIUS}
+          ),
+          4326
+        )
+      `)
+    }
+
+    viewsWithGeo[`__geo__${key}`] = knex
+      .select({
+        [geoTypeA]: knex.raw(geoA.idType === CAT_STRING
+          ? `upper(a."${geoA.idColumn}")`
+          : `a."${geoA.idColumn}"`),
+        [geoTypeB]: knex.raw(geoB.idType === CAT_STRING
+          ? `upper(b."${geoB.idColumn}")`
+          : `b."${geoB.idColumn}"`),
+      })
+      .from({ a: `${geoA.schema}.${geoA.table}` })
+      .where(function joinOnValidGeo() {
+        if (geoA.whitelabelColumn && whitelabel !== -1) {
+          const customerFilter = geoA.customerColumn && customers !== -1
+            ? `AND (
+              a.${geoA.customerColumn} IS NULL
+              OR a.${geoA.customerColumn} = ANY (:customers)
+            )`
+            : ''
+          this.where(knex.raw(`(
+            a.${geoA.whitelabelColumn} IS NULL
+            OR (
+              a.${geoA.whitelabelColumn} = ANY (:whitelabel)
+              ${customerFilter}
+            )
+          )`, { whitelabel, customers }))
+        }
+        if (idFilterA.length) {
+          this.where(knex.raw(`${
+            geoA.idType === CAT_STRING ? `upper(a."${geoA.idColumn}")` : `a."${geoA.idColumn}"`
+          } IN (${idFilterA.join(' UNION ')})`))
+        }
+        // make sure geometry is valid
+        this.andWhere(knex.raw(`ST_IsValid(${
+          sourceGeometriesA.length > 1
+            ? `COALESCE(${sourceGeometriesA.join(', ')})`
+            : sourceGeometriesA
+        })`))
+      })
+      .join(
+        { b: `${geoB.schema}.${geoB.table}` },
+        function joinOnValidGeo() {
+          if (geoB.whitelabelColumn && whitelabel !== -1) {
+            const customerFilter = geoB.customerColumn && customers !== -1
+              ? `AND (
+                b.${geoB.customerColumn} IS NULL
+                OR b.${geoB.customerColumn} = ANY (:customers)
+              )`
+              : ''
+            this.on(knex.raw(`(
+              b.${geoB.whitelabelColumn} IS NULL
+              OR (
+                b.${geoB.whitelabelColumn} = ANY (:whitelabel)
+                ${customerFilter}
+              )
+            )`, { whitelabel, customers }))
+          }
+          if (idFilterB.length) {
+            this.andOn(knex.raw(`${
+              geoB.idType === CAT_STRING ? `upper(b."${geoB.idColumn}")` : `b."${geoB.idColumn}"`
+            } IN (${idFilterB.join(' UNION ')})`))
+          }
+          this
+            // make sure geometry is valid
+            .andOn(knex.raw(`ST_IsValid(${
+              sourceGeometriesB.length > 1
+                ? `COALESCE(${sourceGeometriesB.join(', ')})`
+                : sourceGeometriesB
+            })`))
+            // intersect geometries
+            .andOn(knex.raw(`ST_Intersects(${joinGeometriesA.length > 1
+              ? `COALESCE(${joinGeometriesA.join(', ')})`
+              : joinGeometriesA
+            }, ${joinGeometriesB.length > 1
+              ? `COALESCE(${joinGeometriesB.join(', ')})`
+              : joinGeometriesB
+            })`))
+        },
+      )
+  })
+
+  // for each view requiring a join, determine geo id columns to expose and join condtions
+  const viewJoins = {}
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    // place the join to the intersection table in the view that join to the highest number of
+    // other views (same column & geo type)
+    const { colJoinKey, size } = Object.entries(geoJoins).reduce(
+      (largest, [colJoinKey, { joinKeys }]) => (
+        joinKeys.size > largest.size ? { colJoinKey, size: joinKeys.size } : largest
+      ),
+      { size: 0 },
+    )
+
+    if (size === 0) {
+      break
+    }
+
+    const [view, col, foreignGeoType] = colJoinKey.split('$')
+    const { joinKeys, alias } = geoJoins[colJoinKey]
+    const geoType = viewColumns[view][col].geo_type
+    const geo = geoMapping[geoType]
+    const foreignGeo = geoMapping[foreignGeoType]
+    const intersectionKey = [geoType, foreignGeoType].sort().join('__')
+    const geoTable = `__geo__${col}__${intersectionKey}`
+
+    viewJoins[view] = viewJoins[view] || { cols: [], conditions: [] }
+    // expose foreign view's geo id from intersection table
+    viewJoins[view].cols.push({ [`__geo_id_${alias}`]: `${geoTable}.${foreignGeoType}` })
+    // join with geo intersection table
+    viewJoins[view].conditions.push([
+      { [geoTable]: `__geo__${intersectionKey}` },
+      `${geoTable}.${geoType}`,
+      knex.raw(geo.idType === CAT_STRING
+        ? `upper("__source__${view}"."${col}")`
+        : `"__source__${view}"."${col}"`),
+    ])
+
+    // expose foreign view's geo id for 1:1 join with above
+    joinKeys.forEach((joinKey) => {
+      const [view, col] = joinKey.split('$')
+      const { joinKeys, alias } = geoJoins[joinKey]
+
+      // COMMENTED PART EXPOSES OWN GEO ID WITHOUT JOINING TO GEO INTERSECTION TABLE
+      // HANGS WHEN LEFT JOIN
+      // viewJoins[view] = viewJoins[view] || { cols: [], conditions: [] }
+      // // expose view's own geo id
+      // viewJoins[view].cols.push({
+      //   [`__geo_id_${alias}`]: knex.raw(foreignGeo.idType === CAT_STRING
+      //     ? `upper("__source__${view}"."${col}")`
+      //     : `"__source__${view}"."${col}"`),
+      // })
+      // joinKeys.delete(colJoinKey)
+
+      viewJoins[view] = viewJoins[view] || { cols: [], conditions: [] }
+      // expose view's own geo id (normalized) from intersection table
+      viewJoins[view].cols.push({ [`__geo_id_${alias}`]: `${geoTable}.${foreignGeoType}` })
+      // join with geo intersection table
+      viewJoins[view].conditions.push([
+        { [geoTable]: `__geo__${intersectionKey}` },
+        `${geoTable}.${foreignGeoType}`,
+        // foreignGeo.idType === CAT_STRING ? 'ilike' : '=',
+        // `__source__${view}.${col}`,
+        knex.raw(foreignGeo.idType === CAT_STRING
+          ? `upper("__source__${view}"."${col}")`
+          : `"__source__${view}"."${col}"`),
+      ])
+      joinKeys.delete(colJoinKey)
+    })
+
+    joinKeys.clear()
+  }
+
+  // rewrite the views to expose the geo id's
+  Object.entries(viewJoins).forEach(([view, { cols, conditions }]) => {
+    const query = knex.select(`__source__${view}.*`, ...cols).from(`__source__${view}`)
+    conditions.forEach(j => query.leftJoin(...j))
 
     // substitute view
-    views[view] = query
-    return views
-  }, { ...views }) // shallow copy
+    viewsWithGeo[view] = query
+  })
 
   // insert macros
-  const expressionWithMacros = Object.keys(macros).length
-    ? JSON.parse(Object.entries(macros).reduce(
-      (expression, [macro, macroExpression]) => expression.replace(
-        new RegExp(macro.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'),
-        JSON.stringify(macroExpression).slice(1, -1), // remove head and tail quotes
-      ),
-      JSON.stringify(expressionWithGeo),
-    ))
-    : expressionWithGeo
+  // const expressionWithMacros = Object.keys(macros).length
+  //   ? JSON.parse(Object.entries(macros).reduce(
+  //     (expression, [macro, macroExpression]) => expression.replace(
+  //       new RegExp(macro.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'),
+  //       JSON.stringify(macroExpression).slice(1, -1), // remove head and tail quotes
+  //     ),
+  //     JSON.stringify(expressionWithGeo),
+  //   ))
+  //   : expressionWithGeo
 
-  return [expressionWithMacros, viewsWithGeo]
+  // return [expressionWithMacros, viewsWithGeo]
+  return [expressionWithGeo, viewsWithGeo, fdwConnectionsWithGeo]
 }
 
 module.exports = {

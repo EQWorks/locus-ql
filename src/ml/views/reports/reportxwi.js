@@ -222,7 +222,7 @@ const getQueryView = async (access, { layer_id, report_id }) => {
 
   // inject view
   const mlView = knex.raw(`
-    (SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
+    SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
       poi.poi_id,
       poi.name,
       poi.chain_id,
@@ -278,7 +278,6 @@ const getQueryView = async (access, { layer_id, report_id }) => {
     WHERE r.type = 4
       AND r.report_id = ?
       AND layer.layer_id = ?
-    ) as ${viewID}
   `, [report_id, layer_id])
 
   return { viewID, mlView, mlViewColumns }

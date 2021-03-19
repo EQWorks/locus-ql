@@ -3,7 +3,7 @@
 /* eslint-disable no-nested-ternary */
 const { createHash } = require('crypto')
 
-const { knex, knexBuilderToRaw, fdwConnectByName } = require('../util/db')
+const { knex, mlPool, knexBuilderToRaw, fdwConnectByName } = require('../util/db')
 const { Expression } = require('./expressions')
 const { insertGeo } = require('./geo')
 const { apiError, APIError } = require('../util/api-error')
@@ -70,11 +70,12 @@ const getObjectHash = object => createHash('sha256')
   .update(JSON.stringify(sortObject(object)))
   .digest('base64')
 
+// return viewID if it exists in views
 const getView = (views, viewID) => {
   if (!views[viewID]) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
-  return views[viewID]
+  return viewID
 
   // reserve for complex viewID, when viewID can be sub query object
   // if (typeof viewID === TYPE_STRING) {
@@ -107,8 +108,19 @@ const select = (
   },
 ) => {
   const exp = new Expression(viewColumns)
-  const knexQuery = knex
-    // use bind() here to prevent exp instance from getting lost, same for other bind() usage below
+
+  // attach all views as CTE's
+  const knexQuery = Object.entries(views)
+    // '__source' > '__geo' > rest
+    .sort(([idA], [idB]) => {
+      const idValueA = idA.startsWith('__source') ? 2 : idA.startsWith('__geo') ? 1 : 0
+      const idValueB = idB.startsWith('__source') ? 2 : idB.startsWith('__geo') ? 1 : 0
+      return idValueB - idValueA
+    })
+    .reduce((knex, [id, view]) => knex.with(id, view), knex)
+
+  // use bind() here to prevent exp instance from getting lost, same for other bind() usage below
+  knexQuery
     .column(columns.map(exp.parseExpression.bind(exp)))
     .from(getView(views, from))
 
@@ -167,29 +179,35 @@ const select = (
 }
 
 // parses query to knex object
-const getKnexQuery = (access, views, viewColumns, query) => {
-  const [queryWithGeo, viewsWithGeo] = insertGeo(access, views, viewColumns, query)
+const getKnexQuery = (views, viewColumns, query) => {
   const { type } = query
   if (type === 'select') {
-    return select(viewsWithGeo, viewColumns, queryWithGeo)
+    return select(views, viewColumns, query)
   }
 }
 
 /**
  * Establishes connections with foreign databases
+ * @param {PG.PoolClient} pgConnection PG connection to use to connect to the foreign db's
  * @param {Object.<string, string[]>} fdwConnections Map of view ID's and array of connection names
  * @param {number} [timeout] Connection timeout in seconds
  * @returns {Promise<undefined>}
  */
-const establishFdwConnections = (fdwConnections, timeout) => {
+const establishFdwConnections = (pgConnection, fdwConnections, timeout) => {
   // remove duplicates
   const uniqueConnections = [...(new Set(Object.values(fdwConnections).flat()))]
-  return Promise.all(uniqueConnections.map(conn => fdwConnectByName(conn, timeout)))
+  return Promise.all(uniqueConnections.map(connectionName => fdwConnectByName(
+    pgConnection,
+    { connectionName, timeout },
+  )))
 }
 
 // runs query with cache
-const executeQuery = (access, views, viewColumns, query, maxAge) => {
-  const knexQuery = getKnexQuery(access, views, viewColumns, query)
+const executeQuery = (views, viewColumns, query, { pgConnection, maxAge }) => {
+  const knexQuery = getKnexQuery(views, viewColumns, query)
+  if (pgConnection) {
+    knexQuery.connection(pgConnection)
+  }
   return knexWithCache(
     knexQuery,
     { ttl: 1800, maxAge, type: cacheTypes.S3 }, // 30 minutes (subject to maxAge)
@@ -206,20 +224,38 @@ const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
     const { query } = loadedQuery || req.body
     const { mlViews, mlViewColumns, mlViewFdwConnections, access } = req
 
+    // insert geo views & joins
+    const [
+      queryWithGeo,
+      viewsWithGeo,
+      fdwConnectionsWithGeo,
+    ] = insertGeo(access, mlViews, mlViewColumns, mlViewFdwConnections, query)
+
     // if no error then query was parsed successfully
-    const knexQuery = getKnexQuery(access, mlViews, mlViewColumns, query)
+    const knexQuery = getKnexQuery(viewsWithGeo, mlViewColumns, queryWithGeo)
 
-    // establish fdw connections
-    await establishFdwConnections(mlViewFdwConnections)
+    // check out PG connection to use for fdw + query (must be same)
+    const pgConnection = await mlPool.connect()
+    let fields
+    try {
+      // establish fdw connections
+      await establishFdwConnections(pgConnection, fdwConnectionsWithGeo)
 
-    // run the query with limit 0
-    knexQuery.limit(0)
-    const { sql, bindings } = knexQuery.toSQL()
-    const fields = await queryWithCache(
-      [sql, bindings],
-      () => knexBuilderToRaw(knexQuery).then(({ fields }) => fields), // only cache fields
-      { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
-    )
+      // set connection on ml query
+      knexQuery.connection(pgConnection)
+
+      // run the query with limit 0
+      knexQuery.limit(0)
+      const { sql, bindings } = knexQuery.toSQL()
+      fields = await queryWithCache(
+        [sql, bindings],
+        () => knexBuilderToRaw(knexQuery).then(({ fields }) => fields), // only cache fields
+        { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
+      )
+    } finally {
+      pgConnection.release()
+    }
+
     const columns = fields.map(({ name, dataTypeID }) => [name, dataTypeID])
     req.mlQueryHash = getObjectHash(query)
     req.mlQueryColumnHash = getObjectHash(columns)

@@ -659,7 +659,6 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
 
   const mlView = knex
     .select(knex.raw([...groupByColumns, ...aggColumns].join(', ')))
-    .as(viewID)
 
   if (fastView) {
     const { view, fdwConnection } = getPgView(fastView, agencyID, advertiserID)

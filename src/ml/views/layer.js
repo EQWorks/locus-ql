@@ -8,26 +8,7 @@ const {
 } = require('../type')
 const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
-
-
-const RESOLUTION_TABLE_MAP = Object.freeze({
-  fsa: {
-    table: 'canada_geo.fsa',
-    geoIDColumn: 'fsa',
-  },
-  postalcode: {
-    table: 'canada_geo.postalcode_2018',
-    geoIDColumn: 'postalcode',
-  },
-  ct: {
-    table: 'canada_geo.ct',
-    geoIDColumn: 'ctuid',
-  },
-  da: {
-    table: 'canada_geo.da',
-    geoIDColumn: 'dauid',
-  },
-})
+const { geoMapping } = require('../geo')
 
 
 const getKnexLayerQuery = async (access, filter = {}) => {
@@ -118,7 +99,7 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   const mlViewColumns = (viewMeta[0] || {}).columns
 
   const { table, slug, resolution } = category
-  const { table: geoTable, geoIDColumn } = RESOLUTION_TABLE_MAP[resolution]
+  const geo = geoMapping[`ca-${resolution}`]
 
   let schema = ''
   // retrieve schema if missing (usually 'static_layers')
@@ -137,32 +118,30 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   }
 
   const mlView = mapKnex.raw(`
-    (
-      SELECT * FROM dblink(:fdwConnection, '
-        SELECT
-          GM.ggid AS id,
-          L.geo_id,
-          L.geo_id AS geo_ca_${resolution},
-          L.total,
-          L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
-          L.summary_data::json #>> ''{main_number_pcnt, value}'' AS value,
-          L.summary_data::json #>> ''{main_number_pcnt, percent}'' AS percent,
-          L.summary_data::json #>> ''{main_number_pcnt, units}'' AS units
-        FROM ${schema}${table || slug} as L
-        INNER JOIN config.ggid_map as GM ON GM.type = ''${resolution}'' AND GM.local_id = L.geo_id
-        INNER JOIN ${geoTable} as GT ON GT.${geoIDColumn} = L.geo_id
-        WHERE GT.wkb_geometry IS NOT NULL
-      ') AS t(
-        id int,
-        geo_id text,
-        geo_ca_${resolution} text,
-        total int,
-        title text,
-        value real,
-        percent real,
-        units text
-      )
-    ) as ${viewID}
+    SELECT * FROM dblink(:fdwConnection, '
+      SELECT
+        GM.ggid AS id,
+        L.geo_id,
+        L.geo_id AS geo_ca_${resolution},
+        L.total,
+        L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
+        L.summary_data::json #>> ''{main_number_pcnt, value}'' AS value,
+        L.summary_data::json #>> ''{main_number_pcnt, percent}'' AS percent,
+        L.summary_data::json #>> ''{main_number_pcnt, units}'' AS units
+      FROM ${schema}${table || slug} as L
+      INNER JOIN config.ggid_map as GM ON GM.type = ''${resolution}'' AND GM.local_id = L.geo_id
+      INNER JOIN ${geo.schema}.${geo.table} as GT ON GT.${geo.idColumn} = L.geo_id
+      WHERE GT.wkb_geometry IS NOT NULL
+    ') AS t(
+      id int,
+      geo_id text,
+      geo_ca_${resolution} text,
+      total int,
+      title text,
+      value real,
+      percent real,
+      units text
+    )
   `, { fdwConnection: MAPS_FDW_CONNECTION })
 
   return { viewID, mlView, mlViewColumns, mlViewFdwConnections: [MAPS_FDW_CONNECTION] }
@@ -177,6 +156,8 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
     })
     return Object.entries(layer_categories)
       .map(([categoryKey, { table, name: catName, resolution }]) => {
+        const geoType = `ca-${resolution}`
+        const geo = geoMapping[geoType]
         const view = {
           // required
           name: `${name} // ${catName}`,
@@ -193,11 +174,15 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
         if (inclMeta) {
           view.columns = {
             ...options.columns,
-            geo_id: { ...options.columns.geo_id, geo_type: `ca-${resolution}` },
+            geo_id: {
+              key: 'geo_id',
+              category: geo.idType,
+              geo_type: geoType,
+            },
             [`geo_ca_${resolution}`]: {
-              ...options.columns.geo_id,
               key: `geo_ca_${resolution}`,
-              geo_type: `ca-${resolution}`,
+              category: geo.idType,
+              geo_type: geoType,
             },
           }
         }
@@ -227,6 +212,8 @@ const getView = async (access, viewID) => {
 
   const { name, layer_categories, layer_type_id } = layer
   const { table, name: catName, resolution } = layer_categories[categoryKey]
+  const geoType = `ca-${resolution}`
+  const geo = geoMapping[geoType]
 
   return {
     // required
@@ -242,11 +229,15 @@ const getView = async (access, viewID) => {
     },
     columns: {
       ...options.columns,
-      geo_id: { ...options.columns.geo_id, geo_type: `ca-${resolution}` },
+      geo_id: {
+        key: 'geo_id',
+        category: geo.idType,
+        geo_type: geoType,
+      },
       [`geo_ca_${resolution}`]: {
-        ...options.columns.geo_id,
         key: `geo_ca_${resolution}`,
-        geo_type: `ca-${resolution}`,
+        category: geo.idType,
+        geo_type: geoType,
       },
     },
     // meta
@@ -257,7 +248,6 @@ const options = {
   columns: {
     total: { category: CAT_NUMERIC },
     id: { category: CAT_NUMERIC }, // geo ggid
-    geo_id: { category: CAT_NUMERIC }, // id of the resolution (e.g. FSA, DA, CT...)
     title: { category: CAT_STRING },
     value: { category: CAT_NUMERIC },
     percent: { category: CAT_NUMERIC },

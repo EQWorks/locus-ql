@@ -37,16 +37,14 @@ const getQueryView = async (access, { conn_id }) => {
   }
 
   // inject view columns
-  const viewMeta = await listViews({ access, filter: { conn_id } })
-  const mlViewColumns = (viewMeta[0] || {}).columns
+  const [viewMeta = {}] = await listViews({ access, filter: { conn_id } })
+  const mlViewColumns = viewMeta.columns
 
   // inject view
   const [{ dest: { table, schema } }] = connections
   const mlView = knex.raw(`
-    (
-      SELECT *
-      FROM ${schema}."${table}"
-    ) as ${viewID}
+    SELECT *
+    FROM ${schema}."${table}"
   `)
   const mlViewDependencies = [['ext', conn_id]]
 
@@ -117,13 +115,6 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
   )
 
   return connections.map(({ id, set_id, type, name, columns }) => {
-    // TODO: remove 'columns' -> use listView() to get full view
-    // insert column type category
-    Object.entries(columns).forEach(([key, column]) => {
-      column.key = key
-      column.category = typeToCatMap.get(column.type)
-    })
-
     const view = {
       name,
       set_id,
@@ -135,6 +126,10 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
       },
     }
     if (inclMeta) {
+      Object.entries(columns).forEach(([key, column]) => {
+        column.key = key
+        column.category = typeToCatMap.get(column.type)
+      })
       view.columns = columns
     }
     return view

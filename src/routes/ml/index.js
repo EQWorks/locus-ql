@@ -44,48 +44,70 @@ router.post(
 
 /* -- VIEWS -- */
 
-// list out all accessible views without column nor meta data
+/**
+ * @api {get} /views
+ * @apiName List all views
+ * @apiDescription Lists out all accessible views without column nor meta data
+ * @apiGroup ml
+ * @apiParam (query) {string} [viewCategory='ext'] View category
+ * @apiParam (query) {string} [subCategory] View subcategory
+ * @apiParam (query) {string} [inclMeta] '1' or 'true' to include columns and other meta data
+ * in the response
+*/
 router.get('/views/', listViewsMW)
-// return view object for viewID
+
+/**
+ * @api {get} /views/:viewID
+ * @apiName Get a specific view
+ * @apiDescription Returns view object based on id
+ * @apiGroup ml
+ * @apiParam (params) {string} viewID ID of the view to return
+*/
 router.get('/views/:viewID', getViewMW)
 
 
 /* -- QUERY EXECUTIONS -- */
 
-/*
-Get a specific execution
-Route param:
- - id - Execution ID
-Query params:
- - results? - 1|true if results need to be returned (use along with limit=1)
-Returns an execution object
+/**
+ * @api {get} /executions/:id
+ * @apiName Get a specific execution
+ * @apiDescription Returns an execution object based on id
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the execution to return
+ * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned
 */
 router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
 
-/*
-Get a list of executions according to the below filters
-Query params:
- - query? - ID of the saved query for which executions should be returned
- - results? - 1|true if results need to be returned (use along with limit=1)
- - limit? - Max # of executions to return
- - qhash? - Query hash
- - chash? - Column Hash
- - status? - Status of the executions
- - start? - Start Unix timestamp in seconds
- - end? - End Unix timestamp in seconds
-Returns a list of execution results
+/**
+ * @api {get} /executions
+ * @apiName List executions
+ * @apiDescription Get a list of executions according to the below filters
+ * @apiGroup ml
+ * @apiParam (query) {number} [query] ID of the saved query for which executions should be returned
+ * @apiParam (query) {number} [limit] Max # of executions to return
+ * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned (use along
+ * with limit=1)
+ * @apiParam (query) {string} [qhash] Query hash
+ * @apiParam (query) {string} [chash] Column hash
+ * @apiParam (query) {string} [status] Status of the executions
+ * @apiParam (query) {string} [start] Start Unix timestamp in seconds
+ * @apiParam (query) {string} [end] End Unix timestamp in seconds
 */
 router.get('/executions/', listExecutions)
 
-/*
-Submit a query for execution
-Customer flags must be sent when none of `query` and `execution` have a value
-Query params:
- - query? - ID of the saved query to execute
- - execution? - ID of a previous execution to use as template (i.e. rerun). Ignored
-    when `query` has a value
-Body: { query, views }? - Need only be sent when none of `query` and `execution` have a value
-Returns an object with the `executionID`
+/**
+ * @api {post} /executions
+ * @apiName Submit a query for execution
+ * @apiDescription Customer flags must be sent when none of `query` and `execution` have a
+ * value. Returns an object with the `executionID`
+ * @apiGroup ml
+ * @apiParam (query) {number} [query] ID of the saved query to execute
+ * @apiParam (query) {number} [execution] ID of a previous execution to use as template (i.e.
+ * rerun). Ignored when `query` has a value
+ * @apiParam (Req body) {Object} [query] Query markup. Need only be sent when none of `query`
+ * and `execution` have a value
+ * @apiParam (Req body) {Object} [views] Views the query depends on. Need only be sent when
+ * none of `query` and `execution` have a value
 */
 router.post(
   '/executions/',
@@ -100,20 +122,27 @@ router.post(
 
 /* -- SAVED QUERIES -- */
 
-/*
-Get a specific query
-Route param:
- - id - Query ID
-Returns a query object
+/**
+ * @api {get} /queries/:id
+ * @apiName Get a specific query
+ * @apiDescription Returns a query object based on id
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the query to return
 */
 router.get('/queries/:id(\\d+)', loadQuery(true), respondWithQuery)
 
-/*
-Update a specific query
-Route param:
- - id - Query ID
-Body: { name, description?, query, views } - Keys not passed will have their value reset
-Returns an object with the `queryID`
+
+/**
+ * @api {put} /queries/:id
+ * @apiName Update a specific query
+ * @apiDescription Updates query based on id. Req body keys not passed will have their value
+ * reset. Returns an object with the `queryID`
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the query to update
+ * @apiParam (Req body) {string} Query name
+ * @apiParam (Req body) {string} [description] Query description
+ * @apiParam (Req body) {Object} query Query markup
+ * @apiParam (Req body) {Object} views Views the query depends on
 */
 router.put(
   '/queries/:id(\\d+)',
@@ -123,11 +152,12 @@ router.put(
   putQuery,
 )
 
-/*
-DELETE a specific query
-Route param:
- - id - Query ID
-Returns an object with the `queryID`
+/**
+ * @api {delete} /queries/:id
+ * @apiName Delete a specific query
+ * @apiDescription Sets a query as 'inactive' based on id. Returns an object with the `queryID`
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the query to delete
 */
 router.delete(
   '/queries/:id(\\d+)',
@@ -135,25 +165,32 @@ router.delete(
   deleteQuery,
 )
 
-/*
-Get a list of queries according to the below filters
-Query params:
- - execution? - ID of the execution for which a query should be returned
- - qhash? - Query hash
- - chash? - Column Hash
-Returns a list of query results
+/**
+ * @api {get} /queries
+ * @apiName List queries
+ * @apiDescription Get a list of queries according to the below filters
+ * @apiGroup ml
+ * @apiParam (query) {number} [execution] ID of the execution for which a query should be returned
+ * @apiParam (query) {string} [qhash] Query hash
+ * @apiParam (query) {string} [chash] Column hash
 */
 router.get('/queries/', listQueries)
 
-/*
-Create a saved query
-Customer flags must be sent when none of `query` and `execution` have a value
-Query params:
- - query? - ID of the saved query to use as template
- - execution? - ID of a previous execution to use as model. Ignored when `query` has a value
-Body: { name, description?, query]?, views? } - query and views must be passed when none
-   of `query` and `execution` params have a value
-Returns an object with the `executionID`
+/**
+ * @api {post} /queries
+ * @apiName Create a saved query
+ * @apiDescription Customer flags must be sent when none of `query` and `execution` have a
+ * value. Returns an object with the `queryID`
+ * @apiGroup ml
+ * @apiParam (query) {number} [query] ID of the saved query to use as template (i.e duplicate)
+ * @apiParam (query) {number} [execution] ID of a previous execution to use as model. Ignored
+ * when `query` has a value
+ * @apiParam (Req body) {string} Query name
+ * @apiParam (Req body) {string} [description] Query description
+ * @apiParam (Req body) {Object} query Query markup. Need only be sent when none of `query` and
+ * `execution` have a value
+ * @apiParam (Req body) {Object} views Views the query depends on. Need only be sent when none
+ * of `query` and `execution` have a value
 */
 router.post(
   '/queries/',

@@ -1,6 +1,7 @@
-const { knex } = require('../util/db')
+const { knex, mlPool } = require('../util/db')
 const { apiError, APIError } = require('../util/api-error')
 const { getView, getQueryViews } = require('./views')
+const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
 const { putToS3Cache, getFromS3Cache, EXECUTION_BUCKET } = require('./cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
@@ -298,11 +299,25 @@ const runExecution = async (executionID) => {
       mlViewFdwConnections,
     } = await getQueryViews(access, views, query)
 
-    // instantiate fdw connections
-    await establishFdwConnections(mlViewFdwConnections, 60 * 15) // 15-min timeout
+    // insert geo views & joins
+    const [
+      queryWithGeo,
+      viewsWithGeo,
+      fdwConnectionsWithGeo,
+    ] = insertGeo(access, mlViews, mlViewColumns, mlViewFdwConnections, query)
 
-    // run query
-    const results = await executeQuery(access, mlViews, mlViewColumns, query)
+    // check out PG connection to use for fdw + query (must be same)
+    const pgConnection = await mlPool.connect()
+    let results
+    try {
+      // establish fdw connections
+      await establishFdwConnections(pgConnection, fdwConnectionsWithGeo)
+
+      // run query
+      results = await executeQuery(viewsWithGeo, mlViewColumns, queryWithGeo, { pgConnection })
+    } finally {
+      pgConnection.release()
+    }
 
     // persist to S3
     await putToS3Cache(
@@ -518,7 +533,7 @@ const listExecutions = async (req, res, next) => {
 }
 
 // to test out handler (replace ID)
-// executionHandler({ execution_id: '63' }).then(() => console.log('ml execution done'))
+// executionHandler({ execution_id: '205' }).then(() => console.log('ml execution done'))
 
 module.exports = {
   createExecution,
