@@ -1,4 +1,5 @@
 const { CAT_STRING, CAT_NUMERIC, CAT_DATE } = require('../../type')
+const { geoTypes } = require('../../geo')
 const { CU_ADVERTISER, ACCESS_INTERNAL, ACCESS_CUSTOMER, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
 
@@ -134,7 +135,7 @@ module.exports = {
     geo_ca_fsa: {
       category: CAT_STRING,
       dependsOn: ['_postal_code'],
-      geo_type: 'ca-fsa',
+      geo_type: geoTypes.CA_FSA,
       viewExpression: "substring(log._postal_code from '^[A-Z]\\d[A-Z]$')",
     },
     geo_us_postalcode: {
@@ -189,7 +190,7 @@ module.exports = {
     household_fsa: {
       category: CAT_STRING,
       pgType: 'varchar(10)',
-      geo_type: 'ca-fsa',
+      geo_type: geoTypes.CA_FSA,
       expression: 'hh_fsa',
     },
     os_id: {
@@ -244,25 +245,25 @@ module.exports = {
     },
     geo_ca_province: {
       category: CAT_STRING,
-      geo_type: 'ca-province',
+      geo_type: geoTypes.CA_PROVINCE,
       dependsOn: ['city'],
       viewExpression: "substring(log.city from '^CA\\$([A-Z]{2})')",
     },
     geo_us_state: {
       category: CAT_STRING,
-      geo_type: 'us-state',
+      // geo_type: 'us-state',
       dependsOn: ['city'],
       viewExpression: "substring(log.city from '^US\\$([A-Z]{2})')",
     },
     geo_ca_city: {
       category: CAT_STRING,
-      geo_type: 'ca-city',
+      geo_type: geoTypes.CA_CITY,
       dependsOn: ['city'],
       viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$(.*)$'))",
     },
     geo_us_city: {
       category: CAT_STRING,
-      geo_type: 'us-city',
+      // geo_type: 'us-city',
       dependsOn: ['city'],
       viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$(.*)$'))",
     },
@@ -393,7 +394,7 @@ module.exports = {
     locus_poi_id: {
       category: CAT_NUMERIC,
       pgType: 'int',
-      geo_type: 'poi',
+      geo_type: geoTypes.POI,
       inFastViews: [pgViews.LOCUS_POI],
     },
     locus_poi_name: {

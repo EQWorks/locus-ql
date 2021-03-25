@@ -7,6 +7,7 @@ const {
   CAT_JSON,
   CAT_BOOL,
 } = require('../../type')
+const { geoTypes } = require('../../geo')
 const { apiError } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 
@@ -16,7 +17,7 @@ const options = {
     time_zone: { category: CAT_STRING },
     poi_id: {
       category: CAT_NUMERIC,
-      geo_type: 'poi',
+      geo_type: geoTypes.POI,
     },
     poi_name: { category: CAT_STRING },
     chain_id: { category: CAT_NUMERIC },
@@ -34,11 +35,11 @@ const options = {
     address_country: { category: CAT_STRING },
     geo_ca_fsa: {
       category: CAT_STRING,
-      geo_type: 'ca-fsa',
+      geo_type: geoTypes.CA_FSA,
     },
     geo_us_postalcode: {
       category: CAT_NUMERIC,
-      geo_type: 'us-postalcode',
+      // geo_type: 'us-postalcode',
     },
 
     vwi_factor: { category: CAT_NUMERIC },

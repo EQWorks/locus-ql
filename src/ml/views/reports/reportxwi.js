@@ -6,6 +6,7 @@ const {
   CAT_DATE,
   CAT_JSON,
 } = require('../../type')
+const { geoTypes } = require('../../geo')
 const { apiError } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 
@@ -13,7 +14,10 @@ const { knexWithCache } = require('../../cache')
 const options = {
   columns: {
     time_zone: { category: CAT_STRING },
-    poi_id: { category: CAT_NUMERIC },
+    poi_id: {
+      category: CAT_NUMERIC,
+      geo_type: geoTypes.POI,
+    },
     name: { category: CAT_STRING },
     chain_id: { category: CAT_NUMERIC },
     type: { category: CAT_NUMERIC },
@@ -28,6 +32,14 @@ const options = {
     address_region: { category: CAT_STRING },
     address_postalcode: { category: CAT_STRING },
     address_country: { category: CAT_STRING },
+    geo_ca_fsa: {
+      category: CAT_STRING,
+      geo_type: geoTypes.CA_FSA,
+    },
+    geo_us_postalcode: {
+      category: CAT_NUMERIC,
+      // geo_type: 'us-postalcode',
+    },
 
     wi_factor: { category: CAT_NUMERIC },
 
@@ -238,6 +250,8 @@ const getQueryView = async (access, { layer_id, report_id }) => {
       poi.address_region,
       poi.address_postalcode,
       poi.address_country,
+      upper(substring(poi.address_postalcode from '^[A-Z]\\d[A-Z]')) AS geo_ca_fsa,
+      substring(poi.address_postalcode from '^\\d{5}$')::int AS geo_us_postalcode,
 
       layer.wi_factor,
 

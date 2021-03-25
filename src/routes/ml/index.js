@@ -52,6 +52,8 @@ router.post(
  * @apiParam (query) {string} [viewCategory='ext'] View category
  * @apiParam (query) {string} [subCategory] View subcategory
  * @apiParam (query) {string} [inclMeta] '1' or 'true' to include columns and other meta data
+ * @apiParam (query) {number} [report] ID of the report of interest. Use
+ * alongside viewCategory='reports'
  * in the response
 */
 router.get('/views/', listViewsMW)
@@ -90,8 +92,8 @@ router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
  * @apiParam (query) {string} [qhash] Query hash
  * @apiParam (query) {string} [chash] Column hash
  * @apiParam (query) {string} [status] Status of the executions
- * @apiParam (query) {string} [start] Start Unix timestamp in seconds
- * @apiParam (query) {string} [end] End Unix timestamp in seconds
+ * @apiParam (query) {number} [start] Start Unix timestamp in seconds
+ * @apiParam (query) {number} [end] End Unix timestamp in seconds
 */
 router.get('/executions/', listExecutions)
 
@@ -106,7 +108,7 @@ router.get('/executions/', listExecutions)
  * rerun). Ignored when `query` has a value
  * @apiParam (Req body) {Object} [query] Query markup. Need only be sent when none of `query`
  * and `execution` have a value
- * @apiParam (Req body) {Object} [views] Views the query depends on. Need only be sent when
+ * @apiParam (Req body) {Array} [views] Views the query depends on. Need only be sent when
  * none of `query` and `execution` have a value
 */
 router.post(
@@ -139,10 +141,10 @@ router.get('/queries/:id(\\d+)', loadQuery(true), respondWithQuery)
  * reset. Returns an object with the `queryID`
  * @apiGroup ml
  * @apiParam (params) {number} id ID of the query to update
- * @apiParam (Req body) {string} Query name
+ * @apiParam (Req body) {string} name Query name
  * @apiParam (Req body) {string} [description] Query description
  * @apiParam (Req body) {Object} query Query markup
- * @apiParam (Req body) {Object} views Views the query depends on
+ * @apiParam (Req body) {Array} views Views the query depends on
 */
 router.put(
   '/queries/:id(\\d+)',
@@ -185,11 +187,11 @@ router.get('/queries/', listQueries)
  * @apiParam (query) {number} [query] ID of the saved query to use as template (i.e duplicate)
  * @apiParam (query) {number} [execution] ID of a previous execution to use as model. Ignored
  * when `query` has a value
- * @apiParam (Req body) {string} Query name
+ * @apiParam (Req body) {string} name Query name
  * @apiParam (Req body) {string} [description] Query description
  * @apiParam (Req body) {Object} query Query markup. Need only be sent when none of `query` and
  * `execution` have a value
- * @apiParam (Req body) {Object} views Views the query depends on. Need only be sent when none
+ * @apiParam (Req body) {Array} views Views the query depends on. Need only be sent when none
  * of `query` and `execution` have a value
 */
 router.post(
