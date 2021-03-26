@@ -126,21 +126,40 @@ class Expression {
     this.viewColumns = viewColumns
   }
 
-  constructColumn(view, column) {
-    const validView = (this.viewColumns || {})[view]
-    // validate view and column, skip checks if no viewColumns as a fall back
-    if (!validView) {
-      throw apiError(`Invalid view for column: ${view} ${column}`, 403)
+  // extracts explicit column
+  extractColumn(expression) {
+    let column
+    let view
+    if (typeof expression === 'string' && expression.indexOf('.') !== -1) {
+      [column, view] = expression.split('.', 2)
+    } else if (typeof expression !== 'object' || expression === null) {
+      return
+    } else if (expression.type === 'column') {
+      ({ column, view } = expression)
+    } else if (Array.isArray(expression) && expression.length === 2) {
+      [column, view] = expression
     }
-    if (column !== '*' && !validView[column]) {
-      throw apiError(`Column: ${column} not found for view: ${view}`, 403)
+    // make sure it's a valid column
+    if (!(view in this.viewColumns && (column in this.viewColumns[view] || column === '*'))) {
+      return
     }
-    return knex.raw(`"${view}"."${column}"`)
+    return { view, column }
+  }
+
+  constructColumn(expression) {
+    const col = this.extractColumn(expression)
+    if (col) {
+      return knex.raw(`"${col.view}".${col.column === '*' ? '*' : `"${col.column}"`}`)
+    }
   }
 
   parseComplex({ type, ...exp }) {
     if (type === 'column') {
-      return this.constructColumn(exp.view, exp.column)
+      const col = this.constructColumn({ type, ...exp })
+      if (!col) {
+        throw apiError('Malformed column object', 400)
+      }
+      return col
     }
 
     if (type === 'array') {
@@ -211,7 +230,8 @@ class Expression {
     const type = typeof expression
 
     if (type === TYPE_STRING) {
-      return expression
+      // check if column
+      return this.constructColumn(expression) || expression
     }
 
     if (type === TYPE_NUMBER) {
@@ -225,10 +245,11 @@ class Expression {
       }
       // column shorthand
       if (Array.isArray(expression)) {
-        if (expression.length < 2) {
-          throw apiError('Column array requires 2 elements', 403)
+        const col = this.constructColumn(expression)
+        if (!col) {
+          throw apiError('Malformed column array', 400)
         }
-        return this.constructColumn(expression[1], expression[0])
+        return col
       }
 
       return this.parseComplex(expression)

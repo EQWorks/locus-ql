@@ -30,6 +30,8 @@ const mapKnex = Knex({
 
 // register pg parsers
 types.setTypeParser(types.builtins.NUMERIC, val => Number(val))
+// treat TS without TZ as UTC
+types.setTypeParser(types.builtins.TIMESTAMP, val => new Date(`${val}Z`))
 
 // dblink connect functions (foreign-data wrapper)
 // https://www.postgresql.org/docs/9.6/dblink.html

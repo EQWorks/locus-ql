@@ -4,6 +4,7 @@
 const { knex, MAPS_FDW_CONNECTION } = require('../util/db')
 const { apiError } = require('../util/api-error')
 const { CAT_STRING, CAT_NUMERIC } = require('./type')
+const { Expression } = require('./expressions')
 
 
 const DEFAULT_RADIUS = 500 // 500 metres
@@ -101,30 +102,6 @@ const geoMapping = {
 //       ) / ST_Area(${colB.view}._${colB.key}_geometry)`,
 // })
 
-// extracts explicit column
-// does not handle wildcard *
-const extractColumn = (viewColumns, expression) => {
-  let column
-  let view
-  if (typeof expression === 'string' && expression.indexOf('.') !== -1) {
-    [column, view] = expression.split('.', 2)
-  } else if (typeof expression !== 'object' || expression === null) {
-    return
-  } else if (expression.type === 'column') {
-    ({ column, view } = expression)
-  } else if (Array.isArray(expression) && expression.length === 2) {
-    [column, view] = expression
-  }
-  if (!(view in viewColumns && column in viewColumns[view])) {
-    return
-  }
-
-  return {
-    ...viewColumns[view][column],
-    view,
-  }
-}
-
 // substitue geo id with geometry when there are geo intersections of different types
 // injects geo into views and expression and returns same as new objects
 // no mutations to args
@@ -138,6 +115,7 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
   let geoJoinCount = 0
   // const macros = {}
   const queue = [expressionWithGeo]
+  const exp = new Expression(viewColumns)
   // look for geo intersections
   while (queue.length) {
     const item = queue.shift()
@@ -169,24 +147,32 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
       continue
     }
 
-    const colA = extractColumn(viewColumns, argA)
-    if (!colA) {
+    const colA = exp.extractColumn(argA)
+    if (!colA || colA.column === '*') {
       if (throwOnNonGeoColumn) {
         throw apiError(`Argument must be of type geo column: ${argA}`, 400)
       }
-      queue.push(argA)
+      if (!colA) {
+        queue.push(argA)
+      }
     }
-    const colB = extractColumn(viewColumns, argB)
-    if (!colB) {
+    const colB = exp.extractColumn(argB)
+    if (!colB || colB.column === '*') {
       if (throwOnNonGeoColumn) {
         throw apiError(`Argument must be of type geo column: ${argB}`, 400)
       }
-      queue.push(argB)
+      if (!colB) {
+        queue.push(argB)
+      }
     }
     // proceed with geo join if argA and argB are geo columns of different types
     if (!colA || !colB) {
       continue
     }
+
+    // attach geo_type
+    colA.geo_type = viewColumns[colA.view][colA.column].geo_type
+    colB.geo_type = viewColumns[colB.view][colB.column].geo_type
 
     if (!(colA.geo_type in geoMapping) || !(colB.geo_type in geoMapping)) {
       if (throwOnNonGeoColumn) {
@@ -219,12 +205,12 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
       [colA.geo_type]: {},
       [colB.geo_type]: {},
     }
-    geoIntersections[intersectionKey][colA.geo_type][`${colA.view}$${colA.key}`] = colA
-    geoIntersections[intersectionKey][colB.geo_type][`${colB.view}$${colB.key}`] = colB
+    geoIntersections[intersectionKey][colA.geo_type][`${colA.view}$${colA.column}`] = colA
+    geoIntersections[intersectionKey][colB.geo_type][`${colB.view}$${colB.column}`] = colB
 
     // keep track of joins between resolutions
-    const colAJoinKey = `${colA.view}$${colA.key}$${colB.geo_type}`
-    const colBJoinKey = `${colB.view}$${colB.key}$${colA.geo_type}`
+    const colAJoinKey = `${colA.view}$${colA.column}$${colB.geo_type}`
+    const colBJoinKey = `${colB.view}$${colB.column}$${colA.geo_type}`
     geoJoins[colAJoinKey] = geoJoins[colAJoinKey] || { joinKeys: new Set(), alias: geoJoinCount++ }
     geoJoins[colBJoinKey] = geoJoins[colBJoinKey] || { joinKeys: new Set(), alias: geoJoinCount++ }
     geoJoins[colAJoinKey].joinKeys.add(colBJoinKey)
@@ -265,13 +251,13 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
     // TODO: normalize filters (e.g. string types such as city names -> case insensitive)
     const idFilterA = Object.values(geos[geoTypeA]).reduce((filter, col) => {
       filter.push(`SELECT ${
-        geoA.idType === CAT_STRING ? `upper("${col.key}")` : `"${col.key}"`
+        geoA.idType === CAT_STRING ? `upper("${col.column}")` : `"${col.column}"`
       } AS id FROM "__source__${col.view}"`)
       return filter
     }, [])
     const idFilterB = Object.values(geos[geoTypeB]).reduce((filter, col) => {
       filter.push(`SELECT ${
-        geoB.idType === CAT_STRING ? `upper("${col.key}")` : `"${col.key}"`
+        geoB.idType === CAT_STRING ? `upper("${col.column}")` : `"${col.column}"`
       } AS id FROM "__source__${col.view}"`)
       return filter
     }, [])
