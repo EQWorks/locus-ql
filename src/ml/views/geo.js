@@ -1,5 +1,4 @@
 /* eslint-disable no-use-before-define */
-
 const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
 const { apiError } = require('../../util/api-error')
@@ -7,23 +6,13 @@ const { knexWithCache } = require('../cache')
 const { geoMapping } = require('../geo')
 
 
-// const GEO_TABLES = {
-//   city: {
-//     schema: 'canada_geo',
-//     table: 'city_dev',
-//   },
-//   ggid: {
-//     schema: 'config',
-//     table: 'ggid_map',
-//   },
-//   poi: {
-//     schema: 'public',
-//     table: 'poi',
-//   },
-// }
-
 const GEO_TABLES = {
   ...Object.entries(geoMapping).reduce((acc, [key, val]) => {
+    // skip poi as a bridge table for now due to high cardinality (geo joins all customer POI's
+    // instead of only the ones required to bridge the view)
+    if (key === 'poi') {
+      return acc
+    }
     const tableKey = key.replace(/-/g, '_')
     acc[tableKey] = {
       ...val,
@@ -57,7 +46,7 @@ const getQueryView = async ({ whitelabel, customers }, { tableKey }) => {
 
   // scoped to WL/CU for now
   // in the future, might expose POI's where WL IS NULL
-  // issue: slows down geo joins 
+  // issue: slows down geo joins
   if (whitelabelColumn && whitelabel !== -1) {
     const customerFilter = customerColumn && customers !== -1
       ? `AND (
@@ -84,7 +73,6 @@ const listViews = async ({ filter, inclMeta = true }) => {
     geoTableList = Object.entries(GEO_TABLES)
   }
 
-  // const tablePromises = geoTableList.map(async ([tableKey, { schema, table }]) => {
   const tablePromises = geoTableList.map(async ([tableKey, { schema, table, idType, geoType }]) => {
     const view = {
       name: tableKey,

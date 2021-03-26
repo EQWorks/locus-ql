@@ -7,10 +7,7 @@ const { s3 } = require('../util/aws')
 const { client: redis } = require('../util/redis')
 
 
-// const QUERY_BUCKET = 'ml-query-cache'
-const QUERY_BUCKET = 'ml-query-cache-dev'
-// const EXECUTION_BUCKET = 'ml-execution-cache'
-const EXECUTION_BUCKET = 'ml-execution-cache-dev'
+const QUERY_BUCKET = process.env.ML_QUERY_BUCKET
 const gzipAsync = promisify(gzip)
 const gunzipAsync = promisify(gunzip)
 const evalRedisAsync = promisify(redis.eval).bind(redis)
@@ -385,6 +382,4 @@ module.exports = {
   knexWithCache,
   pgWithCache,
   cacheTypes,
-  QUERY_BUCKET,
-  EXECUTION_BUCKET,
 }

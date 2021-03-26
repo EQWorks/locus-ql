@@ -3,11 +3,11 @@ const { apiError, APIError } = require('../util/api-error')
 const { getView, getQueryViews } = require('./views')
 const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
-const { putToS3Cache, getFromS3Cache, EXECUTION_BUCKET } = require('./cache')
+const { putToS3Cache, getFromS3Cache } = require('./cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
 
 
-const { ML_SCHEMA } = process.env
+const { ML_SCHEMA, ML_EXECUTION_BUCKET } = process.env
 const STATUS_QUEUED = 'QUEUED'
 const STATUS_SOURCING = 'SOURCING'
 const STATUS_RUNNING = 'RUNNING'
@@ -53,6 +53,7 @@ const getExecutionMetas = async ({
       e.execution_id AS "executionID",
       c.whitelabelid AS "whitelabelID",
       c.customerid AS "customerID",
+      c.timezone AS "customerTimezone",
       e.query_hash AS "queryHash",
       e.column_hash AS "columnHash",
       e.status,
@@ -104,7 +105,7 @@ const getExecutionMetas = async ({
  * @returns {string|Object} Query results
  */
 const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
-  getFromS3Cache(`${customerID}/${executionID}`, { bucket: EXECUTION_BUCKET, parseFromJson })
+  getFromS3Cache(`${customerID}/${executionID}`, { bucket: ML_EXECUTION_BUCKET, parseFromJson })
 
 /**
  * Creates an execution
@@ -323,7 +324,7 @@ const runExecution = async (executionID) => {
     await putToS3Cache(
       `${customerID}/${executionID}`,
       results,
-      { gzip: true, json: true, bucket: EXECUTION_BUCKET },
+      { gzip: true, json: true, bucket: ML_EXECUTION_BUCKET },
     )
 
     // update status to succeeded
@@ -346,7 +347,7 @@ const executionHandler = ({ execution_id }) => {
   return runExecution(id)
 }
 
-// isRequired flags whether or not 'query' is a mandatory route/query param
+// isRequired flags whether or not 'execution' is a mandatory route/query param
 const loadExecution = (isRequired = true) => async (req, _, next) => {
   try {
     if (req.mlQuery) {

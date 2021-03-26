@@ -368,7 +368,7 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
           : `b."${geoB.idColumn}"`),
       })
       .from({ a: `${geoA.schema}.${geoA.table}` })
-      .where(function joinOnValidGeo() {
+      .where(function filterGeoA() {
         if (geoA.whitelabelColumn && whitelabel !== -1) {
           const customerFilter = geoA.customerColumn && customers !== -1
             ? `AND (
@@ -398,7 +398,7 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
       })
       .join(
         { b: `${geoB.schema}.${geoB.table}` },
-        function joinOnValidGeo() {
+        function filterGeoBAndJoinWithGeoB() {
           if (geoB.whitelabelColumn && whitelabel !== -1) {
             const customerFilter = geoB.customerColumn && customers !== -1
               ? `AND (

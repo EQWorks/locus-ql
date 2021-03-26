@@ -76,10 +76,10 @@ const functions = {
     value: 'ST_Intersects',
     category: CAT_STRING,
   },
-  geo_within: {
-    value: 'ST_Within',
-    category: CAT_STRING,
-  },
+  // geo_within: {
+  //   value: 'ST_Within',
+  //   category: CAT_STRING,
+  // },
   // geo_population_ratio: {
   //   value: 'ST_Within',
   //   category: CAT_STRING,
@@ -139,7 +139,7 @@ class Expression {
     } else if (Array.isArray(expression) && expression.length === 2) {
       [column, view] = expression
     }
-    // make sure it's a valid column
+    // make sure it's a valid column or wildcard
     if (!(view in this.viewColumns && (column in this.viewColumns[view] || column === '*'))) {
       return
     }

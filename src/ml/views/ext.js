@@ -1,5 +1,4 @@
 /* eslint-disable no-use-before-define */
-
 const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
 const { apiError } = require('../../util/api-error')

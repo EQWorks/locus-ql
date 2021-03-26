@@ -1,15 +1,22 @@
 /* eslint-disable indent */
 /* eslint-disable no-use-before-define */
-
 const { knex, mapKnex, MAPS_FDW_CONNECTION } = require('../../util/db')
-const {
-  CAT_STRING,
-  CAT_NUMERIC,
-} = require('../type')
+const { CAT_STRING, CAT_NUMERIC } = require('../type')
 const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
 const { geoMapping } = require('../geo')
 
+
+const options = {
+  columns: {
+    total: { category: CAT_NUMERIC },
+    id: { category: CAT_NUMERIC }, // geo ggid
+    title: { category: CAT_STRING },
+    value: { category: CAT_NUMERIC },
+    percent: { category: CAT_NUMERIC },
+    units: { category: CAT_STRING },
+  },
+}
 
 const getKnexLayerQuery = async (access, filter = {}) => {
   const { whitelabel, customers, email = '' } = access
@@ -100,22 +107,8 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
 
   const { table, slug, resolution } = category
   const geo = geoMapping[`ca-${resolution}`]
-
-  let schema = ''
-  // retrieve schema if missing (usually 'static_layers')
-  if ((table || slug).indexOf('.') === -1) {
-    // [{ schema = 'public' } = {}] = await knexWithCache(
-    //   mapKnex.raw(`
-    //     SELECT table_schema AS schema
-    //     FROM information_schema.tables
-    //     WHERE table_name = ?
-    //     LIMIT 1
-    //   `, [table || slug]),
-    //   { ttl: 3600 }, // 1 hour
-    // )
-    // schema = `${schema}.`
-    schema = 'static_layers.'
-  }
+  // add schema if missing
+  const schema = (table || slug).indexOf('.') === -1 ? 'static_layers.' : ''
 
   const mlView = mapKnex.raw(`
     SELECT * FROM dblink(:fdwConnection, '
@@ -242,17 +235,6 @@ const getView = async (access, viewID) => {
     },
     // meta
   }
-}
-
-const options = {
-  columns: {
-    total: { category: CAT_NUMERIC },
-    id: { category: CAT_NUMERIC }, // geo ggid
-    title: { category: CAT_STRING },
-    value: { category: CAT_NUMERIC },
-    percent: { category: CAT_NUMERIC },
-    units: { category: CAT_STRING },
-  },
 }
 
 module.exports = {

@@ -39,6 +39,7 @@ const getQueryMetas = async ({
       q.query_id AS "queryID",
       c.whitelabelid AS "whitelabelID",
       c.customerid AS "customerID",
+      c.timezone AS "customerTimezone",
       q.query_hash AS "queryHash",
       q.column_hash AS "columnHash",
       q.name,
@@ -52,6 +53,7 @@ const getQueryMetas = async ({
           json_build_object(
             'executionID', e.execution_id,
             'queryHash', e.query_hash,
+            'columnHash', e.column_hash,
             'status', e.status,
             'statusTS', e.status_ts,
             'isInternal', e.is_internal
