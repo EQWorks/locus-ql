@@ -20,7 +20,8 @@ module.exports.accessHasSingleCustomer = (req, _, next) => {
     || !Array.isArray(customers)
     || customers.length !== 1
   ) {
-    next(apiError('Failed to identify customer; use the `_wl` and `_customer` query parameters'))
+    // eslint-disable-next-line max-len
+    return next(apiError('Failed to identify customer; use the `_wl` and `_customer` query parameters'))
   }
   next()
 }
