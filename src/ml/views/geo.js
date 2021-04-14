@@ -1,16 +1,25 @@
 /* eslint-disable no-use-before-define */
-
 const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
-const apiError = require('../../util/api-error')
+const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
+const { geoMapping } = require('../geo')
 
 
 const GEO_TABLES = {
-  city: {
-    schema: 'canada_geo',
-    table: 'city_dev',
-  },
+  ...Object.entries(geoMapping).reduce((acc, [key, val]) => {
+    // skip poi as a bridge table for now due to high cardinality (geo joins all customer POI's
+    // instead of only the ones required to bridge the view)
+    if (key === 'poi') {
+      return acc
+    }
+    const tableKey = key.replace(/-/g, '_')
+    acc[tableKey] = {
+      ...val,
+      geoType: key,
+    }
+    return acc
+  }, {}),
   ggid: {
     schema: 'config',
     table: 'ggid_map',
@@ -18,9 +27,9 @@ const GEO_TABLES = {
 }
 
 // public available
-const getView = async (_, reqViews, reqViewColumns, { tableKey }) => {
+const getQueryView = async ({ whitelabel, customers }, { tableKey }) => {
   const viewID = `geo_${tableKey}`
-  const { schema, table } = GEO_TABLES[tableKey]
+  const { schema, table, whitelabelColumn, customerColumn, idColumn } = GEO_TABLES[tableKey]
 
   if (!schema || !table) {
     throw apiError('Invalid geo view', 403)
@@ -28,15 +37,30 @@ const getView = async (_, reqViews, reqViewColumns, { tableKey }) => {
 
   // inject view columns
   const viewMeta = await listViews({ filter: { tableKey } })
-  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+  const mlViewColumns = (viewMeta[0] || {}).columns
 
   // inject view
-  reqViews[viewID] = knex.raw(`
-    (
-      SELECT *
-      FROM ${schema}.${table}
-    ) as ${viewID}
-  `)
+  const mlView = knex
+    .select(idColumn ? { [`geo_${tableKey}`]: idColumn } : '*')
+    .from(`${schema}.${table}`)
+
+  // scoped to WL/CU for now
+  // in the future, might expose POI's where WL IS NULL
+  // issue: slows down geo joins
+  if (whitelabelColumn && whitelabel !== -1) {
+    const customerFilter = customerColumn && customers !== -1
+      ? `AND (
+        ${table}.${customerColumn} IS NULL
+        OR ${table}.${customerColumn} = ANY (:customers)
+      )`
+      : ''
+    mlView.where(knex.raw(`(
+      ${table}.${whitelabelColumn} = ANY (:whitelabel)
+      ${customerFilter}
+    )`, { whitelabel, customers }))
+  }
+
+  return { viewID, mlView, mlViewColumns }
 }
 
 const listViews = async ({ filter, inclMeta = true }) => {
@@ -49,7 +73,7 @@ const listViews = async ({ filter, inclMeta = true }) => {
     geoTableList = Object.entries(GEO_TABLES)
   }
 
-  const tablePromises = geoTableList.map(async ([tableKey, { schema, table }]) => {
+  const tablePromises = geoTableList.map(async ([tableKey, { schema, table, idType, geoType }]) => {
     const view = {
       name: tableKey,
       view: {
@@ -59,6 +83,17 @@ const listViews = async ({ filter, inclMeta = true }) => {
       },
     }
     if (inclMeta) {
+      if (idType) {
+        view.columns = {
+          [`geo_${tableKey}`]: {
+            category: idType,
+            geo_type: geoType,
+            key: `geo_${tableKey}`,
+          },
+        }
+        return view
+      }
+
       const tableColumns = await knexWithCache(
         knex('information_schema.columns')
           .columns(['column_name', 'data_type', 'udt_name'])
@@ -81,13 +116,35 @@ const listViews = async ({ filter, inclMeta = true }) => {
   return Promise.all(tablePromises)
 }
 
-const listView = async (_, viewID) => {
-  const [, tableKey] = viewID.match(/^geo_(\w+)$/) || []
+const getView = async (_, viewID) => {
+  const [, tableKey] = viewID.match(/^geo_([\w]+)$/) || []
   // eslint-disable-next-line radix
   if (!(tableKey in GEO_TABLES)) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
-  const { schema, table } = GEO_TABLES[tableKey]
+
+  const view = {
+    name: tableKey,
+    view: {
+      type: 'geo',
+      id: `geo_${tableKey}`,
+      tableKey,
+    },
+  }
+
+  const { schema, table, idType, geoType } = GEO_TABLES[tableKey]
+
+  if (idType) {
+    view.columns = {
+      [`geo_${tableKey}`]: {
+        category: idType,
+        geo_type: geoType,
+        key: `geo_${tableKey}`,
+      },
+    }
+    return view
+  }
+
   const tableColumns = await knexWithCache(
     knex('information_schema.columns')
       .columns(['column_name', 'data_type', 'udt_name'])
@@ -105,19 +162,12 @@ const listView = async (_, viewID) => {
     }
   })
 
-  return {
-    name: tableKey,
-    view: {
-      type: 'geo',
-      id: `geo_${tableKey}`,
-      tableKey,
-    },
-    columns,
-  }
+  view.columns = columns
+  return view
 }
 
 module.exports = {
-  getView,
+  getQueryView,
   listViews,
-  listView,
+  getView,
 }

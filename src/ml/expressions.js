@@ -1,10 +1,11 @@
+/* eslint-disable no-continue */
 /* eslint-disable no-use-before-define */
 
 // comlpex expressions
 // reference: https://github.com/EQWorks/firstorder/wiki/Locus-ML-Expression
 const { knex } = require('../util/db')
-const apiError = require('../util/api-error')
-const { CAT_DATE, CAT_NUMERIC, CAT_JSON } = require('./type')
+const { apiError } = require('../util/api-error')
+const { CAT_DATE, CAT_NUMERIC, CAT_JSON, CAT_STRING } = require('./type')
 
 
 const TYPE_STRING = 'string'
@@ -69,6 +70,20 @@ const functions = {
     value: 'json_extract_path',
     category: CAT_JSON,
   },
+
+  // Geo functions
+  geo_intersects: {
+    value: 'ST_Intersects',
+    category: CAT_STRING,
+  },
+  // geo_within: {
+  //   value: 'ST_Within',
+  //   category: CAT_STRING,
+  // },
+  // geo_population_ratio: {
+  //   value: 'ST_Within',
+  //   category: CAT_STRING,
+  // },
 }
 
 const operators = {
@@ -87,6 +102,7 @@ const operators = {
   like: { value: 'like' },
   'not like': { value: 'not like' },
   is: { value: 'is' },
+  'is not': { value: 'is not' },
   between: { value: 'between' },
   'not between': { value: 'not between' },
 
@@ -110,22 +126,40 @@ class Expression {
     this.viewColumns = viewColumns
   }
 
-  constructColumn(view, column) {
-    const validView = (this.viewColumns || {})[view]
+  // extracts explicit column
+  extractColumn(expression) {
+    let column
+    let view
+    if (typeof expression === 'string' && expression.indexOf('.') !== -1) {
+      [column, view] = expression.split('.', 2)
+    } else if (typeof expression !== 'object' || expression === null) {
+      return
+    } else if (expression.type === 'column') {
+      ({ column, view } = expression)
+    } else if (Array.isArray(expression) && expression.length === 2) {
+      [column, view] = expression
+    }
+    // make sure it's a valid column or wildcard
+    if (!(view in this.viewColumns && (column in this.viewColumns[view] || column === '*'))) {
+      return
+    }
+    return { view, column }
+  }
 
-    // validate view and column, skip checks if no viewColumns as a fall back
-    if (this.viewColumns && !validView) {
-      throw apiError(`Invalid view for column: ${view} ${column}`, 403)
+  constructColumn(expression) {
+    const col = this.extractColumn(expression)
+    if (col) {
+      return knex.raw(`"${col.view}".${col.column === '*' ? '*' : `"${col.column}"`}`)
     }
-    if (this.viewColumns && column !== '*' && !validView[column]) {
-      throw apiError(`Column: ${column} not found for view: ${view}`, 403)
-    }
-    return `${view}.${column}`
   }
 
   parseComplex({ type, ...exp }) {
     if (type === 'column') {
-      return this.constructColumn(exp.view, exp.column)
+      const col = this.constructColumn({ type, ...exp })
+      if (!col) {
+        throw apiError('Malformed column object', 400)
+      }
+      return col
     }
 
     if (type === 'array') {
@@ -161,7 +195,7 @@ class Expression {
         throw apiError(`Invalid operator: ${opName}`, 403)
       }
 
-      const [argA, argB, argC = null] = args.map(this.parseExpression.bind(this))
+      const [argA, argB, argC] = args.map(this.parseExpression.bind(this))
 
       if ((op.value === 'between' || op.value === 'not between') && !argC) {
         throw apiError(`Too few arguments for operator: ${opName}`, 403)
@@ -196,7 +230,8 @@ class Expression {
     const type = typeof expression
 
     if (type === TYPE_STRING) {
-      return expression
+      // check if column
+      return this.constructColumn(expression) || expression
     }
 
     if (type === TYPE_NUMBER) {
@@ -204,13 +239,17 @@ class Expression {
     }
 
     if (type === TYPE_OBJECT) {
+      // NULL value
+      if (expression === null) {
+        return knex.raw('NULL')
+      }
       // column shorthand
       if (Array.isArray(expression)) {
-        if (expression.length < 2) {
-          throw apiError('Column array requires 2 elements', 403)
-        } else {
-          return this.constructColumn(expression[1], expression[0])
+        const col = this.constructColumn(expression)
+        if (!col) {
+          throw apiError('Malformed column array', 400)
         }
+        return col
       }
 
       return this.parseComplex(expression)
@@ -218,8 +257,37 @@ class Expression {
 
     throw apiError(`Invalid expression: ${expression}`, 403)
   }
-}
 
+  parseConditions(conditions, knex, knexRaw) {
+    if (typeof conditions !== 'object' || conditions === null) {
+      return
+    }
+    // conditions is an array
+    if (Array.isArray(conditions)) {
+      return conditions.forEach((condition) => {
+        if (!condition) {
+          return
+        }
+        // handle easy array form condition
+        // where condition is in format of: [argA[, operator, argB]]
+        if (Array.isArray(condition)) {
+          const [argA, operator, argB] = condition
+          const parsedArgA = typeof argA === 'object' ? this.parseExpression(argA) : argA
+          const parsedArgB = typeof argB === 'object' ? this.parseExpression(argB) : argB
+          const args = [parsedArgA]
+          if (operator && parsedArgB !== undefined) {
+            args.push(operator, parsedArgB)
+          }
+          return knex(...args)
+        }
+        // handle complex condition
+        return (knexRaw || knex)(this.parseExpression(condition))
+      })
+    }
+    // conditions is an object (e.g. 'AND')
+    return (knexRaw || knex)(this.parseExpression(conditions))
+  }
+}
 
 module.exports = {
   functions,

@@ -1,4 +1,5 @@
 const { CAT_STRING, CAT_NUMERIC, CAT_DATE } = require('../../type')
+const { geoTypes } = require('../../geo')
 const { CU_ADVERTISER, ACCESS_INTERNAL, ACCESS_CUSTOMER, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
 
@@ -69,11 +70,11 @@ const allStandardChViews = [
 module.exports = {
   name: 'ATOM Impressions',
   table: 'fusion_logs.impression_logs',
-  partitions: 4,
   owner: CU_ADVERTISER,
   columns: {
     camp_code: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       inFastViews: [pgViews.ATOM_CAMPS, ...allStandardChViews, pgViews.ATOM_CH_VIEWABILITY],
     },
     camp_name: {
@@ -125,21 +126,36 @@ module.exports = {
       dependsOn: ['_date', '_hour'],
       viewExpression: 'log.time_tz',
     },
-    fsa: {
+    _postal_code: {
       category: CAT_STRING,
-      geo_type: 'ca-fsa',
-      expression: 'postal_code AS fsa',
+      pgType: 'varchar(10)',
+      access: ACCESS_PRIVATE,
+      expression: 'postal_code',
+    },
+    geo_ca_fsa: {
+      category: CAT_STRING,
+      dependsOn: ['_postal_code'],
+      geo_type: geoTypes.CA_FSA,
+      viewExpression: "substring(log._postal_code from '^[A-Z]\\d[A-Z]$')",
+    },
+    geo_us_postalcode: {
+      category: CAT_NUMERIC,
+      dependsOn: ['_postal_code'],
+      // geo_type: 'us-postalcode',
+      viewExpression: "substring(log._postal_code from '^\\d{5}$')::int",
     },
     impressions: {
       category: CAT_NUMERIC,
-      expression: 'count(*) AS impressions',
+      pgType: 'int',
+      expression: 'count(*)',
       viewExpression: 'SUM(COALESCE(log.impressions, 0))',
       isAggregate: true,
       inFastViews: allStandardChViews,
     },
     clicks: {
       category: CAT_NUMERIC,
-      expression: 'count_if(click) AS clicks',
+      pgType: 'int',
+      expression: 'count_if(click)',
       viewExpression: 'SUM(COALESCE(log.clicks, 0))',
       isAggregate: true,
       inFastViews: allStandardChViews,
@@ -158,25 +174,29 @@ module.exports = {
     },
     user_ip: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20) AS user_ip',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20)',
     },
     user_id: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20) AS user_id',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20)',
     },
     household_id: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20) AS hh_id',
-      viewExpression: 'log.hh_id',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20)',
     },
     household_fsa: {
       category: CAT_STRING,
-      geo_type: 'ca-fsa',
+      pgType: 'varchar(10)',
+      geo_type: geoTypes.CA_FSA,
       expression: 'hh_fsa',
-      viewExpression: 'log.hh_fsa',
     },
     os_id: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
+      expression: 'COALESCE(os_id, 1092)',
       inFastViews: [pgViews.ATOM_OS, pgViews.ATOM_CH_OS_ID],
     },
     os_name: {
@@ -195,6 +215,8 @@ module.exports = {
     },
     browser_id: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
+      expression: 'COALESCE(browser_id, 63)',
       inFastViews: [pgViews.ATOM_BROWSERS, pgViews.ATOM_CH_BROWSER_ID],
     },
     browser_name: {
@@ -213,10 +235,41 @@ module.exports = {
     },
     city: {
       category: CAT_STRING,
+      pgType: 'varchar(500)',
       inFastViews: [pgViews.ATOM_CH_CITY],
+    },
+    country: {
+      category: CAT_STRING,
+      dependsOn: ['city'],
+      viewExpression: 'substring(log.city for 2)',
+    },
+    geo_ca_province: {
+      category: CAT_STRING,
+      geo_type: geoTypes.CA_PROVINCE,
+      dependsOn: ['city'],
+      viewExpression: "substring(log.city from '^CA\\$([A-Z]{2})')",
+    },
+    geo_us_state: {
+      category: CAT_STRING,
+      // geo_type: 'us-state',
+      dependsOn: ['city'],
+      viewExpression: "substring(log.city from '^US\\$([A-Z]{2})')",
+    },
+    geo_ca_city: {
+      category: CAT_STRING,
+      geo_type: geoTypes.CA_CITY,
+      dependsOn: ['city'],
+      viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$(.*)$'))",
+    },
+    geo_us_city: {
+      category: CAT_STRING,
+      // geo_type: 'us-city',
+      dependsOn: ['city'],
+      viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$(.*)$'))",
     },
     banner_code: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       inFastViews: [pgViews.ATOM_BANNERS, pgViews.ATOM_CH_BANNER_CODE, pgViews.ATOM_CH_VIEWABILITY],
     },
     banner_name: {
@@ -233,7 +286,8 @@ module.exports = {
     },
     app_platform_id: {
       category: CAT_NUMERIC,
-      expression: 'COALESCE(app_platform_id, 0) AS app_platform_id',
+      pgType: 'smallint',
+      expression: 'COALESCE(app_platform_id, 0)',
       inFastViews: [pgViews.APP_PLATFORMS],
     },
     app_platform_name: {
@@ -252,17 +306,19 @@ module.exports = {
     },
     _revenue: {
       category: CAT_NUMERIC,
+      pgType: 'numeric(19, 4)',
       access: ACCESS_PRIVATE,
-      expression: 'SUM(revenue) AS revenue',
-      // viewExpression: 'SUM(COALESCE(log.revenue, 0))',
+      expression: 'SUM(revenue)',
+      // viewExpression: 'SUM(COALESCE(log._revenue, 0))',
       isAggregate: true,
       inFastViews: allStandardChViews,
     },
     _revenue_in_currency: {
       category: CAT_NUMERIC,
+      pgType: 'numeric(19, 4)',
       access: ACCESS_PRIVATE,
-      expression: 'SUM(revenue_in_currency) AS revenue_in_currency',
-      // viewExpression: 'SUM(COALESCE(log.revenue_in_currency, 0))',
+      expression: 'SUM(revenue_in_currency)',
+      // viewExpression: 'SUM(COALESCE(log._revenue_in_currency, 0))',
       isAggregate: true,
       inFastViews: allStandardChViews,
     },
@@ -270,7 +326,7 @@ module.exports = {
       category: CAT_NUMERIC,
       access: ACCESS_INTERNAL,
       dependsOn: ['_revenue', '_revenue_in_currency'],
-      viewExpression: 'SUM(COALESCE(log.revenue_in_currency, log.revenue, 0))',
+      viewExpression: 'SUM(COALESCE(log._revenue_in_currency, log._revenue, 0))',
       isAggregate: true,
     },
     spend: {
@@ -279,17 +335,19 @@ module.exports = {
     },
     _cost: {
       category: CAT_NUMERIC,
+      pgType: 'numeric(19, 4)',
       access: ACCESS_PRIVATE,
-      expression: 'SUM(cost) AS cost',
-      // viewExpression: 'SUM(COALESCE(log.cost, 0))',
+      expression: 'SUM(cost)',
+      // viewExpression: 'SUM(COALESCE(log._cost, 0))',
       isAggregate: true,
       inFastViews: allStandardChViews,
     },
     _cost_in_currency: {
       category: CAT_NUMERIC,
+      pgType: 'numeric(19, 4)',
       access: ACCESS_PRIVATE,
-      expression: 'SUM(cost_in_currency) AS cost_in_currency',
-      // viewExpression: 'SUM(COALESCE(log.cost_in_currency, 0))',
+      expression: 'SUM(cost_in_currency)',
+      // viewExpression: 'SUM(COALESCE(log._cost_in_currency, 0))',
       isAggregate: true,
       inFastViews: allStandardChViews,
     },
@@ -297,7 +355,7 @@ module.exports = {
       category: CAT_NUMERIC,
       access: ACCESS_INTERNAL,
       dependsOn: ['_cost', '_cost_in_currency'],
-      viewExpression: 'SUM(COALESCE(log.cost_in_currency, log.cost, 0))',
+      viewExpression: 'SUM(COALESCE(log._cost_in_currency, log._cost, 0))',
       isAggregate: true,
     },
     cost_per_mile: {
@@ -307,7 +365,7 @@ module.exports = {
         CASE
           WHEN SUM(COALESCE(log.impressions, 0)) > 0 THEN
             (1000 * SUM(
-              COALESCE(log.revenue_in_currency, log.revenue, 0)
+              COALESCE(log._revenue_in_currency, log._revenue, 0)
             )::real / SUM(
               COALESCE(log.impressions, 0))
             )::numeric(5, 4)
@@ -324,7 +382,7 @@ module.exports = {
         CASE
           WHEN SUM(COALESCE(log.impressions, 0)) > 0 THEN
             (1000 * SUM(
-              COALESCE(log.cost_in_currency, log.cost, 0)
+              COALESCE(log._cost_in_currency, log._cost, 0)
             )::real / SUM(
               COALESCE(log.impressions, 0))
             )::numeric(5, 4)
@@ -335,6 +393,8 @@ module.exports = {
     },
     locus_poi_id: {
       category: CAT_NUMERIC,
+      pgType: 'int',
+      geo_type: geoTypes.POI,
       inFastViews: [pgViews.LOCUS_POI],
     },
     locus_poi_name: {
@@ -357,6 +417,7 @@ module.exports = {
     },
     locus_poi_list_id: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       inFastViews: [pgViews.LOCUS_POI_LISTS],
     },
     locus_poi_list_name: {
@@ -367,6 +428,8 @@ module.exports = {
     },
     ad_position: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
+      expression: 'COALESCE(ad_position, 1)',
       inFastViews: [pgViews.ATOM_AD_POSITIONS, pgViews.ATOM_CH_AD_POSITION],
     },
     ad_position_name: {
@@ -385,6 +448,7 @@ module.exports = {
     },
     domain_id: {
       category: CAT_NUMERIC,
+      pgType: 'bigint',
       inFastViews: [pgViews.ATOM_DOMAINS, pgViews.ATOM_CH_DOMAIN_ID],
     },
     domain_name: {
@@ -403,6 +467,7 @@ module.exports = {
     },
     user_segment_id: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       expression: 'u_segments.user_segment_id',
       crossJoin: 'CROSS JOIN UNNEST(user_segments) AS u_segments(user_segment_id)',
       inFastViews: [pgViews.ATOM_SEGMENTS, pgViews.ATOM_CH_USER_SEG],
@@ -421,6 +486,7 @@ module.exports = {
     },
     connection_type: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
       inFastViews: [pgViews.MAXMIND_CONNECTION_TYPES],
     },
     connection_type_name: {
@@ -439,8 +505,8 @@ module.exports = {
     },
     language_code: {
       category: CAT_STRING,
+      pgType: 'varchar(2)',
       expression: 'language',
-      viewExpression: 'log.language',
       inFastViews: [pgViews.ATOM_LANGUAGES, pgViews.ATOM_CH_LANGUAGE],
     },
     language_name: {
@@ -452,14 +518,15 @@ module.exports = {
           type: 'left',
           view: pgViews.ATOM_LANGUAGES,
           condition() {
-            this.on('log.language', '=', 'atom_languages.language')
+            this.on('log.language_code', '=', 'atom_languages.language_code')
           },
         },
       ],
     },
     network_id: {
       category: CAT_NUMERIC,
-      expression: 'ntwrk_id AS network_id',
+      pgType: 'int',
+      expression: 'ntwrk_id',
       inFastViews: [pgViews.ATOM_NETWORKS, pgViews.ATOM_CH_NETWORK_ID],
     },
     network_name: {
@@ -478,6 +545,7 @@ module.exports = {
     },
     iab_cat: {
       category: CAT_STRING,
+      pgType: 'varchar(10)',
       expression: 'u_iab_cats.iab_cat',
       crossJoin: 'CROSS JOIN UNNEST(iab_cat) AS u_iab_cats(iab_cat)',
       inFastViews: [pgViews.IAB_CATS, pgViews.ATOM_CH_IAB_CAT],
@@ -502,29 +570,33 @@ module.exports = {
     },
     viewability_measurable: {
       category: CAT_NUMERIC,
-      expression: 'count_if(view_measurable) AS view_measurable',
-      viewExpression: 'SUM(COALESCE(log.view_measurable, 0))',
+      pgType: 'int',
+      expression: 'count_if(view_measurable)',
+      viewExpression: 'SUM(COALESCE(log.viewability_measurable, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
     viewability_in_view: {
       category: CAT_NUMERIC,
-      expression: 'count_if(view_in_view) AS view_in_view',
-      viewExpression: 'SUM(COALESCE(log.view_in_view, 0))',
+      pgType: 'int',
+      expression: 'count_if(view_in_view)',
+      viewExpression: 'SUM(COALESCE(log.viewability_in_view, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
     viewability_fully_in_view: {
       category: CAT_NUMERIC,
-      expression: 'count_if(view_fully_in_view) AS view_fully_in_view',
-      viewExpression: 'SUM(COALESCE(log.view_fully_in_view, 0))',
+      pgType: 'int',
+      expression: 'count_if(view_fully_in_view)',
+      viewExpression: 'SUM(COALESCE(log.viewability_fully_in_view, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
     viewability_time_until_in_view: {
       category: CAT_NUMERIC,
-      expression: 'SUM(view_time_until_in_view) AS view_time_until_in_view',
-      viewExpression: 'SUM(COALESCE(log.view_time_until_in_view, 0))',
+      pgType: 'int',
+      expression: 'SUM(view_time_until_in_view)',
+      viewExpression: 'SUM(COALESCE(log.viewability_time_until_in_view, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
@@ -533,11 +605,11 @@ module.exports = {
       dependsOn: ['viewability_in_view', 'viewability_time_until_in_view'],
       viewExpression: `
         CASE
-          WHEN SUM(COALESCE(log.view_in_view, 0)) > 0 THEN
+          WHEN SUM(COALESCE(log.viewability_in_view, 0)) > 0 THEN
             CEILING(SUM(
-              COALESCE(log.view_time_until_in_view, 0)
+              COALESCE(log.viewability_time_until_in_view, 0)
             )::real / SUM(
-              COALESCE(log.view_in_view, 0)
+              COALESCE(log.viewability_in_view, 0)
             ))
           ELSE 0
         END
@@ -546,35 +618,40 @@ module.exports = {
     },
     viewability_total_exposure_time: {
       category: CAT_NUMERIC,
-      expression: 'SUM(view_total_exposure_time) AS view_total_exposure_time',
-      viewExpression: 'SUM(COALESCE(log.view_total_exposure_time, 0))',
+      pgType: 'int',
+      expression: 'SUM(view_total_exposure_time)',
+      viewExpression: 'SUM(COALESCE(log.viewability_total_exposure_time, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
     viewability_universal_interaction: {
       category: CAT_NUMERIC,
-      expression: 'count_if(view_universal_interaction) AS view_universal_interaction',
-      viewExpression: 'SUM(COALESCE(log.view_universal_interaction, 0))',
+      pgType: 'int',
+      expression: 'count_if(view_universal_interaction)',
+      viewExpression: 'SUM(COALESCE(log.viewability_universal_interaction, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
     viewability_below_the_fold: {
       category: CAT_NUMERIC,
-      expression: 'count_if(view_below_the_fold) AS view_below_the_fold',
-      viewExpression: 'SUM(COALESCE(log.view_below_the_fold, 0))',
+      pgType: 'int',
+      expression: 'count_if(view_below_the_fold)',
+      viewExpression: 'SUM(COALESCE(log.viewability_below_the_fold, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
     viewability_above_the_fold: {
       category: CAT_NUMERIC,
       dependsOn: ['viewability_measurable', 'viewability_below_the_fold'],
-      viewExpression: 'SUM(COALESCE(log.view_measurable - log.view_below_the_fold, 0))',
+      // eslint-disable-next-line max-len
+      viewExpression: 'SUM(COALESCE(log.viewability_measurable - log.viewability_below_the_fold, 0))',
       isAggregate: true,
     },
     viewability_did_hover: {
       category: CAT_NUMERIC,
-      expression: 'count_if(view_did_hover) AS view_did_hover',
-      viewExpression: 'SUM(COALESCE(log.view_did_hover, 0))',
+      pgType: 'int',
+      expression: 'count_if(view_did_hover)',
+      viewExpression: 'SUM(COALESCE(log.viewability_did_hover, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
@@ -583,11 +660,11 @@ module.exports = {
       dependsOn: ['viewability_measurable', 'viewability_did_hover'],
       viewExpression: `
         CASE
-          WHEN SUM(COALESCE(log.view_measurable, 0)) > 0 THEN
+          WHEN SUM(COALESCE(log.viewability_measurable, 0)) > 0 THEN
             SUM(
-              COALESCE(log.view_did_hover, 0)
+              COALESCE(log.viewability_did_hover, 0)
             )::real / SUM(
-              COALESCE(log.view_measurable, 0)
+              COALESCE(log.viewability_measurable, 0)
             )::numeric(5, 4)
           ELSE 0
         END
@@ -596,8 +673,9 @@ module.exports = {
     },
     viewability_time_until_hover: {
       category: CAT_NUMERIC,
-      expression: 'SUM(view_time_until_hover) AS view_time_until_hover',
-      viewExpression: 'SUM(COALESCE(log.view_time_until_hover, 0))',
+      pgType: 'int',
+      expression: 'SUM(view_time_until_hover)',
+      viewExpression: 'SUM(COALESCE(log.viewability_time_until_hover, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
@@ -606,11 +684,11 @@ module.exports = {
       dependsOn: ['viewability_did_hover', 'viewability_time_until_hover'],
       viewExpression: `
         CASE
-          WHEN SUM(COALESCE(log.view_did_hover, 0)) > 0 THEN
+          WHEN SUM(COALESCE(log.viewability_did_hover, 0)) > 0 THEN
             CEILING(SUM(
-              COALESCE(log.view_time_until_hover, 0)
+              COALESCE(log.viewability_time_until_hover, 0)
             )::real / SUM(
-              COALESCE(log.view_did_hover, 0)
+              COALESCE(log.viewability_did_hover, 0)
             ))
           ELSE 0
         END
@@ -619,7 +697,8 @@ module.exports = {
     },
     viewability_did_scroll: {
       category: CAT_NUMERIC,
-      expression: 'count_if(view_did_scroll) AS view_did_scroll',
+      pgType: 'int',
+      expression: 'count_if(view_did_scroll)',
       viewExpression: 'SUM(COALESCE(log.view_did_scroll, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
@@ -629,11 +708,11 @@ module.exports = {
       dependsOn: ['viewability_measurable', 'viewability_did_scroll'],
       viewExpression: `
         CASE
-          WHEN SUM(COALESCE(log.view_measurable, 0)) > 0 THEN
+          WHEN SUM(COALESCE(log.viewability_measurable, 0)) > 0 THEN
             SUM(
-              COALESCE(log.view_did_scroll, 0)
+              COALESCE(log.viewability_did_scroll, 0)
             )::real / SUM(
-              COALESCE(log.view_measurable, 0)
+              COALESCE(log.viewability_measurable, 0)
             )::numeric(5, 4)
           ELSE 0
         END
@@ -642,8 +721,9 @@ module.exports = {
     },
     viewability_time_until_scroll: {
       category: CAT_NUMERIC,
-      expression: 'SUM(view_time_until_scroll) AS view_time_until_scroll',
-      viewExpression: 'SUM(COALESCE(log.view_time_until_scroll, 0))',
+      pgType: 'int',
+      expression: 'SUM(view_time_until_scroll)',
+      viewExpression: 'SUM(COALESCE(log.viewability_time_until_scroll, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
@@ -652,11 +732,11 @@ module.exports = {
       dependsOn: ['viewability_did_scroll', 'viewability_time_until_scroll'],
       viewExpression: `
         CASE
-          WHEN SUM(COALESCE(log.view_did_scroll, 0)) > 0 THEN
+          WHEN SUM(COALESCE(log.viewability_did_scroll, 0)) > 0 THEN
             CEILING(SUM(
-              COALESCE(log.view_time_until_scroll, 0)
+              COALESCE(log.viewability_time_until_scroll, 0)
             )::real / SUM(
-              COALESCE(log.view_did_scroll, 0)
+              COALESCE(log.viewability_did_scroll, 0)
             ))
           ELSE 0
         END

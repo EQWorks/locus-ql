@@ -1,4 +1,5 @@
 const { CAT_STRING, CAT_NUMERIC, CAT_JSON, CAT_DATE } = require('../../type')
+const { geoTypes } = require('../../geo')
 const { CU_AGENCY, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
 
@@ -6,11 +7,11 @@ const { pgViews } = require('./pg-views')
 module.exports = {
   name: 'LOCUS Beacons',
   table: 'fusion_logs.beacon_logs',
-  partitions: 4,
   owner: CU_AGENCY,
   columns: {
     camp_code: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       inFastViews: [pgViews.LOCUS_CAMPS, pgViews.LOCUS_BEACON_HISTORY],
     },
     camp_name: {
@@ -47,13 +48,27 @@ module.exports = {
       dependsOn: ['_date', '_hour'],
       viewExpression: 'log.time_tz',
     },
-    fsa: {
+    _postal_code: {
       category: CAT_STRING,
-      geo_type: 'ca-fsa',
-      expression: 'postal_code AS fsa',
+      pgType: 'varchar(10)',
+      access: ACCESS_PRIVATE,
+      expression: 'postal_code',
+    },
+    geo_ca_fsa: {
+      category: CAT_STRING,
+      dependsOn: ['_postal_code'],
+      geo_type: geoTypes.CA_FSA,
+      viewExpression: "substring(log._postal_code from '^[A-Z]\\d[A-Z]$')",
+    },
+    geo_us_postalcode: {
+      category: CAT_NUMERIC,
+      dependsOn: ['_postal_code'],
+      // geo_type: 'us-postalcode',
+      viewExpression: "substring(log._postal_code from '^\\d{5}$')::int",
     },
     beacon_id: {
       category: CAT_NUMERIC,
+      pgType: 'int',
       inFastViews: [pgViews.LOCUS_BEACONS],
     },
     beacon_name: {
@@ -72,32 +87,37 @@ module.exports = {
     },
     impressions: {
       category: CAT_NUMERIC,
-      expression: 'count(*) AS impressions',
+      pgType: 'int',
+      expression: 'count(*)',
       viewExpression: 'SUM(COALESCE(log.impressions, 0))',
       isAggregate: true,
       inFastViews: [pgViews.LOCUS_BEACON_HISTORY],
     },
     user_ip: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20) AS user_ip',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(ip AS varbinary))), 1, 20)',
     },
     user_id: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20) AS user_id',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(user_guid AS varbinary))), 1, 20)',
     },
     household_id: {
       category: CAT_STRING,
-      expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20) AS hh_id',
-      viewExpression: 'log.hh_id',
+      pgType: 'varchar(20)',
+      expression: 'substr(to_hex(sha256(cast(hh_id AS varbinary))), 1, 20)',
     },
     household_fsa: {
       category: CAT_STRING,
-      geo_type: 'ca-fsa',
+      pgType: 'varchar(10)',
+      geo_type: geoTypes.CA_FSA,
       expression: 'hh_fsa',
-      viewExpression: 'hh_fsa AS',
     },
     os_id: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
+      expression: 'COALESCE(os_id, 1092)',
       inFastViews: [pgViews.ATOM_OS],
     },
     os_name: {
@@ -116,6 +136,8 @@ module.exports = {
     },
     browser_id: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
+      expression: 'COALESCE(browser_id, 63)',
       inFastViews: [pgViews.ATOM_BROWSERS],
     },
     browser_name: {
@@ -132,9 +154,42 @@ module.exports = {
         },
       ],
     },
-    city: { category: CAT_STRING },
+    city: {
+      category: CAT_STRING,
+      pgType: 'varchar(500)',
+    },
+    country: {
+      category: CAT_STRING,
+      dependsOn: ['city'],
+      viewExpression: 'substring(log.city for 2)',
+    },
+    geo_ca_province: {
+      category: CAT_STRING,
+      geo_type: geoTypes.CA_PROVINCE,
+      dependsOn: ['city'],
+      viewExpression: "substring(log.city from '^CA\\$([A-Z]{2})')",
+    },
+    geo_us_state: {
+      category: CAT_STRING,
+      // geo_type: 'us-state',
+      dependsOn: ['city'],
+      viewExpression: "substring(log.city from '^US\\$([A-Z]{2})')",
+    },
+    geo_ca_city: {
+      category: CAT_STRING,
+      geo_type: geoTypes.CA_CITY,
+      dependsOn: ['city'],
+      viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$(.*)$'))",
+    },
+    geo_us_city: {
+      category: CAT_STRING,
+      // geo_type: 'us-city',
+      dependsOn: ['city'],
+      viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$(.*)$'))",
+    },
     connection_type: {
       category: CAT_NUMERIC,
+      pgType: 'smallint',
       inFastViews: [pgViews.MAXMIND_CONNECTION_TYPES],
     },
     connection_type_name: {
@@ -153,14 +208,22 @@ module.exports = {
     },
     vendor: {
       category: CAT_STRING,
+      pgType: 'varchar(255)',
       inFastViews: [pgViews.LOCUS_BEACONS, pgViews.LOCUS_BEACON_HISTORY],
     },
     type: {
       category: CAT_STRING,
+      pgType: 'varchar(20)',
       inFastViews: [pgViews.LOCUS_BEACONS],
     },
-    referrer: { category: CAT_STRING },
-    content: { category: CAT_JSON },
+    referrer: {
+      category: CAT_STRING,
+      pgType: 'text',
+    },
+    content: {
+      category: CAT_JSON,
+      pgType: 'jsonb',
+    },
     // TODO: expose default fields once convention agreed upon
     // example:
     // content_ga_id: {

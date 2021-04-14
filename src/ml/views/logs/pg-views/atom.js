@@ -1,5 +1,5 @@
-const { knex } = require('../../../../util/db')
-const { ATOM_CONNECTION_NAME, PG_CACHE_DAYS } = require('../constants')
+const { knex, ATOM_READ_FDW_CONNECTION } = require('../../../../util/db')
+const { PG_CACHE_DAYS } = require('../constants')
 
 
 const getCampView = (_, advertiserID) => ({
@@ -30,10 +30,10 @@ const getCampView = (_, advertiserID) => ({
       )
     ) AS atom_camps
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getOsView = () => ({
@@ -49,8 +49,8 @@ const getOsView = () => ({
         os_name text
       )
     ) AS atom_os
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getBrowserView = () => ({
@@ -66,8 +66,8 @@ const getBrowserView = () => ({
         browser_name text
       )
     ) AS atom_browsers
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getBannerView = (_, advertiserID) => ({
@@ -87,10 +87,10 @@ const getBannerView = (_, advertiserID) => ({
       )
     ) AS atom_banners
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getAdPositionView = () => ({
@@ -106,8 +106,8 @@ const getAdPositionView = () => ({
         ad_position_name text
       )
     ) AS atom_ad_positions
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getDomainView = () => ({
@@ -124,8 +124,8 @@ const getDomainView = () => ({
         domain_name text
       )
     ) AS atom_domains
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getSegmentView = agencyID => ({
@@ -146,10 +146,10 @@ const getSegmentView = agencyID => ({
       )
     ) AS atom_segments
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     agencyID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getLanguageView = () => ({
@@ -161,12 +161,12 @@ const getLanguageView = () => ({
           langname
         FROM public.lang
       ') AS t(
-        language text,
+        language_code text,
         language_name text
       )
     ) AS atom_languages
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getNetworkView = () => ({
@@ -182,8 +182,8 @@ const getNetworkView = () => ({
         network_name text
       )
     ) AS atom_networks
-  `, [ATOM_CONNECTION_NAME]),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  `, [ATOM_READ_FDW_CONNECTION]),
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const getChViewabilityView = (_, advertiserID) => ({
@@ -263,24 +263,24 @@ const getChViewabilityView = (_, advertiserID) => ({
         camp_code int,
         time_tz timestamptz,
         banner_code int,
-        view_measurable int,
-        view_in_view int,
-        view_fully_in_view int,
-        view_time_until_in_view int,
-        view_total_exposure_time int,
-        view_universal_interaction int,
-        view_below_the_fold int,
-        view_did_hover int,
-        view_time_until_hover int,
-        view_did_scroll int,
-        view_time_until_scroll int
+        viewability_measurable int,
+        viewability_in_view int,
+        viewability_fully_in_view int,
+        viewability_time_until_in_view int,
+        viewability_total_exposure_time int,
+        viewability_universal_interaction int,
+        viewability_below_the_fold int,
+        viewability_did_hover int,
+        viewability_time_until_hover int,
+        viewability_did_scroll int,
+        viewability_time_until_scroll int
       )
     ) AS atom_ch_viewability
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
@@ -347,17 +347,17 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
         ${viewColumn} ${viewPgType},
         impressions int,
         clicks int,
-        revenue real,
-        revenue_in_currency real,
-        cost real,
-        cost_in_currency real
+        _revenue real,
+        _revenue_in_currency real,
+        _cost real,
+        _cost_in_currency real
       )
     ) AS atom_ch_${viewColumn}
   `, {
-    fdwConnection: ATOM_CONNECTION_NAME,
+    fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
   }),
-  fdwConnection: ATOM_CONNECTION_NAME,
+  fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
 module.exports = {

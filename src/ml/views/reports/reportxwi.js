@@ -6,14 +6,18 @@ const {
   CAT_DATE,
   CAT_JSON,
 } = require('../../type')
-const apiError = require('../../../util/api-error')
+const { geoTypes } = require('../../geo')
+const { apiError } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 
 
 const options = {
   columns: {
     time_zone: { category: CAT_STRING },
-    poi_id: { category: CAT_NUMERIC },
+    poi_id: {
+      category: CAT_NUMERIC,
+      geo_type: geoTypes.POI,
+    },
     name: { category: CAT_STRING },
     chain_id: { category: CAT_NUMERIC },
     type: { category: CAT_NUMERIC },
@@ -28,6 +32,14 @@ const options = {
     address_region: { category: CAT_STRING },
     address_postalcode: { category: CAT_STRING },
     address_country: { category: CAT_STRING },
+    geo_ca_fsa: {
+      category: CAT_STRING,
+      geo_type: geoTypes.CA_FSA,
+    },
+    geo_us_postalcode: {
+      category: CAT_NUMERIC,
+      // geo_type: 'us-postalcode',
+    },
 
     wi_factor: { category: CAT_NUMERIC },
 
@@ -55,10 +67,13 @@ const options = {
   },
 }
 
-const getReportLayers = (wl, cu, filter) => {
-  const whereFilters = {
-    ...filter,
-    'report.type': 4, // xwi
+const getReportLayers = (wl, cu, { layerID, reportID }) => {
+  const whereFilters = { 'report.type': 4 } // xwi
+  if (reportID) {
+    whereFilters['report_xwi.report_id'] = reportID
+  }
+  if (layerID) {
+    whereFilters.layer_id = layerID
   }
   const layerQuery = knex('layer')
   layerQuery.column(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
@@ -130,7 +145,7 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   })
 }
 
-const listView = async (access, viewID) => {
+const getView = async (access, viewID) => {
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
@@ -138,11 +153,19 @@ const listView = async (access, viewID) => {
   const [, layerIDStr, reportIDStr] = viewID.match(/^reportxwi_(\d+|\w+)_(\d+)$/) || []
   let layerIDs = []
 
+  // UNCOMMENT WHEN layer_id = 'any' is deprecated
+  // eslint-disable-next-line radix
+  // const layerID = parseInt(layerIDStr, 10)
+  // if (!layerID) {
+  //   throw apiError(`Invalid view: ${viewID}`, 403)
+  // }
+
   // eslint-disable-next-line radix
   const reportID = parseInt(reportIDStr, 10)
   if (!reportID) {
     throw apiError(`Invalid view: ${viewID}`, 403)
   }
+  // TO BE DEPRECATED - Filtering by report now available via `report` query param
   // optional layer_id param
   if (layerIDStr === 'any') {
     layerIDs = await getLayerIDs(whitelabel, customers, reportID)
@@ -155,7 +178,7 @@ const listView = async (access, viewID) => {
     const [reportLayer] = await getReportLayers(
       whitelabel,
       customers,
-      { layer_id, 'report_xwi.report_id': reportID },
+      { layerID: layer_id, reportID },
     )
     if (!reportLayer) {
       return null
@@ -175,13 +198,18 @@ const listView = async (access, viewID) => {
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
   }))
-  if (viewLayers.filter(v => v).length === 0) {
-    throw apiError('Access to layer(s) not allowed.', 403)
+
+  const views = viewLayers.filter(v => v)
+  if (views.length === 0) {
+    throw apiError('Access to layer(s) not allowed', 403)
   }
-  return viewLayers.filter(v => v)
+  if (layerIDStr === 'any') {
+    return views
+  }
+  return views[0]
 }
 
-const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }) => {
+const getQueryView = async (access, { layer_id, report_id }) => {
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
@@ -202,11 +230,11 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     access,
     filter: { layer_id, 'report_xwi.report_id': report_id },
   })
-  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+  const mlViewColumns = (viewMeta[0] || {}).columns
 
   // inject view
-  reqViews[viewID] = knex.raw(`
-    (SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
+  const mlView = knex.raw(`
+    SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
       poi.poi_id,
       poi.name,
       poi.chain_id,
@@ -222,6 +250,8 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
       poi.address_region,
       poi.address_postalcode,
       poi.address_country,
+      upper(substring(poi.address_postalcode from '^[A-Z]\\d[A-Z]')) AS geo_ca_fsa,
+      substring(poi.address_postalcode from '^\\d{5}$')::int AS geo_us_postalcode,
 
       layer.wi_factor,
 
@@ -262,12 +292,13 @@ const getView = async (access, reqViews, reqViewColumns, { layer_id, report_id }
     WHERE r.type = 4
       AND r.report_id = ?
       AND layer.layer_id = ?
-    ) as ${viewID}
   `, [report_id, layer_id])
+
+  return { viewID, mlView, mlViewColumns }
 }
 
 module.exports = {
   listViews,
-  listView,
   getView,
+  getQueryView,
 }

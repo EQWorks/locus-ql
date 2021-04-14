@@ -1,15 +1,14 @@
 /* eslint-disable no-use-before-define */
-
 const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
-const apiError = require('../../util/api-error')
+const { apiError } = require('../../util/api-error')
 const { knexWithCache, pgWithCache } = require('../cache')
 
 
 const CONNECTION_TABLE = 'ext_conn.connections'
 const SETS_TABLE = 'ext_conn.sets'
 
-const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
+const getQueryView = async (access, { conn_id }) => {
   const viewID = `ext_${conn_id}`
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
@@ -37,17 +36,18 @@ const getView = async (access, reqViews, reqViewColumns, { conn_id }) => {
   }
 
   // inject view columns
-  const viewMeta = await listViews({ access, filter: { conn_id } })
-  reqViewColumns[viewID] = (viewMeta[0] || {}).columns
+  const [viewMeta = {}] = await listViews({ access, filter: { conn_id } })
+  const mlViewColumns = viewMeta.columns
 
   // inject view
   const [{ dest: { table, schema } }] = connections
-  reqViews[viewID] = knex.raw(`
-    (
-      SELECT *
-      FROM ${schema}."${table}"
-    ) as ${viewID}
+  const mlView = knex.raw(`
+    SELECT *
+    FROM ${schema}."${table}"
   `)
+  const mlViewDependencies = [['ext', conn_id]]
+
+  return { viewID, mlView, mlViewColumns, mlViewDependencies }
 }
 
 const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) => {
@@ -106,7 +106,7 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
     }
   }
 
-  const { rows: connections } = await pgWithCache(
+  const connections = await pgWithCache(
     query.text,
     query.values,
     pool,
@@ -114,13 +114,6 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
   )
 
   return connections.map(({ id, set_id, type, name, columns }) => {
-    // TODO: remove 'columns' -> use listView() to get full view
-    // insert column type category
-    Object.entries(columns).forEach(([key, column]) => {
-      column.key = key
-      column.category = typeToCatMap.get(column.type)
-    })
-
     const view = {
       name,
       set_id,
@@ -132,13 +125,17 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
       },
     }
     if (inclMeta) {
+      Object.entries(columns).forEach(([key, column]) => {
+        column.key = key
+        column.category = typeToCatMap.get(column.type)
+      })
       view.columns = columns
     }
     return view
   })
 }
 
-const listView = async (access, viewID) => {
+const getView = async (access, viewID) => {
   const [, idStr] = viewID.match(/^ext_(\d+)$/) || []
   // eslint-disable-next-line radix
   const conn_id = parseInt(idStr, 10)
@@ -193,7 +190,7 @@ const listView = async (access, viewID) => {
     }
   }
 
-  const { rows: [connection] } = await pgWithCache(
+  const [connection] = await pgWithCache(
     query.text,
     query.values,
     pool,
@@ -224,7 +221,7 @@ const listView = async (access, viewID) => {
 }
 
 module.exports = {
-  getView,
+  getQueryView,
   listViews,
-  listView,
+  getView,
 }

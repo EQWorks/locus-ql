@@ -3,49 +3,205 @@
 
 const express = require('express')
 
-const { execute } = require('../../ml/engine')
-const { listViews, listView, loadViews } = require('../../ml/views')
-// const { getResFromS3Cache, putToS3Cache } = require('../../ml/cache')
+const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
+const {
+  queueExecution,
+  listExecutions,
+  loadExecution,
+  respondWithExecution,
+} = require('../../ml/executions')
+const {
+  listQueries,
+  postQuery,
+  putQuery,
+  deleteQuery,
+  loadQuery,
+  respondWithQuery,
+} = require('../../ml/queries')
+const { validateQuery } = require('../../ml/engine')
+const { accessHasSingleCustomer } = require('../../middleware/validation')
 
 
 const router = express.Router()
 
-const mlHandler = async (req, res, next) => {
-  const { query } = req.body
-  // eslint-disable-next-line radix
-  const cacheMaxAge = parseInt(req.query.cache, 10) || undefined
+/** -- LEGACY ROUTES -- */
 
-  try {
-    const result = await execute(req.mlViews, req.mlViewColumns, query, cacheMaxAge)
-    // const resultJSON = JSON.stringify(result)
-    // // store response in cache
-    // if (req.mlCacheKey) {
-    //   await putToS3Cache(req.mlCacheKey, resultJSON)
-    // }
-    console.log('finished')
-    return res.status(200).json(result)
-    // return res.status(200).type('application/json').send(resultJSON)
-  } catch (error) {
-    console.error(error)
-    return next(error)
-  }
-}
+// list out all accessible views with column data -> replaced by GET /views
+router.get('/', (req, _, next) => {
+  req.query.inclMeta = true
+  next()
+}, listViewsMW)
+// main query endpoint -> replaced by POST /executions
+router.post(
+  '/executions/',
+  loadQuery(false), // run saved query
+  loadExecution(false), // duplicate execution (superseded by saved query)
+  accessHasSingleCustomer,
+  loadQueryViews(),
+  validateQuery(),
+  queueExecution,
+)
 
-// list out all accessible views with column data - legacy (use /views instead)
-router.get('/', (req, res, next) => {
-  listViews(req, true).then(data => res.status(200).json(data)).catch(next)
-})
+/* -- VIEWS -- */
 
-// list out all accessible views without column nor meta data
-router.get('/views/', (req, res, next) => {
-  listViews(req).then(data => res.status(200).json(data)).catch(next)
-})
+/**
+ * @api {get} /views
+ * @apiName List all views
+ * @apiDescription Lists out all accessible views without column nor meta data
+ * @apiGroup ml
+ * @apiParam (query) {string} [viewCategory='ext'] View category
+ * @apiParam (query) {string} [subCategory] View subcategory
+ * @apiParam (query) {string} [inclMeta] '1' or 'true' to include columns and other meta data
+ * @apiParam (query) {number} [report] ID of the report of interest. Use
+ * alongside viewCategory='reports'
+ * in the response
+*/
+router.get('/views/', listViewsMW)
 
-// return view object for viewID
-router.get('/views/:viewID', listView)
+/**
+ * @api {get} /views/:viewID
+ * @apiName Get a specific view
+ * @apiDescription Returns view object based on id
+ * @apiGroup ml
+ * @apiParam (params) {string} viewID ID of the view to return
+*/
+router.get('/views/:viewID', getViewMW)
 
-// main query endpoint
-router.post('/', loadViews, mlHandler)
-// router.post('/', getResFromS3Cache, loadViews, mlHandler)
+
+/* -- QUERY EXECUTIONS -- */
+
+/**
+ * @api {get} /executions/:id
+ * @apiName Get a specific execution
+ * @apiDescription Returns an execution object based on id
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the execution to return
+ * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned
+*/
+router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
+
+/**
+ * @api {get} /executions
+ * @apiName List executions
+ * @apiDescription Get a list of executions according to the below filters
+ * @apiGroup ml
+ * @apiParam (query) {number} [query] ID of the saved query for which executions should be returned
+ * @apiParam (query) {number} [limit] Max # of executions to return
+ * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned (use along
+ * with limit=1)
+ * @apiParam (query) {string} [qhash] Query hash
+ * @apiParam (query) {string} [chash] Column hash
+ * @apiParam (query) {string} [status] Status of the executions
+ * @apiParam (query) {number} [start] Start Unix timestamp in seconds
+ * @apiParam (query) {number} [end] End Unix timestamp in seconds
+*/
+router.get('/executions/', listExecutions)
+
+/**
+ * @api {post} /executions
+ * @apiName Submit a query for execution
+ * @apiDescription Customer flags must be sent when none of `query` and `execution` have a
+ * value. Returns an object with the `executionID`
+ * @apiGroup ml
+ * @apiParam (query) {number} [query] ID of the saved query to execute
+ * @apiParam (query) {number} [execution] ID of a previous execution to use as template (i.e.
+ * rerun). Ignored when `query` has a value
+ * @apiParam (Req body) {Object} [query] Query markup. Need only be sent when none of `query`
+ * and `execution` have a value
+ * @apiParam (Req body) {Array} [views] Views the query depends on. Need only be sent when
+ * none of `query` and `execution` have a value
+*/
+router.post(
+  '/executions/',
+  loadQuery(false), // run saved query
+  loadExecution(false), // duplicate execution (superseded by saved query)
+  accessHasSingleCustomer,
+  loadQueryViews(),
+  validateQuery(),
+  queueExecution,
+)
+
+
+/* -- SAVED QUERIES -- */
+
+/**
+ * @api {get} /queries/:id
+ * @apiName Get a specific query
+ * @apiDescription Returns a query object based on id
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the query to return
+*/
+router.get('/queries/:id(\\d+)', loadQuery(true), respondWithQuery)
+
+
+/**
+ * @api {put} /queries/:id
+ * @apiName Update a specific query
+ * @apiDescription Updates query based on id. Req body keys not passed will have their value
+ * reset. Returns an object with the `queryID`
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the query to update
+ * @apiParam (Req body) {string} name Query name
+ * @apiParam (Req body) {string} [description] Query description
+ * @apiParam (Req body) {Object} query Query markup
+ * @apiParam (Req body) {Array} views Views the query depends on
+*/
+router.put(
+  '/queries/:id(\\d+)',
+  loadQuery(true),
+  loadQueryViews(true),
+  validateQuery(true),
+  putQuery,
+)
+
+/**
+ * @api {delete} /queries/:id
+ * @apiName Delete a specific query
+ * @apiDescription Sets a query as 'inactive' based on id. Returns an object with the `queryID`
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the query to delete
+*/
+router.delete(
+  '/queries/:id(\\d+)',
+  loadQuery(true),
+  deleteQuery,
+)
+
+/**
+ * @api {get} /queries
+ * @apiName List queries
+ * @apiDescription Get a list of queries according to the below filters
+ * @apiGroup ml
+ * @apiParam (query) {number} [execution] ID of the execution for which a query should be returned
+ * @apiParam (query) {string} [qhash] Query hash
+ * @apiParam (query) {string} [chash] Column hash
+*/
+router.get('/queries/', listQueries)
+
+/**
+ * @api {post} /queries
+ * @apiName Create a saved query
+ * @apiDescription Customer flags must be sent when none of `query` and `execution` have a
+ * value. Returns an object with the `queryID`
+ * @apiGroup ml
+ * @apiParam (query) {number} [query] ID of the saved query to use as template (i.e duplicate)
+ * @apiParam (query) {number} [execution] ID of a previous execution to use as model. Ignored
+ * when `query` has a value
+ * @apiParam (Req body) {string} name Query name
+ * @apiParam (Req body) {string} [description] Query description
+ * @apiParam (Req body) {Object} query Query markup. Need only be sent when none of `query` and
+ * `execution` have a value
+ * @apiParam (Req body) {Array} views Views the query depends on. Need only be sent when none
+ * of `query` and `execution` have a value
+*/
+router.post(
+  '/queries/',
+  loadQuery(false), // use saved query as template
+  loadExecution(false), // use execution as template (superseded by saved query)
+  accessHasSingleCustomer,
+  loadQueryViews(),
+  validateQuery(),
+  postQuery,
+)
 
 module.exports = router
