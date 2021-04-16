@@ -543,6 +543,45 @@ module.exports = {
         },
       ],
     },
+    geo_cohort_id: {
+      category: CAT_NUMERIC,
+      pgType: 'int',
+      expression: 'geo_cohort_id',
+      inFastViews: [pgViews.LOCUS_GEO_COHORTS, pgViews.ATOM_CH_GEOCOHORT_ID_ITEM],
+    },
+    geo_cohort_name: {
+      category: CAT_STRING,
+      dependsOn: ['geo_cohort_id'],
+      viewExpression: 'locus_geo_cohorts.geo_cohort_name',
+      viewJoins: [
+        {
+          type: 'left',
+          view: pgViews.LOCUS_GEO_COHORTS,
+          condition() {
+            this.on('log.geo_cohort_id', '=', 'locus_geo_cohorts.geo_cohort_id')
+          },
+        },
+      ],
+    },
+    _geo_cohort_item: {
+      category: CAT_STRING,
+      access: ACCESS_PRIVATE,
+      pgType: 'varchar(10)', // to support US DDDDD-DDDD
+      expression: 'geo_cohort_item',
+      inFastViews: [pgViews.LOCUS_GEO_COHORT_ITEMS, pgViews.ATOM_CH_GEOCOHORT_ID_ITEM],
+    },
+    geo_cohort_fsa: {
+      category: CAT_STRING,
+      dependsOn: ['_geo_cohort_item'],
+      geo_type: geoTypes.CA_FSA,
+      viewExpression: "substring(log._geo_cohort_item from '^[A-Z]\\d[A-Z]')",
+    },
+    geo_cohort_postalcode: {
+      category: CAT_STRING,
+      dependsOn: ['_geo_cohort_item'],
+      geo_type: geoTypes.CA_POSTALCODE,
+      viewExpression: "substring(log._geo_cohort_item from '^[A-Z]\\d[A-Z]\\d[A-Z]\\d')",
+    },
     iab_cat: {
       category: CAT_STRING,
       pgType: 'varchar(10)',

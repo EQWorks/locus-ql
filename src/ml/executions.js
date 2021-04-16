@@ -373,7 +373,7 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
       hideInternal,
     })
     if (!execution) {
-      throw apiError('Invalid query ID', 404)
+      throw apiError('Invalid execution ID', 404)
     }
     // attach to req
     req.mlExecution = execution

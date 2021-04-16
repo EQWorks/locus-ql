@@ -103,6 +103,36 @@ const getPOIListView = agencyID => ({
   `, { agencyID }),
 })
 
+
+const getGeoCohortView = agencyID => ({
+  view: knex.raw(`
+    (
+      SELECT
+        id AS geo_cohort_id,
+        name AS geo_cohort_name
+      FROM public.geo_cohort
+      WHERE
+        enabled
+        ${agencyID ? 'AND cu = :agencyID' : ''}
+    ) AS locus_geo_cohorts
+  `, { agencyID }),
+})
+
+const getGeoCohortItemView = agencyID => ({
+  view: knex.raw(`
+    (
+      SELECT
+        gcl.geo_cohort_id,
+        gcl.code AS geo_cohort_item
+      FROM public.geo_cohort_list gcl
+      JOIN public.geo_cohort gc ON gc.id = gcl.geo_cohort_id
+      WHERE
+        gc.enabled
+        ${agencyID ? 'AND gc.cu = :agencyID' : ''}
+    ) AS locus_geo_cohort_items
+  `, { agencyID }),
+})
+
 module.exports = {
   getCampView,
   getBeaconView,
@@ -110,4 +140,6 @@ module.exports = {
   getPOIView,
   getPOIListView,
   getSegmentView,
+  getGeoCohortView,
+  getGeoCohortItemView,
 }
