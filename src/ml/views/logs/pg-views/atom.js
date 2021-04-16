@@ -283,7 +283,8 @@ const getChViewabilityView = (_, advertiserID) => ({
   fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
-const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
+// features = [feature, viewColumn, viewPgType][]
+const makeChView = (features, advertiserID) => ({
   view: knex.raw(`
     (
       SELECT * FROM dblink(:fdwConnection, '
@@ -295,14 +296,14 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
               mb.timezone,
               timezone(''UTC'', ch.date + ch.hour * INTERVAL ''1 hour'')
             )::date AS date,
-            ch."${chFeature}",
+            ${features.map(([ft]) => `ch."${ft}"`).join(', ')},
             ch.impressions,
             ch.clicks,
             ch.revenue,
             ch.revenueincurrency,
             ch.cost,
             ch.costincurrency
-          FROM public.camphistory_${chFeature} AS ch
+          FROM public.camphistory_${features.map(([ft]) => ft).join('_')} AS ch
           JOIN public.campaigns AS mb ON mb.campcode = ch.campcode
           WHERE
             ch.date >= (NOW() - ${PG_CACHE_DAYS} * INTERVAL ''1 day'')::date
@@ -314,14 +315,14 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
             mb.advertiserid,
             ch_tz.campcode,
             ch_tz.date,
-            ch_tz."${chFeature}",
+            ${features.map(([ft]) => `ch_tz."${ft}"`).join(', ')},
             ch_tz.impressions,
             ch_tz.clicks,
             ch_tz.revenue,
             ch_tz.revenueincurrency,
             ch_tz.cost,
             ch_tz.costincurrency
-          FROM public.ch_tz_${chFeature} AS ch_tz
+          FROM public.ch_tz_${features.map(([ft]) => ft).join('_')} AS ch_tz
           JOIN public.campaigns AS mb ON mb.campcode = ch_tz.campcode
           WHERE
             ch_tz.date >= (NOW() - ${PG_CACHE_DAYS} * INTERVAL ''1 day'')::date
@@ -331,7 +332,7 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
           advertiserid,
           campcode,
           date,
-          "${chFeature}",
+          ${features.map(([ft]) => `"${ft}"`).join(', ')},
           SUM(COALESCE(impressions, 0))::int,
           SUM(COALESCE(clicks, 0))::int,
           SUM(COALESCE(revenue, 0)),
@@ -344,7 +345,7 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
         customer_id int,
         camp_code int,
         time_tz timestamptz,
-        ${viewColumn} ${viewPgType},
+        ${features.map(([, col, type]) => `${col} ${type}`).join(',')},
         impressions int,
         clicks int,
         _revenue real,
@@ -352,7 +353,7 @@ const makeChView = (chFeature, viewColumn, viewPgType, advertiserID) => ({
         _cost real,
         _cost_in_currency real
       )
-    ) AS atom_ch_${viewColumn}
+    ) AS atom_ch_${features.map(([, col]) => col).join('_')}
   `, {
     fdwConnection: ATOM_READ_FDW_CONNECTION,
     advertiserID,
