@@ -123,7 +123,7 @@ const getGeoCohortItemView = agencyID => ({
     (
       SELECT
         gcl.geo_cohort_id,
-        gcl.code AS geo_cohort_item
+        gcl.code AS _geo_cohort_item
       FROM public.geo_cohort_list gcl
       JOIN public.geo_cohort gc ON gc.id = gcl.geo_cohort_id
       WHERE
