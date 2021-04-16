@@ -91,7 +91,7 @@ const pgViewGetters = {
   ], ad),
   [pgViews.ATOM_CH_GEOCOHORT_ID_ITEM]: (_, ad) => makeChView([
     ['geocohortlistid', 'geo_cohort_id', 'int'],
-    ['geocohortitem', 'geo_cohort_item', 'text'],
+    ['geocohortitem', '_geo_cohort_item', 'text'],
   ], ad),
   // insert here non-standard views (viewability + vast)
   [pgViews.ATOM_CH_VIEWABILITY]: getChViewabilityView,
