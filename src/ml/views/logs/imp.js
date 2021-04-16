@@ -65,6 +65,7 @@ const allStandardChViews = [
   pgViews.ATOM_CH_IAB_CAT,
   pgViews.ATOM_CH_CITY,
   pgViews.ATOM_CH_DOMAIN_ID,
+  pgViews.ATOM_CH_GEOCOHORT_ID_ITEM,
 ]
 
 module.exports = {
