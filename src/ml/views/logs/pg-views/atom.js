@@ -340,7 +340,7 @@ const makeChView = (features, advertiserID) => ({
           SUM(COALESCE(cost, 0)),
           SUM(COALESCE(costincurrency, 0))
         FROM hourly
-        GROUP BY 1, 2, 3, 4
+        GROUP BY 1, 2, 3, ${features.map((_, i) => i + 4).join(', ')}
       ') AS t(
         customer_id int,
         camp_code int,
