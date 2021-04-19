@@ -163,7 +163,11 @@ class Expression {
     }
 
     if (type === 'array') {
-      return exp.values
+      const values = exp.values.reduce((acc, val, i) => {
+        acc[`value_${i}`] = val
+        return acc
+      }, {})
+      return knex.raw(`(${exp.values.map((_, i) => `:value_${i}`).join(', ')})`, values)
     }
 
     if (type === 'function') {
@@ -214,8 +218,14 @@ class Expression {
       // values: [defaultValue,[expression1, result1], [expression2, result2]]
       const { values: [defaultResult, ...statements] } = exp
       // eslint-disable-next-line max-len
-      const whenStatements = statements.map(statement => `WHEN ${this.parseExpression(statement[0])} THEN ${statement[1]} `)
-      return knex.raw(`CASE ${whenStatements.join(' ')} ELSE ${defaultResult} END`)
+      const whenStatements = statements.map(statement => `
+        WHEN ${this.parseExpression(statement[0])}
+        THEN ${this.parseExpression(statement[1])}
+      `)
+      return knex.raw(`
+        CASE ${whenStatements.join(' ')}
+        ELSE ${this.parseExpression(defaultResult)} END
+      `)
     }
 
     if (['AND', 'OR'].includes(type)) {
@@ -231,7 +241,7 @@ class Expression {
 
     if (type === TYPE_STRING) {
       // check if column
-      return this.constructColumn(expression) || expression
+      return this.constructColumn(expression) || knex.raw(`'${expression}'`)
     }
 
     if (type === TYPE_NUMBER) {
