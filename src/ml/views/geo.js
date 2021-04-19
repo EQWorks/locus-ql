@@ -4,6 +4,7 @@ const { knex } = require('../../util/db')
 const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
 const { geoMapping } = require('../geo')
+const { viewTypes, viewCategories } = require('./taxonomies')
 
 
 const GEO_TABLES = {
@@ -28,7 +29,7 @@ const GEO_TABLES = {
 
 // public available
 const getQueryView = async ({ whitelabel, customers }, { tableKey }) => {
-  const viewID = `geo_${tableKey}`
+  const viewID = `${viewTypes.GEO}_${tableKey}`
   const { schema, table, whitelabelColumn, customerColumn, idColumn } = GEO_TABLES[tableKey]
 
   if (!schema || !table) {
@@ -77,8 +78,9 @@ const listViews = async ({ filter, inclMeta = true }) => {
     const view = {
       name: tableKey,
       view: {
-        type: 'geo',
-        id: `geo_${tableKey}`,
+        id: `${viewTypes.GEO}_${tableKey}`,
+        type: viewTypes.GEO,
+        category: viewCategories.GEO,
         tableKey,
       },
     }
@@ -126,8 +128,9 @@ const getView = async (_, viewID) => {
   const view = {
     name: tableKey,
     view: {
-      type: 'geo',
-      id: `geo_${tableKey}`,
+      id: `${viewTypes.GEO}_${tableKey}`,
+      type: viewTypes.GEO,
+      category: viewCategories.GEO,
       tableKey,
     },
   }

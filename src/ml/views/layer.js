@@ -5,6 +5,7 @@ const { CAT_STRING, CAT_NUMERIC } = require('../type')
 const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
 const { geoMapping } = require('../geo')
+const { viewTypes, viewCategories } = require('./taxonomies')
 
 
 const options = {
@@ -18,13 +19,27 @@ const options = {
   },
 }
 
-const getKnexLayerQuery = async (access, filter = {}) => {
+const layerTypeToViewCategory = {
+  18: viewCategories.LAYER_DEMOGRAPHIC,
+  19: viewCategories.LAYER_DEMOGRAPHIC,
+  20: viewCategories.LAYER_PROPENSITY,
+}
+const viewCategoryTolayerType = {
+  [viewCategories.LAYER_DEMOGRAPHIC]: 18,
+  [viewCategories.LAYER_DEMOGRAPHIC]: 19,
+  [viewCategories.LAYER_PROPENSITY]: 20,
+}
+
+const getKnexLayerQuery = async (access, { categories, ...filter } = {}) => {
   const { whitelabel, customers, email = '' } = access
   // for all layers that user has access to
   // get all categories and expand it out as a single row
   // each view should be a layer + category
 
-  const layerTypes = [18, 19, 20] // demo, prop and persona
+  // const layerTypes = [18, 19, 20] // demo, prop and persona
+  const layerTypes = categories
+    ? categories.map(cat => viewCategoryTolayerType[cat])
+    : [18, 19, 20] // demo, prop and persona
 
   const layerQuery = knex('layer')
   layerQuery.column([
@@ -90,7 +105,7 @@ const getKnexLayerQuery = async (access, filter = {}) => {
 }
 
 const getQueryView = async (access, { layer_id, categoryKey }) => {
-  const viewID = `layer_${layer_id}_${categoryKey}`
+  const viewID = `${viewTypes.LAYER}_${layer_id}_${categoryKey}`
   const [layer] = await getKnexLayerQuery(access, { layer_id })
   if (!layer) {
     throw apiError('Access to layer not allowed', 403)
@@ -155,8 +170,9 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
           // required
           name: `${name} // ${catName}`,
           view: {
-            type: 'layer',
-            id: `layer_${layer_id}_${categoryKey}`,
+            id: `${viewTypes.LAYER}_${layer_id}_${categoryKey}`,
+            type: viewTypes.LAYER,
+            category: layerTypeToViewCategory[layer_type_id],
             layer_id,
             layer_type_id,
             resolution,
@@ -212,8 +228,9 @@ const getView = async (access, viewID) => {
     // required
     name: `${name} // ${catName}`,
     view: {
-      type: 'layer',
-      id: `layer_${layer_id}_${categoryKey}`,
+      id: `${viewTypes.LAYER}_${layer_id}_${categoryKey}`,
+      type: viewTypes.LAYER,
+      category: layerTypeToViewCategory[layer_type_id],
       layer_id,
       layer_type_id,
       resolution,

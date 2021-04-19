@@ -2,11 +2,13 @@ const { CAT_STRING, CAT_NUMERIC, CAT_JSON, CAT_DATE } = require('../../type')
 const { geoTypes } = require('../../geo')
 const { CU_AGENCY, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
+const { viewCategories } = require('../taxonomies')
 
 
 module.exports = {
   name: 'LOCUS Beacons',
   table: 'fusion_logs.beacon_logs',
+  category: viewCategories.LOCUS_BEACONS,
   owner: CU_AGENCY,
   columns: {
     camp_code: {

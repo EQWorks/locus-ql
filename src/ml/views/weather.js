@@ -8,6 +8,7 @@ const {
 } = require('../type')
 const { geoTypes } = require('../geo')
 const { apiError } = require('../../util/api-error')
+const { viewTypes, viewCategories } = require('./taxonomies')
 
 
 const FREQ_DAILY = 'daily'
@@ -17,16 +18,18 @@ const VIEWS = {
   weather_daily: {
     name: 'weather daily',
     view: {
-      type: 'weather',
-      id: 'weather_daily',
+      id: `${viewTypes.WEATHER}_daily`,
+      type: viewTypes.WEATHER,
+      category: viewCategories.WEATHER,
       frequency: FREQ_DAILY,
     },
   },
   weather_hourly: {
     name: 'weather hourly',
     view: {
-      type: 'weather',
-      id: 'weather_hourly',
+      id: `${viewTypes.WEATHER}_hourly`,
+      type: viewTypes.WEATHER,
+      category: viewCategories.WEATHER,
       frequency: FREQ_HOURLY,
     },
   },
@@ -40,7 +43,7 @@ const columns = {
 }
 
 const getQueryView = async (_, { frequency }) => {
-  const viewID = `weather_${frequency}`
+  const viewID = `${viewTypes.WEATHER}_${frequency}`
 
   if (![FREQ_DAILY, FREQ_HOURLY].includes(frequency)) {
     throw apiError(`Invalid frequency: ${frequency}`, 400)

@@ -16,6 +16,7 @@ const {
   ML_SCHEMA,
 } = require('./constants')
 const { getPgView } = require('./pg-views')
+const { viewTypes } = require('../taxonomies')
 
 
 const logTypes = {
@@ -451,17 +452,21 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
   }
 }
 
-const listViews = async ({ access, inclMeta = true }) => {
+const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   const { whitelabel, customers, prefix } = access
   const agencies = await getCustomers(whitelabel, customers, CU_AGENCY)
   return agencies.reduce(
     (views, { customerID, customerName }) => views.concat(
-      Object.entries(logTypes).map(([type, { name }]) => {
+      Object.entries(logTypes).reduce((views, [type, { name, category }]) => {
+        if (filter.categories && !filter.categories.includes(category)) {
+          return views
+        }
         const view = {
           name: `${name} - ${customerName} (${customerID})`,
           view: {
-            type: 'logs',
-            id: `logs_${type}_${customerID}`,
+            id: `${viewTypes.LOGS}_${type}_${customerID}`,
+            type: viewTypes.LOGS,
+            category,
             logType: type,
             agencyID: customerID,
           },
@@ -469,8 +474,9 @@ const listViews = async ({ access, inclMeta = true }) => {
         if (inclMeta) {
           view.columns = getMlViewColumns(type, accessMap[prefix])
         }
-        return view
-      }),
+        views.push(view)
+        return views
+      }, []),
     ),
     [],
   )
@@ -496,11 +502,14 @@ const getView = async (access, viewID) => {
     throw apiError('Invalid access permissions', 403)
   }
 
+  const { name, category } = logTypes[logType]
+
   return {
-    name: `${logTypes[logType].name} - ${customerName} (${customerID})`,
+    name: `${name} - ${customerName} (${customerID})`,
     view: {
-      type: 'logs',
-      id: `logs_${logType}_${customerID}`,
+      id: `${viewTypes.LOGS}_${logType}_${customerID}`,
+      type: viewTypes.LOGS,
+      category,
       logType,
       agencyID,
     },

@@ -10,6 +10,7 @@ const {
 const { geoTypes } = require('../../geo')
 const { apiError } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
+const { viewTypes, viewCategories } = require('../taxonomies')
 
 
 const options = {
@@ -192,8 +193,9 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
     const view = {
       name,
       view: {
-        type: 'reportvwi',
-        id: `reportvwi_${layer_id}_${report_id}`,
+        id: `${viewTypes.REPORT_VWI}_${layer_id}_${report_id}`,
+        type: viewTypes.REPORT_VWI,
+        category: viewCategories.REPORT_VWI,
         report_id,
         layer_id,
       },
@@ -262,8 +264,9 @@ const getView = async (access, viewID) => {
     return {
       name,
       view: {
-        type: 'reportvwi',
-        id: `reportvwi_${layer_id}_${reportID}`,
+        id: `${viewTypes.REPORT_VWI}_${layer_id}_${reportID}`,
+        type: viewTypes.REPORT_VWI,
+        category: viewCategories.REPORT_VWI,
         report_id: reportID,
         layer_id,
       },
@@ -291,7 +294,7 @@ const getQueryView = async (access, { layer_id, report_id }) => {
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
   }
-  const viewID = `reportvwi_${layer_id}_${report_id}`
+  const viewID = `${viewTypes.REPORT_VWI}_${layer_id}_${report_id}`
   const [layer] = await listLayers(
     whitelabel,
     customers,

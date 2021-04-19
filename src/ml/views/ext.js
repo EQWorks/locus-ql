@@ -3,13 +3,14 @@ const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
 const { apiError } = require('../../util/api-error')
 const { knexWithCache, pgWithCache } = require('../cache')
+const { viewTypes, viewCategories } = require('./taxonomies')
 
 
 const CONNECTION_TABLE = 'ext_conn.connections'
 const SETS_TABLE = 'ext_conn.sets'
 
 const getQueryView = async (access, { conn_id }) => {
-  const viewID = `ext_${conn_id}`
+  const viewID = `${viewTypes.EXT}_${conn_id}`
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
@@ -119,8 +120,9 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
       set_id,
       type,
       view: {
-        type: 'ext',
-        id: `ext_${id}`,
+        id: `${viewTypes.EXT}_${id}`,
+        type: viewTypes.EXT,
+        category: viewCategories.EXT,
         conn_id: id,
       },
     }
@@ -212,8 +214,9 @@ const getView = async (access, viewID) => {
     set_id,
     type,
     view: {
-      type: 'ext',
-      id: `ext_${conn_id}`,
+      id: `${viewTypes.EXT}_${conn_id}`,
+      type: viewTypes.EXT,
+      category: viewCategories.EXT,
       conn_id,
     },
     columns,

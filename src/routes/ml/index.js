@@ -4,6 +4,7 @@
 const express = require('express')
 
 const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
+const { getViewCategoryTreeMW } = require('../../ml/views/taxonomies')
 const {
   queueExecution,
   listExecutions,
@@ -43,6 +44,16 @@ router.post(
   queueExecution,
 )
 
+/* -- TAXONOMIES -- */
+/**
+ * @api {get} /taxonomies/categories
+ * @apiName Get view category tree
+ * @apiDescription Returns all categories falling under the supplied root as a tree
+ * @apiGroup ml
+ * @apiParam (query) {string} [root='root'] View category tree root
+*/
+router.get('/taxonomies/categories', getViewCategoryTreeMW)
+
 /* -- VIEWS -- */
 
 /**
@@ -50,12 +61,14 @@ router.post(
  * @apiName List all views
  * @apiDescription Lists out all accessible views without column nor meta data
  * @apiGroup ml
- * @apiParam (query) {string} [viewCategory='ext'] View category
- * @apiParam (query) {string} [subCategory] View subcategory
+ * @apiParam (query) {string} [category] View category
+ * @apiParam (query) {string} [type] View type
  * @apiParam (query) {string} [inclMeta] '1' or 'true' to include columns and other meta data
- * @apiParam (query) {number} [report] ID of the report of interest. Use
- * alongside viewCategory='reports'
  * in the response
+ * @apiParam (query) {number} [report] ID of the report of interest. Use with report type
+ * and/or category
+ * @apiParam (query) {string} [viewCategory] DEPRECATED - View category
+ * @apiParam (query) {string} [subCategory] DEPRECATED - View subcategory
 */
 router.get('/views/', listViewsMW)
 
