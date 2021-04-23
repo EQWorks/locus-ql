@@ -108,7 +108,7 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   const { table, slug, resolution } = category
   const geo = geoMapping[`ca-${resolution}`]
   // add schema if missing
-  const schema = (table || slug).indexOf('.') === -1 ? 'static_layers.' : ''
+  const schema = (table || slug).indexOf('.') === -1 ? 'public.' : ''
 
   const mlView = mapKnex.raw(`
     SELECT * FROM dblink(:fdwConnection, '
