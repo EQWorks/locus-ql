@@ -1,7 +1,8 @@
+/* eslint-disable indent */
 /* eslint-disable no-loop-func */
 /* eslint-disable no-plusplus */
 /* eslint-disable no-continue */
-const { knex, MAPS_FDW_CONNECTION } = require('../util/db')
+const { knex } = require('../util/db')
 const { apiError } = require('../util/api-error')
 const { CAT_STRING, CAT_NUMERIC } = require('./type')
 const { Expression } = require('./expressions')
@@ -248,7 +249,6 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
     const geoA = geoMapping[geoTypeA]
     const geoB = geoMapping[geoTypeB]
 
-    // TODO: normalize filters (e.g. string types such as city names -> case insensitive)
     const idFilterA = Object.values(geos[geoTypeA]).reduce((filter, col) => {
       filter.push(`SELECT ${
         geoA.idType === CAT_STRING ? `upper("${col.column}")` : `"${col.column}"`
@@ -273,42 +273,32 @@ const insertGeo = ({ whitelabel, customers }, views, viewColumns, fdwConnections
       intersectionSource = { ...geoA, geoType: geoTypeA, idFilter: idFilterA }
     }
     if (intersectionQuery) {
-      const queryId = intersectionQuery.idType === CAT_STRING ? "'''' || f.id || ''''" : 'f.id'
-      const sourceId = intersectionSource.idType === CAT_STRING ? "'''' || f.id || ''''" : 'f.id'
       const queryIdFilter = `
-        ${intersectionQuery.idType === CAT_STRING ? 'upper(query_geo_id)' : 'query_geo_id'} IN ('
-        || (
-          SELECT string_agg(${queryId}, ', ')
-          FROM (${intersectionQuery.idFilter.join(' UNION ')}) f
-        ) || ')
+        ${intersectionQuery.idType === CAT_STRING ? 'upper(query_geo_id)' : 'query_geo_id'} IN (
+          SELECT f.id FROM (${intersectionQuery.idFilter.join(' UNION ')}) f
+        )
       `
       const sourceIdFilter = `
-        ${intersectionSource.idType === CAT_STRING ? 'upper(source_geo_id)' : 'source_geo_id'} IN ('
-        || (
-          SELECT string_agg(${sourceId}, ', ')
-          FROM (${intersectionSource.idFilter.join(' UNION ')}) f
-        ) || ')
-      `
-      const queryIdType = intersectionQuery.idType === CAT_NUMERIC ? 'real' : 'text'
-      const sourceIdType = intersectionSource.idType === CAT_NUMERIC ? 'real' : 'text'
-      viewsWithGeo[`__geo__${key}`] = knex.raw(`
-        SELECT * FROM dblink(:fdwConnection, '
-          SELECT
-            ${intersectionQuery.idType === CAT_STRING ? 'upper(query_geo_id)' : 'query_geo_id'},
-            ${intersectionSource.idType === CAT_STRING ? 'upper(source_geo_id)' : 'source_geo_id'}
-          FROM canada_geo.intersection
-          WHERE
-            query_geo_type = ''${intersectionQuery.intersectionQueryType}''
-            AND source_geo_type = ''${intersectionSource.intersectionSourceType}''
-            AND ${queryIdFilter}
-            AND ${sourceIdFilter}
-        ') AS t(
-          "${intersectionQuery.geoType}" ${queryIdType},
-          "${intersectionSource.geoType}" ${sourceIdType}
+        ${intersectionSource.idType === CAT_STRING ? 'upper(source_geo_id)' : 'source_geo_id'} IN (
+          SELECT f.id FROM (${intersectionSource.idFilter.join(' UNION ')}) f
         )
-      `, { fdwConnection: MAPS_FDW_CONNECTION })
+      `
+      viewsWithGeo[`__geo__${key}`] = knex.raw(`
+        SELECT
+          ${
+            intersectionQuery.idType === CAT_STRING ? 'upper(query_geo_id)' : 'query_geo_id'
+          } AS "${intersectionQuery.geoType}",
+          ${
+            intersectionSource.idType === CAT_STRING ? 'upper(source_geo_id)' : 'source_geo_id'
+          } AS "${intersectionSource.geoType}"
+        FROM canada_geo.intersection
+        WHERE
+          query_geo_type = '${intersectionQuery.intersectionQueryType}'
+          AND source_geo_type = '${intersectionSource.intersectionSourceType}'
+          AND ${queryIdFilter}
+          AND ${sourceIdFilter}
+      `)
 
-      fdwConnectionsWithGeo[`__geo__${key}`] = [MAPS_FDW_CONNECTION]
       return
     }
 
