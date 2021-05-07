@@ -113,7 +113,7 @@ const getGeoCohortView = agencyID => ({
       FROM public.geo_cohort
       WHERE
         enabled
-        ${agencyID ? 'AND cu = :agencyID' : ''}
+        ${agencyID ? 'AND (cu = :agencyID OR (wl IS NULL AND cu IS NULL))' : ''}
     ) AS locus_geo_cohorts
   `, { agencyID }),
 })
@@ -128,7 +128,7 @@ const getGeoCohortItemView = agencyID => ({
       JOIN public.geo_cohort gc ON gc.id = gcl.geo_cohort_id
       WHERE
         gc.enabled
-        ${agencyID ? 'AND gc.cu = :agencyID' : ''}
+        ${agencyID ? 'AND (gc.cu = :agencyID OR (gc.wl IS NULL AND gc.cu IS NULL))' : ''}
     ) AS locus_geo_cohort_items
   `, { agencyID }),
 })
