@@ -130,26 +130,41 @@ class Expression {
   extractColumn(expression) {
     let column
     let view
+    let alias
     if (typeof expression === 'string' && expression.indexOf('.') !== -1) {
       [column, view] = expression.split('.', 2)
     } else if (typeof expression !== 'object' || expression === null) {
       return
     } else if (expression.type === 'column') {
-      ({ column, view } = expression)
-    } else if (Array.isArray(expression) && expression.length === 2) {
-      [column, view] = expression
+      ({ column, view, as: alias } = expression)
+    } else if (Array.isArray(expression) && [2, 3].includes(expression.length)) {
+      [column, view, alias] = expression
+    }
+
+    if (alias === null) {
+      alias = undefined
     }
     // make sure it's a valid column or wildcard
-    if (!(view in this.viewColumns && (column in this.viewColumns[view] || column === '*'))) {
+    if (!(
+      view in this.viewColumns
+      && (
+        (column in this.viewColumns[view] && ['undefined', 'string'].includes(typeof alias))
+        || (column === '*' && alias === undefined)
+      )
+    )) {
       return
     }
-    return { view, column }
+    return { view, column, alias }
   }
 
   constructColumn(expression) {
     const col = this.extractColumn(expression)
     if (col) {
-      return knex.raw(`"${col.view}".${col.column === '*' ? '*' : `"${col.column}"`}`)
+      return knex.raw(`"${col.view}".${
+        col.column === '*'
+          ? '*'
+          : `"${col.column}"${col.alias ? ` AS "${col.alias}"` : ''}`
+      }`)
     }
   }
 
