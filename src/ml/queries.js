@@ -272,7 +272,7 @@ const postQuery = async (req, res, next) => {
       )
       // if execution supplied, attach it to the created query if not already attached to a query
       if (executionID && !executionQueryID && !isOrphaned) {
-        await updateExecution(executionID, { queryID }, trx)
+        await updateExecution(executionID, { queryID }, { knexClient: trx })
       }
       return queryID
     })

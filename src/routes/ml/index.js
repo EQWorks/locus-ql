@@ -9,6 +9,7 @@ const {
   listExecutions,
   loadExecution,
   respondWithExecution,
+  cancelExecution,
 } = require('../../ml/executions')
 const {
   listQueries,
@@ -79,6 +80,15 @@ router.get('/views/:viewID', getViewMW)
  * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned
 */
 router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
+
+/**
+ * @api {put} /executions/:id
+ * @apiName Cancel a specific execution
+ * @apiDescription Abort execution
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the execution to return
+*/
+router.put('/executions/:id(\\d+)', loadExecution(true), cancelExecution)
 
 /**
  * @api {get} /executions
