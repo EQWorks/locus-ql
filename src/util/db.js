@@ -1,4 +1,4 @@
-const { Pool, types } = require('pg')
+const { Client, Pool, types } = require('pg')
 const Knex = require('knex')
 
 const config = require('../../config')
@@ -32,6 +32,29 @@ const mapKnex = Knex({
 types.setTypeParser(types.builtins.NUMERIC, val => Number(val))
 // treat TS without TZ as UTC
 types.setTypeParser(types.builtins.TIMESTAMP, val => new Date(`${val}Z`))
+
+// instantiates a standalone PG client using one of the pool's config
+const newPGClientFromPoolConfig = (pgPool = pool, options = {}) => {
+  const pgOptions = {}
+  switch (pgPool) {
+    case pool:
+      Object.assign(pgOptions, config.pg)
+      break
+    case mapPool:
+      Object.assign(pgOptions, config.mappingPg)
+      break
+    case mlPool:
+      Object.assign(pgOptions, config.pgML)
+      break
+    case atomPool:
+      Object.assign(pgOptions, config.pgAtom)
+      break
+    default:
+      throw new Error('Unknown PG pool')
+  }
+  Object.assign(pgOptions, options)
+  return new Client(pgOptions)
+}
 
 // dblink connect functions (foreign-data wrapper)
 // https://www.postgresql.org/docs/9.6/dblink.html
@@ -130,6 +153,7 @@ module.exports = {
   knex,
   mlKnex,
   mapKnex,
+  newPGClientFromPoolConfig,
   fdwConnect,
   fdwDisconnect,
   ATOM_READ_FDW_CONNECTION,

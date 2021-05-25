@@ -1,4 +1,4 @@
-const { knex, mlPool } = require('../util/db')
+const { knex, mlPool, newPGClientFromPoolConfig } = require('../util/db')
 const { apiError, APIError } = require('../util/api-error')
 const { getView, getQueryViews } = require('./views')
 const { insertGeo } = require('./geo')
@@ -13,6 +13,7 @@ const STATUS_SOURCING = 'SOURCING'
 const STATUS_RUNNING = 'RUNNING'
 const STATUS_RETRYING = 'RETRYING'
 const STATUS_SUCCEEDED = 'SUCCEEDED'
+const STATUS_CANCELLED = 'CANCELLED'
 const STATUS_FAILED = 'FAILED'
 
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
@@ -182,10 +183,16 @@ const createExecution = async (
  * @param {Object} updates
  * @param {string} [updates.status] New status
  * @param {Object} [updates.queryID] New query ID to attach the execution to
- * @param {Knex} [knexClient=knex] Knex client to use to run the SQL query. Defaults to the
+ * @param {Object} options
+ * @param {string[]} [options.optOutStatuses] Execution statuses for which to skip the update
+ * @param {Knex} [options.knexClient=knex] Knex client to use to run the SQL query. Defaults to the
  * global client
  */
-const updateExecution = async (executionID, { status, queryID }, knexClient = knex) => {
+const updateExecution = async (
+  executionID,
+  { status, queryID },
+  { optOutStatuses, knexClient = knex } = {},
+) => {
   const columns = []
   const values = []
   const expressions = []
@@ -202,11 +209,14 @@ const updateExecution = async (executionID, { status, queryID }, knexClient = kn
     // nothing to update
     return
   }
+  // values.push(executionID)
   await knexClient.raw(`
     UPDATE ${ML_SCHEMA}.executions
     SET ${columns.map(col => `${col} = ?`).concat(expressions).join(', ')}
-    WHERE execution_id = ?
-  `, [...values, executionID])
+    WHERE
+      execution_id = ?
+      ${optOutStatuses ? `AND NOT (status = ANY(?::${ML_SCHEMA}.ml_status[]))` : ''}
+  `, [...values, executionID, optOutStatuses])
 }
 
 /**
@@ -307,8 +317,12 @@ const runExecution = async (executionID) => {
       fdwConnectionsWithGeo,
     ] = insertGeo(access, mlViews, mlViewColumns, mlViewFdwConnections, query)
 
-    // check out PG connection to use for fdw + query (must be same)
-    const pgConnection = await mlPool.connect()
+    // instantiate PG connection to use for fdw + query (must be same)
+    // client's application name must be specific to this execution so the pg pid can be
+    // readily identified
+    const application = `ql-executor-${process.env.STAGE}-${executionID}`
+    const pgConnection = newPGClientFromPoolConfig(mlPool, { application_name: application })
+    await pgConnection.connect()
     let results
     try {
       // establish fdw connections
@@ -317,7 +331,7 @@ const runExecution = async (executionID) => {
       // run query
       results = await executeQuery(viewsWithGeo, mlViewColumns, queryWithGeo, { pgConnection })
     } finally {
-      pgConnection.release()
+      pgConnection.end()
     }
 
     // persist to S3
@@ -328,10 +342,18 @@ const runExecution = async (executionID) => {
     )
 
     // update status to succeeded
-    await updateExecution(executionID, { status: STATUS_SUCCEEDED })
+    await updateExecution(
+      executionID,
+      { status: STATUS_SUCCEEDED },
+      { optOutStatuses: [STATUS_CANCELLED] },
+    )
   } catch (err) {
-    // let the listeners know that the function muight be retried
-    await updateExecution(executionID, { status: STATUS_RETRYING })
+    // let the listeners know that the function might be retried
+    await updateExecution(
+      executionID,
+      { status: STATUS_RETRYING },
+      { optOutStatuses: [STATUS_CANCELLED] },
+    )
     throw err
   }
 }
@@ -533,8 +555,28 @@ const listExecutions = async (req, res, next) => {
   }
 }
 
+const cancelExecution = async (req, res, next) => {
+  try {
+    const { executionID, status } = req.mlExecution
+    if ([STATUS_CANCELLED, STATUS_FAILED, STATUS_SUCCEEDED].includes(status)) {
+      throw apiError('Execution is not in a cancellable status', 400)
+    }
+    await updateExecution(
+      executionID,
+      { status: STATUS_CANCELLED },
+      { optOutStatuses: [STATUS_CANCELLED, STATUS_FAILED, STATUS_SUCCEEDED] },
+    )
+    res.json({ executionID })
+  } catch (err) {
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to cancel the execution', 500))
+  }
+}
+
 // to test out handler (replace ID)
-// executionHandler({ execution_id: '205' }).then(() => console.log('ml execution done'))
+// executionHandler({ execution_id: '335' }).then(() => console.log('ml execution done'))
 
 module.exports = {
   createExecution,
@@ -544,4 +586,5 @@ module.exports = {
   loadExecution,
   respondWithExecution,
   listExecutions,
+  cancelExecution,
 }
