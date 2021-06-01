@@ -249,8 +249,8 @@ const hhSegmentAuth = (req, res, next) => {
 
 
 const popularTimesAuth = (req, res, next) => {
-  // Accepted whitelables are internal and OPTA
-  const acceptedWhitelabels = [1202]
+  // Accepted whitelables are internal, OPTA and ConscientAI
+  const acceptedWhitelabels = [1202, 1697]
 
   if (req.access.whitelabel === -1 ||
       req.access.whitelabel.some(wl => acceptedWhitelabels.includes(wl))) {
