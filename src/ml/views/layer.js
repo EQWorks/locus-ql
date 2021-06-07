@@ -196,44 +196,43 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   const layers = await getKnexLayerQuery(access, filter)
-  return layers.map(({ name, layer_categories, layer_id, layer_type_id }) => {
+  return layers.map(({ name, layer_categories, layer_id, layer_type_id }) => Object
     // TODO: remove 'columns' -> use listView() to get full view
-    return Object.entries(layer_categories)
-      .map(([categoryKey, { table, slug, name: catName, resolution }]) => {
-        const geoType = `ca-${resolution}`
-        const geo = geoMapping[geoType]
-        const view = {
-          // required
-          name: `${name} // ${catName}`,
-          view: {
-            id: `${viewTypes.LAYER}_${layer_id}_${categoryKey}`,
-            type: viewTypes.LAYER,
-            category: layerTypeToViewCategory[layer_type_id],
-            layer_id,
-            layer_type_id,
-            resolution,
-            // table,
-            categoryKey,
+    .entries(layer_categories)
+    .map(([categoryKey, { table, slug, name: catName, resolution }]) => {
+      const geoType = `ca-${resolution}`
+      const geo = geoMapping[geoType]
+      const view = {
+        // required
+        name: `${name} // ${catName}`,
+        view: {
+          id: `${viewTypes.LAYER}_${layer_id}_${categoryKey}`,
+          type: viewTypes.LAYER,
+          category: layerTypeToViewCategory[layer_type_id],
+          layer_id,
+          layer_type_id,
+          resolution,
+          // table,
+          categoryKey,
+        },
+      }
+      if (inclMeta) {
+        view.columns = {
+          ...getLayerColumns(table || slug),
+          geo_id: {
+            key: 'geo_id',
+            category: geo.idType,
+            geo_type: geoType,
+          },
+          [`geo_ca_${resolution}`]: {
+            key: `geo_ca_${resolution}`,
+            category: geo.idType,
+            geo_type: geoType,
           },
         }
-        if (inclMeta) {
-          view.columns = {
-            ...getLayerColumns(table || slug),
-            geo_id: {
-              key: 'geo_id',
-              category: geo.idType,
-              geo_type: geoType,
-            },
-            [`geo_ca_${resolution}`]: {
-              key: `geo_ca_${resolution}`,
-              category: geo.idType,
-              geo_type: geoType,
-            },
-          }
-        }
-        return view
-      })
-  }).reduce((agg, view) => [...agg, ...view], [])
+      }
+      return view
+    })).reduce((agg, view) => [...agg, ...view], [])
 }
 
 const getView = async (access, viewID) => {

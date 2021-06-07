@@ -382,10 +382,18 @@ const respondWithQuery = async (req, res, next) => {
 
     // populate views (instead of viewIDs)
     delete req.mlQuery.viewIDs
+    req.mlQuery.views = req.mlQuery.views || []
     await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
-      req.mlQuery.views = req.mlQuery.views || []
+      // req.mlQuery.views = req.mlQuery.views || []
       view.name = name
       req.mlQuery.views.push(view)
+    }).catch((err) => {
+      // edge case when view has been unsubscribed or is no longer available
+      // soft fail
+      req.mlQuery.views.push({
+        id,
+        error: (err instanceof APIError && err.message) || 'View could not be retrieved',
+      })
     })))
     res.json(req.mlQuery)
   } catch (err) {
@@ -432,14 +440,23 @@ const listQueries = async (req, res, next) => {
 
       // populate views
       delete q.viewIDs
+      q.views = q.views || []
       acc.push(...viewIDs.map((id) => {
         // memoize promises
         if (!(id in viewMemo)) {
           viewMemo[id] = getView(req.access, id)
+            .then(({ name, view }) => {
+              view.name = name
+              return view
+            })
+            .catch(err => ({
+              // edge case when view has been unsubscribed or is no longer available
+              // soft fail
+              id,
+              error: (err instanceof APIError && err.message) || 'View could not be retrieved',
+            }))
         }
-        return viewMemo[id].then(({ name, view }) => {
-          q.views = q.views || []
-          view.name = name
+        return viewMemo[id].then((view) => {
           q.views.push(view)
         })
       }))
