@@ -8,15 +8,36 @@ const { geoMapping } = require('../geo')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
 
-const options = {
-  columns: {
-    total: { category: CAT_NUMERIC },
+const columns = {
+  default: {
     id: { category: CAT_NUMERIC }, // geo ggid
     title: { category: CAT_STRING },
+    // total: { category: CAT_NUMERIC },
     value: { category: CAT_NUMERIC },
     percent: { category: CAT_NUMERIC },
     units: { category: CAT_STRING },
   },
+  persona: {
+    id: { category: CAT_NUMERIC }, // geo ggid
+    title: { category: CAT_STRING },
+    has_persona: { category: CAT_NUMERIC },
+  },
+}
+
+// append column key to column object
+Object.values(columns).forEach((schemaColumns) => {
+  Object.entries(schemaColumns).forEach(([key, column]) => {
+    column.key = key
+  })
+})
+
+const getLayerColumns = (table) => {
+  switch (true) {
+    case table.startsWith('persona'):
+      return columns.persona
+    default:
+      return columns.default
+  }
 }
 
 const layerTypeToViewCategory = {
@@ -125,17 +146,39 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   // add schema if missing
   const schema = (table || slug).indexOf('.') === -1 ? 'public.' : ''
 
+  let columnExpressions
+  let columnDefinitions
+  if ((table || slug).startsWith('persona')) {
+    columnExpressions = `
+      L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
+      1 AS has_persona
+    `
+    columnDefinitions = `
+      title text,
+      has_persona int
+    `
+  } else {
+    columnExpressions = `
+      L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
+      L.summary_data::json #>> ''{main_number_pcnt, value}'' AS value,
+      L.summary_data::json #>> ''{main_number_pcnt, percent}'' AS percent,
+      L.summary_data::json #>> ''{main_number_pcnt, units}'' AS units
+    `
+    columnDefinitions = `
+      title text,
+      value real,
+      percent real,
+      units text
+    `
+  }
+
   const mlView = mapKnex.raw(`
     SELECT * FROM dblink(:fdwConnection, '
       SELECT
         GM.ggid AS id,
         L.geo_id,
         L.geo_id AS geo_ca_${resolution},
-        L.total,
-        L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
-        L.summary_data::json #>> ''{main_number_pcnt, value}'' AS value,
-        L.summary_data::json #>> ''{main_number_pcnt, percent}'' AS percent,
-        L.summary_data::json #>> ''{main_number_pcnt, units}'' AS units
+        ${columnExpressions}
       FROM ${schema}${table || slug} as L
       INNER JOIN config.ggid_map as GM ON GM.type = ''${resolution}'' AND GM.local_id = L.geo_id
       INNER JOIN ${geo.schema}.${geo.table} as GT ON GT.${geo.idColumn} = L.geo_id
@@ -144,11 +187,7 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
       id int,
       geo_id text,
       geo_ca_${resolution} text,
-      total int,
-      title text,
-      value real,
-      percent real,
-      units text
+      ${columnDefinitions}
     )
   `, { fdwConnection: MAPS_FDW_CONNECTION })
 
@@ -159,11 +198,8 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
   const layers = await getKnexLayerQuery(access, filter)
   return layers.map(({ name, layer_categories, layer_id, layer_type_id }) => {
     // TODO: remove 'columns' -> use listView() to get full view
-    Object.entries(options.columns).forEach(([key, column]) => {
-      column.key = key
-    })
     return Object.entries(layer_categories)
-      .map(([categoryKey, { table, name: catName, resolution }]) => {
+      .map(([categoryKey, { table, slug, name: catName, resolution }]) => {
         const geoType = `ca-${resolution}`
         const geo = geoMapping[geoType]
         const view = {
@@ -176,13 +212,13 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
             layer_id,
             layer_type_id,
             resolution,
-            table,
+            // table,
             categoryKey,
           },
         }
         if (inclMeta) {
           view.columns = {
-            ...options.columns,
+            ...getLayerColumns(table || slug),
             geo_id: {
               key: 'geo_id',
               category: geo.idType,
@@ -215,12 +251,8 @@ const getView = async (access, viewID) => {
     throw apiError('Access to layer not allowed', 403)
   }
 
-  Object.entries(options.columns).forEach(([key, column]) => {
-    column.key = key
-  })
-
   const { name, layer_categories, layer_type_id } = layer
-  const { table, name: catName, resolution } = layer_categories[categoryKey]
+  const { table, slug, name: catName, resolution } = layer_categories[categoryKey]
   const geoType = `ca-${resolution}`
   const geo = geoMapping[geoType]
 
@@ -234,11 +266,11 @@ const getView = async (access, viewID) => {
       layer_id,
       layer_type_id,
       resolution,
-      table,
+      // table,
       categoryKey,
     },
     columns: {
-      ...options.columns,
+      ...getLayerColumns(table || slug),
       geo_id: {
         key: 'geo_id',
         category: geo.idType,
