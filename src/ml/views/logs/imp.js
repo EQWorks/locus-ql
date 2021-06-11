@@ -2,6 +2,7 @@ const { CAT_STRING, CAT_NUMERIC, CAT_DATE } = require('../../type')
 const { geoTypes } = require('../../geo')
 const { CU_ADVERTISER, ACCESS_INTERNAL, ACCESS_CUSTOMER, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
+const { viewCategories } = require('../taxonomies')
 
 
 const campJoin = {
@@ -70,6 +71,7 @@ const allStandardChViews = [
 
 module.exports = {
   name: 'ATOM Impressions',
+  category: viewCategories.ATOM_CAMPAIGNS,
   table: 'fusion_logs.impression_logs',
   owner: CU_ADVERTISER,
   columns: {

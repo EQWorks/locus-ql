@@ -282,7 +282,7 @@ const queueExecution = async (req, res, next) => {
   }
 }
 
-// let errors bubble up so the query can be restried
+// let errors bubble up so the query can be retried
 const runExecution = async (executionID) => {
   try {
     const [execution] = await getExecutionMetas({ executionID })
@@ -431,10 +431,17 @@ const respondWithExecution = async (req, res, next) => {
 
     // populate views
     delete req.mlExecution.viewIDs
+    req.mlExecution.views = req.mlExecution.views || []
     await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
-      req.mlExecution.views = req.mlExecution.views || []
       view.name = name
       req.mlExecution.views.push(view)
+    }).catch((err) => {
+      // edge case when view has been unsubscribed or is no longer available
+      // soft fail
+      req.mlExecution.views.push({
+        id,
+        error: (err instanceof APIError && err.message) || 'View could not be retrieved',
+      })
     })))
     res.json(req.mlExecution)
   } catch (err) {
@@ -533,14 +540,23 @@ const listExecutions = async (req, res, next) => {
 
       // populate views
       delete e.viewIDs
+      e.views = e.views || []
       acc.push(...viewIDs.map((id) => {
         // memoize promises
         if (!(id in viewMemo)) {
           viewMemo[id] = getView(req.access, id)
+            .then(({ name, view }) => {
+              view.name = name
+              return view
+            })
+            .catch(err => ({
+              // edge case when view has been unsubscribed or is no longer available
+              // soft fail
+              id,
+              error: (err instanceof APIError && err.message) || 'View could not be retrieved',
+            }))
         }
-        return viewMemo[id].then(({ name, view }) => {
-          e.views = e.views || []
-          view.name = name
+        return viewMemo[id].then((view) => {
           e.views.push(view)
         })
       }))

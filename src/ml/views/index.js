@@ -2,55 +2,63 @@
 /* eslint-disable import/no-dynamic-require */
 
 const { apiError, APIError } = require('../../util/api-error')
+const {
+  viewTypes,
+  viewTypeValues,
+  viewCategoryValues,
+  listViewCategoriesByViewType,
+} = require('./taxonomies')
 
 
-const VIEW_LIST = [
-  'ext',
-  'geo',
-  'weather',
-  'layer',
-  'logs',
-  {
-    name: 'reports',
-    views: ['reportwi', 'reportvwi', 'reportxwi'],
-  },
-]
+const viewTypesToModules = {
+  [viewTypes.EXT]: require('./ext'),
+  [viewTypes.GEO]: require('./geo'),
+  [viewTypes.LAYER]: require('./layer'),
+  [viewTypes.LOGS]: require('./logs'),
+  [viewTypes.REPORT_VWI]: require('./reports/reportvwi'),
+  [viewTypes.REPORT_WI]: require('./reports/reportwi'),
+  [viewTypes.REPORT_XWI]: require('./reports/reportxwi'),
+  [viewTypes.WEATHER]: require('./weather'),
+}
 
-const VIEWS = VIEW_LIST.reduce((accViews, view) => {
-  if (typeof view === 'object') {
-    view.views.forEach((v) => { accViews[v] = require(`./${view.name}/${v}`) })
-  } else {
-    accViews[view] = require(`./${view}`)
-  }
-  return accViews
-}, {})
-
-// returns all views provided (sub) category
+// returns views subject to type and category filters
 const listViews = async (
   access,
-  { viewCategory = 'ext', subCategory, inclMeta = false, filter } = {},
+  { inclMeta = false, type, category, filter = {} } = {},
 ) => {
-  const view = (subCategory || viewCategory) in VIEWS
-    ? await VIEWS[subCategory || viewCategory].listViews({ access, inclMeta, filter })
-    : []
+  if ((type && !(type in viewTypeValues)) || (category && !(category in viewCategoryValues))) {
+    throw apiError('Invalid view type or category', 400)
+  }
 
-  return VIEW_LIST.reduce((acc, viewCat) => {
-    if (typeof viewCat === 'object') {
-      acc[viewCat.name] = viewCat.views.map(v => ({
-        name: v,
-        viewData: v === subCategory ? view : [],
-      }))
-    } else {
-      acc[viewCat] = !subCategory && viewCat === viewCategory ? view : []
-    }
-    return acc
-  }, {})
+  let typesCategories
+  if (category) {
+    typesCategories = listViewCategoriesByViewType(category)
+  }
+  if (type) {
+    typesCategories = { [type]: (typesCategories && typesCategories[type]) || undefined }
+  }
+  // all views
+  if (!typesCategories) {
+    typesCategories = Object.values(viewTypes).reduce((acc, type) => {
+      acc[type] = undefined // no cat filter
+      return acc
+    }, {})
+  }
+
+  const views = await Promise.all(Object.entries(typesCategories).map(([type, categories]) =>
+    viewTypesToModules[type].listViews({
+      access,
+      inclMeta,
+      filter: { ...filter, categories },
+    })))
+  return views.flat()
 }
 
 
 const listViewsMW = async (req, res, next) => {
   try {
-    const { access, query: { viewCategory = 'ext', subCategory, inclMeta, report } } = req
+    const { access, query: { inclMeta, report, type, category } } = req
+    const { subCategory: legacyType1, viewCategory: legacyType2 } = req.query // legacy taxonomy
 
     // set filters
     const filter = {}
@@ -66,9 +74,9 @@ const listViewsMW = async (req, res, next) => {
     const views = await listViews(
       access,
       {
-        viewCategory,
-        subCategory,
         inclMeta: ['1', 'true'].includes((inclMeta || '').toLowerCase()),
+        type: type || legacyType1 || legacyType2,
+        category,
         filter,
       },
     )
@@ -91,13 +99,13 @@ const getQueryViews = async (access, views, query) => {
   await Promise.all(views.map(async (v) => {
     const { type, ...viewParams } = v
 
-    if (!Object.keys(VIEWS).includes(type)) {
-      throw apiError(`Invalid view type: ${type}`, 403)
+    if (!(type in viewTypeValues)) {
+      throw apiError(`Invalid view type: ${type}`, 400)
     }
 
-    const viewModule = VIEWS[type]
+    const viewModule = viewTypesToModules[type]
     if (!viewModule) {
-      throw apiError(`View type not found: ${type}`, 403)
+      throw apiError(`View type not found: ${type}`, 400)
     }
 
     viewParams.query = query
@@ -119,13 +127,13 @@ const getQueryViews = async (access, views, query) => {
 const getView = (access, viewID) => {
   const [, type] = viewID.match(/^([^_]+)_.*$/) || []
 
-  if (!Object.keys(VIEWS).includes(type)) {
-    throw apiError(`Invalid view type: ${viewID}`, 403)
+  if (!(type in viewTypeValues)) {
+    throw apiError(`Invalid view type: ${type}`, 400)
   }
 
-  const viewModule = VIEWS[type]
+  const viewModule = viewTypesToModules[type]
   if (!viewModule) {
-    throw apiError(`View type not found: ${type}`, 403)
+    throw apiError(`View type not found: ${type}`, 400)
   }
   return viewModule.getView(access, viewID)
 }
