@@ -1,5 +1,6 @@
 const { knex, mlPool, newPGClientFromPoolConfig } = require('../util/db')
 const { apiError, APIError } = require('../util/api-error')
+const { lambda } = require('../util/aws')
 const { getView, getQueryViews } = require('./views')
 const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
@@ -7,7 +8,7 @@ const { putToS3Cache, getFromS3Cache } = require('./cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
 
 
-const { ML_SCHEMA, ML_EXECUTION_BUCKET } = process.env
+const { ML_SCHEMA, ML_EXECUTION_BUCKET, ML_LAMBDA_EXECUTOR_ARN } = process.env
 const STATUS_QUEUED = 'QUEUED'
 const STATUS_SOURCING = 'SOURCING'
 const STATUS_RUNNING = 'RUNNING'
@@ -120,6 +121,7 @@ const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
  * @param {Object.<string, number[]>} dependencies Dynamic views the query depends on (e.g. log or
  * ext views). In the form {dep_type: dep_id[]}
  * @param {number} [queryID] When the execution is tied to a saved query, the id of such query
+ * @param {string} [status] Initial status
  * @param {Knex} [knexClient=knex] Knex client to use to run the SQL query. Defaults to the
  * global client
  * @returns {Promise<number>} The execution ID
@@ -134,6 +136,7 @@ const createExecution = async (
   isInternal,
   dependencies,
   queryID,
+  status,
   knexClient = knex,
 ) => {
   const cols = [
@@ -155,7 +158,6 @@ const createExecution = async (
     isInternal,
   ]
 
-  // if (dependencies && dependencies.length) {
   if (dependencies && Object.keys(dependencies).length) {
     cols.push('dependencies')
     values.push(JSON.stringify(dependencies))
@@ -164,6 +166,11 @@ const createExecution = async (
   if (queryID) {
     cols.push('query_id')
     values.push(queryID)
+  }
+
+  if (status) {
+    cols.push('status')
+    values.push(status)
   }
 
   const { rows: [{ executionID }] } = await knexClient.raw(`
@@ -240,6 +247,34 @@ const sortViewDependencies = (viewDependencies) => {
   return deps
 }
 
+/**
+ * Triggers the execution's execution step
+ * @param {number} executionID Execution ID
+ */
+const triggerExecution = async (executionID) => {
+  try {
+    if (!ML_LAMBDA_EXECUTOR_ARN) {
+      throw new Error('Lambda executor env variable not set')
+    }
+    const res = await lambda.invoke({
+      FunctionName: ML_LAMBDA_EXECUTOR_ARN,
+      InvocationType: 'Event',
+      Payload: JSON.stringify({ execution_id: executionID }),
+    }).promise()
+    if (res.StatusCode !== 202) {
+      throw new Error(`Lambda responded with status code: ${res.StatusCode}`)
+    }
+  } catch (err) {
+    // don't bubble up the error; Airflow will take over from here
+    console.log('Failed to invoke ML executor', err.message)
+    await updateExecution(
+      executionID,
+      { status: STATUS_RETRYING },
+      { optOutStatuses: [STATUS_CANCELLED] },
+    )
+  }
+}
+
 // extracts async and saved queries and queues them as executions
 const queueExecution = async (req, res, next) => {
   try {
@@ -259,6 +294,8 @@ const queueExecution = async (req, res, next) => {
       mlQueryColumns,
     } = req
     const dependencies = sortViewDependencies(mlViewDependencies)
+    // if no dependencies, can start execution right away
+    const status = Object.keys(dependencies).length ? STATUS_QUEUED : STATUS_RUNNING
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(mlViewIsInternal).some(is => is)
     // insert into executions
@@ -272,7 +309,12 @@ const queueExecution = async (req, res, next) => {
       isInternal,
       dependencies,
       queryID,
+      status,
     )
+    // trigger execution when no deps
+    if (status === STATUS_RUNNING) {
+      await triggerExecution(executionID)
+    }
     res.json({ executionID })
   } catch (err) {
     if (err instanceof APIError) {
