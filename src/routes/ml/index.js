@@ -6,7 +6,7 @@ const express = require('express')
 const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
 const { getViewCategoryTreeMW } = require('../../ml/views/taxonomies')
 const {
-  queueExecution,
+  queueExecutionMW,
   listExecutions,
   loadExecution,
   respondWithExecution,
@@ -20,7 +20,7 @@ const {
   loadQuery,
   respondWithQuery,
 } = require('../../ml/queries')
-const { validateQuery } = require('../../ml/engine')
+const { validateQueryMW } = require('../../ml/engine')
 const { accessHasSingleCustomer } = require('../../middleware/validation')
 
 
@@ -40,8 +40,8 @@ router.post(
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
   loadQueryViews(),
-  validateQuery(),
-  queueExecution,
+  validateQueryMW(),
+  queueExecutionMW,
 )
 
 /* -- TAXONOMIES -- */
@@ -140,8 +140,8 @@ router.post(
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
   loadQueryViews(),
-  validateQuery(),
-  queueExecution,
+  validateQueryMW(),
+  queueExecutionMW,
 )
 
 
@@ -173,7 +173,7 @@ router.put(
   '/queries/:id(\\d+)',
   loadQuery(true),
   loadQueryViews(true),
-  validateQuery(true),
+  validateQueryMW(true),
   putQuery,
 )
 
@@ -223,7 +223,7 @@ router.post(
   loadExecution(false), // use execution as template (superseded by saved query)
   accessHasSingleCustomer,
   loadQueryViews(),
-  validateQuery(),
+  validateQueryMW(),
   postQuery,
 )
 

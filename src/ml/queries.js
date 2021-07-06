@@ -1,7 +1,8 @@
 const { knex } = require('../util/db')
 const { apiError, APIError } = require('../util/api-error')
-const { getView } = require('./views')
-const { updateExecution } = require('./executions')
+const { getView, getQueryViews } = require('./views')
+const { validateQuery } = require('./engine')
+const { updateExecution, queueExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
 
 
@@ -328,6 +329,57 @@ const deleteQuery = async (req, res, next) => {
   }
 }
 
+/**
+ * Queues an execution for a query given its ID
+ * @param {number} queryID Query ID
+ * @param {number} scheduleJobID The ID of the schedule job which triggered the execution, if any
+ * @returns {number} Execution ID or undefined
+ */
+const queueQueryExecution = async (queryID, scheduleJobID) => {
+  const [queryMeta] = await getQueryMetas({ queryID })
+  if (!queryMeta) {
+    throw apiError('Invalid query ID')
+  }
+  const { whitelabelID, customerID, query, viewIDs, isInternal } = queryMeta
+  const access = {
+    whitelabel: [whitelabelID],
+    customers: [customerID],
+    prefix: isInternal ? 'internal' : 'customers',
+  }
+
+  // get views
+  const views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
+
+  // get query views
+  const {
+    mlViews,
+    mlViewColumns,
+    mlViewDependencies,
+    mlViewIsInternal,
+    mlViewFdwConnections,
+  } = await getQueryViews(access, views, query)
+
+  const {
+    mlQueryHash,
+    mlQueryColumnHash,
+    mlQueryColumns,
+  } = await validateQuery(mlViews, mlViewColumns, mlViewFdwConnections, query, access)
+
+  const executionID = await queueExecution(
+    customerID,
+    mlQueryHash,
+    mlQueryColumnHash,
+    query,
+    mlViews,
+    mlViewDependencies,
+    mlViewIsInternal,
+    mlQueryColumns,
+    { queryID, scheduleJobID },
+  )
+
+  return executionID
+}
+
 // isRequired flags whether or not 'query' is a mandatory route/query param
 const loadQuery = (isRequired = true) => async (req, _, next) => {
   try {
@@ -476,6 +528,7 @@ module.exports = {
   postQuery,
   putQuery,
   deleteQuery,
+  queueQueryExecution,
   loadQuery,
   respondWithQuery,
   listQueries,

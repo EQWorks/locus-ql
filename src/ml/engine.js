@@ -214,9 +214,62 @@ const executeQuery = (views, viewColumns, query, { pgConnection, maxAge }) => {
   )
 }
 
+/**
+ * Parses and validates query by running it with a limit of 0
+ * @param {Object.<string, Knex.QueryBuilder|Knex.Raw>} views Map of view ID's and knex view objects
+ * @param {Object.<string, Object>} viewColumns Map of view ID's and column objects
+ * @param {Object.<string, string[]>} fdwConnections Map of view ID's and array of connection names
+ * @param {Object} query Query object
+ * @param {Object} access Access object
+ * @param {number[]|-1} access.whitelabel
+ * @param {number[]|-1} access.customers
+ * @param {string} access.prefix
+ * @returns {Promise<Object>} Query and result column hashes along with result schema
+ */
+const validateQuery = async (views, viewColumns, fdwConnections, query, access) => {
+  // insert geo views & joins
+  const [
+    queryWithGeo,
+    viewsWithGeo,
+    fdwConnectionsWithGeo,
+  ] = insertGeo(access, views, viewColumns, fdwConnections, query)
+
+  // if no error then query was parsed successfully
+  const knexQuery = getKnexQuery(viewsWithGeo, viewColumns, queryWithGeo)
+
+  // check out PG connection to use for fdw + query (must be same)
+  const pgConnection = await mlPool.connect()
+  let fields
+  try {
+    // establish fdw connections
+    await establishFdwConnections(pgConnection, fdwConnectionsWithGeo)
+
+    // set connection on ml query
+    knexQuery.connection(pgConnection)
+
+    // run the query with limit 0
+    knexQuery.limit(0)
+    const { sql, bindings } = knexQuery.toSQL()
+    fields = await queryWithCache(
+      [sql, bindings, 'fields'],
+      () => knexBuilderToRaw(knexQuery).then(({ fields }) => fields), // only cache fields
+      { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
+    )
+  } finally {
+    pgConnection.release()
+  }
+
+  const columns = fields.map(({ name, dataTypeID }) => [name, dataTypeID])
+  return {
+    mlQueryHash: getObjectHash(query),
+    mlQueryColumnHash: getObjectHash(columns),
+    mlQueryColumns: columns,
+  }
+}
+
 // throws an error if the query cannot be parsed
 // attaches queryHash, columnHash and columns to req
-const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
+const validateQueryMW = (onlyUseBodyQuery = false) => async (req, _, next) => {
   try {
     // if a saved query or execution have been attached to req, use it
     // else use req.body
@@ -224,42 +277,9 @@ const validateQuery = (onlyUseBodyQuery = false) => async (req, _, next) => {
     const { query } = loadedQuery || req.body
     const { mlViews, mlViewColumns, mlViewFdwConnections, access } = req
 
-    // insert geo views & joins
-    const [
-      queryWithGeo,
-      viewsWithGeo,
-      fdwConnectionsWithGeo,
-    ] = insertGeo(access, mlViews, mlViewColumns, mlViewFdwConnections, query)
-
-    // if no error then query was parsed successfully
-    const knexQuery = getKnexQuery(viewsWithGeo, mlViewColumns, queryWithGeo)
-
-    // check out PG connection to use for fdw + query (must be same)
-    const pgConnection = await mlPool.connect()
-    let fields
-    try {
-      // establish fdw connections
-      await establishFdwConnections(pgConnection, fdwConnectionsWithGeo)
-
-      // set connection on ml query
-      knexQuery.connection(pgConnection)
-
-      // run the query with limit 0
-      knexQuery.limit(0)
-      const { sql, bindings } = knexQuery.toSQL()
-      fields = await queryWithCache(
-        [sql, bindings],
-        () => knexBuilderToRaw(knexQuery).then(({ fields }) => fields), // only cache fields
-        { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
-      )
-    } finally {
-      pgConnection.release()
-    }
-
-    const columns = fields.map(({ name, dataTypeID }) => [name, dataTypeID])
-    req.mlQueryHash = getObjectHash(query)
-    req.mlQueryColumnHash = getObjectHash(columns)
-    req.mlQueryColumns = columns
+    // get query and column hashes + results schema and attach to req
+    const values = await validateQuery(mlViews, mlViewColumns, mlViewFdwConnections, query, access)
+    Object.assign(req, values)
     next()
   } catch (err) {
     if (err instanceof APIError) {
@@ -273,6 +293,7 @@ module.exports = {
   getKnexQuery,
   executeQuery,
   validateQuery,
+  validateQueryMW,
   establishFdwConnections,
 }
 
