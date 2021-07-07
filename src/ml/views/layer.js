@@ -8,36 +8,43 @@ const { geoMapping } = require('../geo')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
 
-const columns = {
-  default: {
-    id: { category: CAT_NUMERIC }, // geo ggid
-    title: { category: CAT_STRING },
-    // total: { category: CAT_NUMERIC },
-    value: { category: CAT_NUMERIC },
-    percent: { category: CAT_NUMERIC },
-    units: { category: CAT_STRING },
-  },
-  persona: {
-    id: { category: CAT_NUMERIC }, // geo ggid
-    title: { category: CAT_STRING },
-    has_persona: { category: CAT_NUMERIC },
-  },
-}
+const getLayerColumns = (table, resolution) => {
+  const geoType = `ca-${resolution}`
+  const { idType: geoCategory } = geoMapping[geoType]
 
-// append column key to column object
-Object.values(columns).forEach((schemaColumns) => {
-  Object.entries(schemaColumns).forEach(([key, column]) => {
-    column.key = key
-  })
-})
+  // init with geo columns
+  const columns = {
+    geo_id: { category: geoCategory, geo_type: geoType },
+    [`geo_ca_${resolution}`]: { category: geoCategory, geo_type: geoType },
+  }
 
-const getLayerColumns = (table) => {
+  // append columns based on layer table
   switch (true) {
     case table.startsWith('persona'):
-      return columns.persona
+      Object.assign(columns, {
+        id: { category: CAT_NUMERIC }, // geo ggid
+        title: { category: CAT_STRING },
+        has_persona: { category: CAT_NUMERIC },
+      })
+      break
+
     default:
-      return columns.default
+      Object.assign(columns, {
+        id: { category: CAT_NUMERIC }, // geo ggid
+        title: { category: CAT_STRING },
+        // total: { category: CAT_NUMERIC },
+        value: { category: CAT_NUMERIC },
+        percent: { category: CAT_NUMERIC },
+        units: { category: CAT_STRING },
+      })
   }
+
+  // append column key to column object
+  Object.entries(columns).forEach(([key, column]) => {
+    column.key = key
+  })
+
+  return columns
 }
 
 const layerTypeToViewCategory = {
@@ -137,11 +144,10 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
     throw apiError('Invalid layer category', 403)
   }
 
-  // inject view columns
-  const viewMeta = await listViews({ access, filter: { layer_id } })
-  const mlViewColumns = (viewMeta[0] || {}).columns
-
   const { table, slug, resolution } = category
+  // inject view columns
+  const mlViewColumns = getLayerColumns(table || slug, resolution)
+
   const geo = geoMapping[`ca-${resolution}`]
   // add schema if missing
   const schema = (table || slug).indexOf('.') === -1 ? 'public.' : ''
@@ -200,8 +206,6 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
     // TODO: remove 'columns' -> use listView() to get full view
     .entries(layer_categories)
     .map(([categoryKey, { table, slug, name: catName, resolution }]) => {
-      const geoType = `ca-${resolution}`
-      const geo = geoMapping[geoType]
       const view = {
         // required
         name: `${name} // ${catName}`,
@@ -217,19 +221,7 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
         },
       }
       if (inclMeta) {
-        view.columns = {
-          ...getLayerColumns(table || slug),
-          geo_id: {
-            key: 'geo_id',
-            category: geo.idType,
-            geo_type: geoType,
-          },
-          [`geo_ca_${resolution}`]: {
-            key: `geo_ca_${resolution}`,
-            category: geo.idType,
-            geo_type: geoType,
-          },
-        }
+        view.columns = getLayerColumns(table || slug, resolution)
       }
       return view
     })).reduce((agg, view) => [...agg, ...view], [])
@@ -252,8 +244,6 @@ const getView = async (access, viewID) => {
 
   const { name, layer_categories, layer_type_id } = layer
   const { table, slug, name: catName, resolution } = layer_categories[categoryKey]
-  const geoType = `ca-${resolution}`
-  const geo = geoMapping[geoType]
 
   return {
     // required
@@ -268,19 +258,7 @@ const getView = async (access, viewID) => {
       // table,
       categoryKey,
     },
-    columns: {
-      ...getLayerColumns(table || slug),
-      geo_id: {
-        key: 'geo_id',
-        category: geo.idType,
-        geo_type: geoType,
-      },
-      [`geo_ca_${resolution}`]: {
-        key: `geo_ca_${resolution}`,
-        category: geo.idType,
-        geo_type: geoType,
-      },
-    },
+    columns: getLayerColumns(table || slug, resolution),
     // meta
   }
 }
