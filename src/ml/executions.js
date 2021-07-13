@@ -66,10 +66,14 @@ const getExecutionMetas = async ({
       e.columns,
       e.is_internal AS "isInternal",
       e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
-      e.cost
+      e.cost,
+      s.cron AS "scheduleCron",
+      sj.job_ts AS "scheduleTS"
     FROM ${ML_SCHEMA}.executions e
     JOIN public.customers c ON c.customerid = e.customer_id
     LEFT JOIN ${ML_SCHEMA}.queries q ON q.query_id = e.query_id AND q.is_active
+    LEFT JOIN ${ML_SCHEMA}.schedule_jobs sj ON sj.job_id = e.schedule_job_id
+    LEFT JOIN ${ML_SCHEMA}.schedules s ON s.schedule_id = sj.schedule_id
     WHERE
       TRUE
       ${executionID ? 'AND e.execution_id = :executionID' : ''}

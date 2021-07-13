@@ -17,12 +17,15 @@ const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
  * @param {-1|number[]} [filters.whitelabelIDs] Array of whitelabel IDs (agency ID)
  * @param {-1|number[]} [filters.customerIDs] Array of customer IDs (agency ID)
  * @param {number} [filters.executionID] Execution ID
+ * @param {number} [filters.scheduleID] Schedule ID
  * @param {string} [filters.queryHash] Query hash (unique to the query)
  * @param {string} [filters.columnHash] Column hash (unique to the name/type of the results)
  * @param {boolean} [filters.hideInternal=false] Whether or not to filter out queries
  * using internal fields
  * @param {boolean} [filters.showExecutions=false] Whether or not to append the list of
  * executions to the query object
+ * @param {boolean} [filters.showSchedules=false] Whether or not to append the list of
+ * schedules to the query object
  * @returns {Promise<Array>}
  */
 const getQueryMetas = async ({
@@ -30,10 +33,12 @@ const getQueryMetas = async ({
   whitelabelIDs,
   customerIDs,
   executionID,
+  scheduleID,
   queryHash,
   columnHash,
   hideInternal = false,
   showExecutions = false,
+  showSchedules = false,
 } = {}) => {
   const { rows } = await knex.raw(`
     SELECT
@@ -49,35 +54,56 @@ const getQueryMetas = async ({
       q.view_ids AS "viewIDs",
       q.columns,
       q.is_internal AS "isInternal"
-      ${showExecutions ? `, coalesce(
-        array_agg(
-          json_build_object(
-            'executionID', e.execution_id,
-            'queryHash', e.query_hash,
-            'columnHash', e.column_hash,
-            'status', e.status,
-            'statusTS', e.status_ts,
-            'isInternal', e.is_internal
-          ) ORDER BY e.execution_id DESC
-        ) FILTER (WHERE e.execution_id IS NOT NULL),
-        '{}'
+      ${showExecutions ? `, ARRAY(
+        SELECT i FROM UNNEST(
+          array_agg(
+            DISTINCT jsonb_build_object(
+              'executionID', e.execution_id,
+              'queryHash', e.query_hash,
+              'columnHash', e.column_hash,
+              'status', e.status,
+              'statusTS', e.status_ts,
+              'isInternal', e.is_internal
+            )
+          ) FILTER (WHERE e.execution_id IS NOT NULL)
+        ) i ORDER BY i->'executionID' DESC
       ) AS "executions"` : ''}
+      ${showSchedules ? `, ARRAY(
+        SELECT i - 'scheduleID' FROM UNNEST(
+          array_agg(
+            DISTINCT jsonb_build_object(
+              'scheduleID', sq.schedule_id,
+              'cron', s.cron,
+              'startDate', sq.start_date,
+              'endDate', sq.end_date,
+              'isPaused', sq.is_paused
+            )
+          ) FILTER (WHERE sq.schedule_id IS NOT NULL)
+        ) i ORDER BY i->'isPaused', i->'scheduleID'
+      ) AS "schedules"` : ''}
     FROM ${ML_SCHEMA}.queries q
     JOIN public.customers c ON c.customerid = q.customer_id
-    ${showExecutions || executionID ? `LEFT JOIN ${ML_SCHEMA}.executions e USING (query_id)` : ''}
+    ${showExecutions || executionID ? `
+      LEFT JOIN ${ML_SCHEMA}.executions e ON e.query_id = q.query_id
+    ` : ''}
+    ${showSchedules || scheduleID ? `
+      LEFT JOIN ${ML_SCHEMA}.schedule_queries sq ON sq.query_id = q.query_id
+      LEFT JOIN ${ML_SCHEMA}.schedules s ON s.schedule_id = sq.schedule_id
+    ` : ''}
     WHERE
       q.is_active
       ${queryID ? 'AND q.query_id = :queryID' : ''}
       ${whitelabelIDs && whitelabelIDs !== -1 ? 'AND c.whitelabelid = ANY(:whitelabelIDs)' : ''}
       ${customerIDs && customerIDs !== -1 ? 'AND c.customerid = ANY(:customerIDs)' : ''}
       ${executionID ? 'AND e.execution_id = :executionID' : ''}
+      ${scheduleID ? 'AND sq.schedule_id = :scheduleID' : ''}
       ${queryHash ? 'AND q.query_hash = :queryHash' : ''}
       ${columnHash ? 'AND q.column_hash = :columnHash' : ''}
       ${hideInternal ? 'AND q.is_internal <> TRUE' : ''}
       ${showExecutions && hideInternal ? 'AND e.is_internal <> TRUE' : ''}
-    ${showExecutions ? 'GROUP BY 1, 2, 3, 4, 5, 6, 7' : ''}
+    ${showExecutions || showSchedules ? 'GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12' : ''}
   ORDER BY 1 DESC
-  `, { queryID, whitelabelIDs, customerIDs, executionID, queryHash, columnHash })
+  `, { queryID, whitelabelIDs, customerIDs, executionID, scheduleID, queryHash, columnHash })
   return rows
 }
 
@@ -401,6 +427,7 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
       customerIDs,
       hideInternal,
       showExecutions: true,
+      showSchedules: true,
     })
     if (!query) {
       throw apiError('Invalid query ID', 404)
