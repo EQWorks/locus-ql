@@ -1,8 +1,24 @@
 const { apiError } = require('../util/api-error')
 
 
-const _hasParams = target => (...params) => (req, res, next) => {
+class OneOf {
+  constructor(...params) {
+    this.params = params
+  }
+  validate(obj) {
+    return this.params.some(p => Object.prototype.hasOwnProperty.call(obj, p))
+  }
+  show() {
+    return `one of ${this.params.join(', ')}`
+  }
+}
+module.exports.oneOf = (...params) => new OneOf(...params)
+
+const _hasParams = target => (...params) => (req, _, next) => {
   for (const param of params) {
+    if (param instanceof OneOf && !param.validate(req[target])) {
+      return next(apiError(`Missing ${param.show()} in ${target}`, 400))
+    }
     if (!req[target][param]) {
       return next(apiError(`Missing '${param}' in ${target}`, 400))
     }
