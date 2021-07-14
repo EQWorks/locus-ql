@@ -29,8 +29,8 @@ const getSetSchedule = async (customerID, cron) => {
     new AS (
       INSERT INTO ${ML_SCHEMA}.schedules
         (customer_id, cron)
-      SELECT :customerID, :cron
-      WHERE NOT EXISTS (SELECT * FROM existing)
+        SELECT :customerID, :cron
+        WHERE NOT EXISTS (SELECT * FROM existing)
       RETURNING schedule_id AS "scheduleID"
     )
     SELECT * FROM existing
