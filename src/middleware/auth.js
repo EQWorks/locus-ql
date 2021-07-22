@@ -263,11 +263,12 @@ const popularTimesAuth = (req, res, next) => {
 const hubAuth = (req, res, next) => {
   const { whitelabel, customers, prefix } = req.access
   const internal = whitelabel === -1 && customers === -1
-  const tester = prefix === 'tester'
-  if (internal || tester) {
+  const prefixes = ['tester', 'mobilesdk']
+  const byPrefix = prefixes.includes(prefix)
+  if (internal || byPrefix) {
     return next()
   }
-  return next(apiError('Only internal and testers are allowed', 403))
+  return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
 }
 
 module.exports = {
