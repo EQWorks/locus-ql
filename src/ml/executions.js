@@ -645,4 +645,6 @@ module.exports = {
   respondWithExecution,
   listExecutions,
   cancelExecution,
+  getExecutionMetas,
+  getExecutionResults,
 }
