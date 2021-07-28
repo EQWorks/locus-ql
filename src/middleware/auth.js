@@ -260,10 +260,21 @@ const popularTimesAuth = (req, res, next) => {
   return next(apiError('Access not allowed', 403))
 }
 
-const hubAuth = (req, res, next) => {
+const hubAuth = (req, _, next) => {
   const { whitelabel, customers, prefix } = req.access
   const internal = whitelabel === -1 && customers === -1
-  const prefixes = ['tester', 'mobilesdk']
+  const prefixes = ['dev', 'tester']
+  const byPrefix = prefixes.includes(prefix)
+  if (internal || byPrefix) {
+    return next()
+  }
+  return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
+}
+
+const mobilesdk = (req, _, next) => {
+  const { whitelabel, customers, prefix } = req.access
+  const internal = whitelabel === -1 && customers === -1
+  const prefixes = ['dev', 'mobilesdk']
   const byPrefix = prefixes.includes(prefix)
   if (internal || byPrefix) {
     return next()
@@ -284,4 +295,5 @@ module.exports = {
   hhSegments: hhSegmentAuth,
   popularTimes: popularTimesAuth,
   hub: hubAuth,
+  mobilesdk,
 }
