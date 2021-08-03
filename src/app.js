@@ -1,6 +1,5 @@
 const express = require('express')
 const logger = require('morgan')
-const bodyParser = require('body-parser')
 const cors = require('cors')
 const compression = require('compression')
 
@@ -21,8 +20,8 @@ app.use(compression())
 // logger
 app.use(logger('dev'))
 // body parser
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ extended: false }))
+app.use(express.json())
+app.use(express.urlencoded({ extended: false }))
 
 // favicon 404 supression
 app.get('/favicon.ico', (_req, res) => res.sendStatus(204))

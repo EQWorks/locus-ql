@@ -31,6 +31,7 @@ const credentials = require('./credentials')
 const log = require('./log')
 const activity = require('./activity')
 const dataset = require('./dataset')
+const mobilesdk = require('./mobilesdk')
 
 
 rootRouter.use(isMaint)
@@ -60,6 +61,7 @@ rootRouter.use('/credentials', credentials)
 rootRouter.use('/log', log)
 rootRouter.use('/activity', activity)
 rootRouter.use('/dataset', dataset)
+rootRouter.use('/mobilesdk', mobilesdk)
 rootRouter.use(api)
 
 

@@ -31,7 +31,6 @@
     "algoliasearch": "^3.30.0",
     "async": "^3.1.0",
     "axios": "^0.18.1",
-    "body-parser": "^1.18.2",
     "compression": "^1.7.3",
     "cors": "^2.8.4",
     "cryptr": "^4.0.2",
