@@ -32,6 +32,7 @@ const log = require('./log')
 const activity = require('./activity')
 const dataset = require('./dataset')
 const mobilesdk = require('./mobilesdk')
+const usage = require('./usage')
 
 
 rootRouter.use(isMaint)
@@ -62,6 +63,7 @@ rootRouter.use('/log', log)
 rootRouter.use('/activity', activity)
 rootRouter.use('/dataset', dataset)
 rootRouter.use('/mobilesdk', mobilesdk)
+rootRouter.use('/usage', usage)
 rootRouter.use(api)
 
 
