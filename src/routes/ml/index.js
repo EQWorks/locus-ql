@@ -10,6 +10,7 @@ const {
   listExecutions,
   loadExecution,
   respondWithExecution,
+  respondWithOrRedirectToExecutionResults,
   cancelExecution,
 } = require('../../ml/executions')
 const {
@@ -88,6 +89,20 @@ router.get('/views/:viewID', getViewMW)
 
 
 /* -- QUERY EXECUTIONS -- */
+
+/**
+ * @api {get} /executions/:id/results
+ * @apiName Get a specific execution's results URL
+ * @apiDescription Redirects or returns a url to the execution's results based on an id
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the execution
+ * @apiParam (query) {string} [redirect] '1' or 'true' to redirect to the results URL
+*/
+router.get(
+  '/executions/:id(\\d+)/results',
+  loadExecution(true),
+  respondWithOrRedirectToExecutionResults,
+)
 
 /**
  * @api {get} /executions/:id

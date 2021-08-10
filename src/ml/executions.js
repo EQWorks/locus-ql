@@ -5,7 +5,7 @@ const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
 const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
-const { putToS3Cache, getFromS3Cache } = require('./cache')
+const { putToS3Cache, getFromS3Cache, getS3CacheURL, queryWithCache } = require('./cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
 const {
   QL_SCHEMA,
@@ -109,14 +109,32 @@ const getExecutionMetas = async ({
 }
 
 /**
- * Pull the query results from storage
+ * Pulls the execution results from storage
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
- * @param {boolean} [parseFromJson=true] Whether or not to parse the results into an oject
- * @returns {string|Object} Query results
+ * @param {Object} options
+ * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an oject
+ * @param {number} [options.maxSize] Max size of the results in bytes
+ * @returns {string|Object|undefined} Query results or undefined if not found or too large
  */
-const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
-  getFromS3Cache(`${customerID}/${executionID}`, { bucket: EXECUTION_BUCKET, parseFromJson })
+const getExecutionResults = (customerID, executionID, { parseFromJson = true, maxSize } = {}) =>
+  getFromS3Cache(
+    `${customerID}/${executionID}`,
+    { bucket: EXECUTION_BUCKET, parseFromJson, maxSize },
+  )
+
+/**
+ * Returns a temporary URL to the execution results
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {number} executionID Execution ID
+ * @param {number} [ttl=900] URL validity in seconds. Defaults to 900 (15 minutes)
+ * @returns {string|undefined} URL to the query results or undefined if not found
+ */
+const getExecutionResultsURL = (customerID, executionID, ttl = 900) => queryWithCache(
+  ['execution-results', executionID],
+  () => getS3CacheURL(`${customerID}/${executionID}`, { bucket: EXECUTION_BUCKET, ttl }),
+  { ttl, maxAge: ttl, gzip: false, json: false },
+)
 
 /**
  * Creates an execution
@@ -520,7 +538,12 @@ const respondWithExecution = async (req, res, next) => {
     // attach results
 
     if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
-      req.mlExecution.results = await getExecutionResults(customerID, executionID)
+      // undefined if results is too large
+      req.mlExecution.results = await getExecutionResults(
+        customerID,
+        executionID,
+        { maxSize: 1024 }, // 1MB
+      )
     }
     // convert columns from array to object
     req.mlExecution.columns = columns.map(([name, pgType]) => ({
@@ -545,6 +568,27 @@ const respondWithExecution = async (req, res, next) => {
     res.json(req.mlExecution)
   } catch (err) {
     next(getSetAPIError(err, 'Failed to retrieve the execution', 500))
+  }
+}
+
+const respondWithOrRedirectToExecutionResults = async (req, res, next) => {
+  try {
+    const { executionID, customerID, status } = req.mlExecution
+    const { redirect } = req.query
+    if (status !== STATUS_SUCCEEDED) {
+      throw apiError(`The execution is not in '${STATUS_SUCCEEDED}' status`, 400)
+    }
+    // generate/retrieve URL to results in storage
+    const url = await getExecutionResultsURL(customerID, executionID)
+    if (['1', 'true'].includes((redirect || '').toLowerCase())) {
+      return res.redirect(302, url)
+    }
+    res.json({ url })
+  } catch (err) {
+    if (err instanceof APIError) {
+      return next(err)
+    }
+    next(apiError('Failed to retrieve the execution results', 500))
   }
 }
 
@@ -620,6 +664,7 @@ const listExecutions = async (req, res, next) => {
       executions[0].results = await getExecutionResults(
         executions[0].customerID,
         executions[0].executionID,
+        { maxSize: 1024 }, // 1MB,
       )
     }
     // populate views
@@ -692,6 +737,7 @@ module.exports = {
   executionHandler,
   loadExecution,
   respondWithExecution,
+  respondWithOrRedirectToExecutionResults,
   listExecutions,
   cancelExecution,
   getExecutionMetas,

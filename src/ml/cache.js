@@ -42,12 +42,15 @@ const getCacheKey = (keys) => {
  * @param {number} [options.maxAge] Max age of the cache in seconds. 0 means don't pull from the
  * cache while a negative value (or undefined) means return whatever is in the cache
  * irrespective of age
+ * @param {number} [options.maxSize] Max size in bytes of the value in cache. 0 means don't pull
+ * from the cache while a negative value (or undefined) means return whatever is in the cache
+ * irrespective of size
  * @param {boolean} [options.parseFromJson=true] Whether or not the value should be parsed
  * in the event the value is a JSON string
  * @returns {Promise<string|integer|Object|undefined>} Value in cache or undefined if cache miss
  */
-const getFromRedisCache = async (keys, { maxAge, parseFromJson = true } = {}) => {
-  if (maxAge === 0) {
+const getFromRedisCache = async (keys, { maxAge, maxSize, parseFromJson = true } = {}) => {
+  if (maxAge === 0 || maxSize === 0) {
     // invalidate cache
     return
   }
@@ -60,8 +63,11 @@ const getFromRedisCache = async (keys, { maxAge, parseFromJson = true } = {}) =>
     if not meta then
         return nil
     end
-    local created, json, gzip = string.match(meta, '(.*):(.*):(.*)')
-    if tonumber(created) < (tonumber(ARGV[3]) or 0) then
+    local created, json, gzip, size = string.match(meta, '(.*):(.*):(.*):(.*)')
+    if (
+      (tonumber(ARGV[3]) or 0) > 0 and tonumber(created) < tonumber(ARGV[3])
+      or (tonumber(ARGV[4]) or 0) > 0 and tonumber(size) > tonumber(ARGV[4])
+    ) then
         return nil
     end
     return {
@@ -69,7 +75,7 @@ const getFromRedisCache = async (keys, { maxAge, parseFromJson = true } = {}) =>
       tonumber(json),
       tonumber(gzip),
     }
-  `, 0, valueKey, metaKey, earliestCreated)
+  `, 0, valueKey, metaKey, earliestCreated, maxSize || 0)
 
   if (res === null) {
     return
@@ -111,11 +117,20 @@ const putToRedisCache = async (keys, value, { ttl = 600, gzip = true, json = tru
   if (gzip) {
     cacheValue = await gzipAsync(cacheValue)
   }
+  if (!(cacheValue instanceof Buffer)) {
+    cacheValue = Buffer.from(cacheValue, 'utf8')
+  }
   return new Promise((resolve, reject) => {
     redis
       .multi()
       .set(valueKey, cacheValue, 'EX', ttl)
-      .set(metaKey, `${Math.floor(Date.now() / 1000)}:${Number(json)}:${Number(gzip)}`, 'EX', ttl)
+      .set(
+        metaKey,
+        // meta: unix:json:gzip:size
+        `${Math.floor(Date.now() / 1000)}:${Number(json)}:${Number(gzip)}:${cacheValue.length}`,
+        'EX',
+        ttl,
+      )
       .exec((err, res) => {
         if (err) {
           return reject(err)
@@ -137,6 +152,9 @@ const putToRedisCache = async (keys, value, { ttl = 600, gzip = true, json = tru
  * @param {number} [options.maxAge] Max age of the cache in seconds. 0 means don't pull from the
  * cache while a negative value (or undefined) means return whatever is in the cache
  * irrespective of age
+ * @param {number} [options.maxSize] Max size in bytes of the value in cache. 0 means don't pull
+ * from the cache while a negative value (or undefined) means return whatever is in the cache
+ * irrespective of size
  * @param {boolean} [options.parseFromJson=true] Whether or not the value should be parsed
  * in the event the value is a JSON string
  * @param {string} [options.bucket=QUERY_BUCKET] Cache bucket
@@ -144,9 +162,9 @@ const putToRedisCache = async (keys, value, { ttl = 600, gzip = true, json = tru
  */
 const getFromS3Cache = async (
   keys,
-  { maxAge, parseFromJson = true, bucket = QUERY_BUCKET } = {},
+  { maxAge, maxSize, parseFromJson = true, bucket = QUERY_BUCKET } = {},
 ) => {
-  if (maxAge === 0) {
+  if (maxAge === 0 || maxSize === 0) {
     // invalidate cache
     return
   }
@@ -159,6 +177,13 @@ const getFromS3Cache = async (
   }
 
   try {
+    if (maxSize > 0) {
+      const { ContentLength } = await s3.headObject(params).promise()
+      if (ContentLength > maxSize) {
+        // value in cache is too large
+        return
+      }
+    }
     const { Body, ContentEncoding, ContentType } = await s3.getObject(params).promise()
     let value = Body
     if (ContentEncoding === 'gzip') {
@@ -214,36 +239,85 @@ const putToS3Cache = async (
 }
 
 /**
+ * Generates a pre-signed URL to the S3 cache given a key
+ * @param {string|any[]]} keys Single key (string) or array of keys which must be serializable
+ * into JSON
+ * @param {Object} options
+ * @param {number} [options.maxAge] Max age of the cache in seconds. 0 means don't pull from the
+ * cache while a negative value (or undefined) means return whatever is in the cache
+ * irrespective of age
+ * @param {number} [options.ttl=600] URL validity in seconds. Defaults to 600 (10 minutes)
+ * @param {string} [options.bucket=QUERY_BUCKET] Cache bucket
+ * @returns {Promise<string|undefined>} URL of the object in cache or undefined if not found
+ */
+const getS3CacheURL = async (
+  keys,
+  { maxAge, ttl = 600, bucket = QUERY_BUCKET } = {},
+) => {
+  if (maxAge === 0) {
+    // invalidate cache
+    return
+  }
+  const params = {
+    Bucket: bucket,
+    Key: getCacheKey(keys),
+    Expires: ttl,
+  }
+  if (maxAge > 0) {
+    params.IfModifiedSince = Math.floor(Date.now() / 1000) - maxAge
+  }
+  try {
+    const url = await s3.getSignedUrlPromise('getObject', params)
+    return url
+  } catch (err) {
+    if (['NoSuchKey', 'NotModified'].includes(err.code)) {
+      return
+    }
+    throw err
+  }
+}
+
+/**
  * Pulls query results from cache if available, otherwise, executes query and persists
  * results to cache
  * @param {string|any[]]} keys Single key (string) or array of keys which must be serializable
  * into JSON
- * @param {function} runQuery Callback to invoke in order to fetch SQL results (must
+ * @param {function} runQuery Callback to invoke in order to fetch query results (must
  * resolve to an object)
  * @param {Object} options
- * @param {number} [options.maxAge=600] Max age (in seconds) of SQL results when pulling from the
+ * @param {number} [options.maxAge=600] Max age (in seconds) of query results when pulling from the
  * cache (typically same as ttl)
  * @param {number} [options.ttl=600] TTL (in seconds) of the cached results
+ * @param {number} [options.maxSize] Max size (in bytes) of query results when pulling from the
+ * cache
  * @param {number} [options.type=type.REDIS] Storage type
  * @param {boolean} [options.gzip=true] Whether or not the value in cache is compressed
+ * @param {boolean} [options.json=true] Whether or not the value in cache is of type JSON. When
+ * runQuery resolves to an object, this parameter is ignored and the content type set to JSON.
  * @param {string} [options.bucket=QUERY_CACHE_BUCKET] Cache bucket
  * @returns {Promise<Object>} Query results
  */
 const queryWithCache = async (
   keys,
   runQuery,
-  { maxAge = 600, ttl = 600, type = cacheTypes.REDIS, gzip = true, bucket = QUERY_BUCKET } = {},
+  {
+    maxAge = 600,
+    ttl = 600,
+    maxSize,
+    type = cacheTypes.REDIS,
+    gzip = true,
+    json = true,
+    bucket = QUERY_BUCKET,
+  } = {},
 ) => {
-  // compute cache hash
-  // const hash = createHash('sha256')
-  //   .update(JSON.stringify({ sql, bindings }))
-  //   .digest('hex')
+  // compute cache key
   const key = getCacheKey(keys)
 
   // get from cache
   try {
     const getOptions = {
       maxAge: Math.min(maxAge, ttl),
+      maxSize,
       parseFromJson: true,
       bucket,
     }
@@ -274,7 +348,7 @@ const queryWithCache = async (
     const putOptions = {
       ttl,
       gzip,
-      json: true,
+      json,
       bucket,
     }
     switch (type) {
@@ -377,6 +451,7 @@ const getResFromS3Cache = async (req, res, next) => {
 module.exports = {
   putToS3Cache,
   getFromS3Cache,
+  getS3CacheURL,
   getResFromS3Cache,
   queryWithCache,
   knexWithCache,
