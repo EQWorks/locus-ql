@@ -3,12 +3,8 @@ const cronParser = require('cron-parser')
 const { knex } = require('../util/db')
 const { apiError, APIError } = require('../util/api-error')
 const { queueQueryExecution } = require('./queries')
+const { QL_SCHEMA, STATUS_RUNNING, STATUS_RETRYING, STATUS_SUCCEEDED } = require('./constants')
 
-
-const { ML_SCHEMA } = process.env
-const STATUS_RUNNING = 'RUNNING'
-const STATUS_RETRYING = 'RETRYING'
-const STATUS_SUCCEEDED = 'SUCCEEDED'
 
 /**
  * Returns the schedule ID corresponding to the customer ID + CRON combination.
@@ -21,13 +17,13 @@ const getSetSchedule = async (customerID, cron) => {
   const { rows: [{ scheduleID } = {}] } = await knex.raw(`
     WITH existing AS (
       SELECT schedule_id AS "scheduleID"
-      FROM ${ML_SCHEMA}.schedules
+      FROM ${QL_SCHEMA}.schedules
       WHERE
         customer_id = :customerID
         AND cron = :cron
     ),
     new AS (
-      INSERT INTO ${ML_SCHEMA}.schedules
+      INSERT INTO ${QL_SCHEMA}.schedules
         (customer_id, cron)
         SELECT :customerID, :cron
         WHERE NOT EXISTS (SELECT * FROM existing)
@@ -50,7 +46,7 @@ const getScheduleID = async (customerID, cron) => {
   const { rows: [{ scheduleID } = {}] } = await knex.raw(`
     SELECT
       schedule_id AS "scheduleID"
-    FROM ${ML_SCHEMA}.schedules
+    FROM ${QL_SCHEMA}.schedules
     WHERE
       customer_id = ?
       AND cron = ?
@@ -72,8 +68,8 @@ const getQuerySchedules = async (queryID) => {
       sq.start_date AS "startDate",
       sq.end_date AS "endDate",
       sq.is_paused AS "isPaused"
-    FROM ${ML_SCHEMA}.schedule_queries sq
-    JOIN ${ML_SCHEMA}.schedules s USING (schedule_id)
+    FROM ${QL_SCHEMA}.schedule_queries sq
+    JOIN ${QL_SCHEMA}.schedules s USING (schedule_id)
     WHERE sq.query_id = ?
     ORDER BY sq.is_paused, sq.schedule_id
   `, [queryID])
@@ -114,7 +110,7 @@ const upsertQuerySchedule = async (scheduleID, queryID, { startDate, endDate, is
   }
 
   await knex.raw(`
-    INSERT INTO ${ML_SCHEMA}.schedule_queries
+    INSERT INTO ${QL_SCHEMA}.schedule_queries
       (${cols.join(', ')})
     VALUES
       (${cols.map(() => '?').join(', ')})
@@ -135,24 +131,24 @@ const deleteQuerySchedule = async (scheduleID, queryID) => {
   await knex.raw(`
     WITH jobs AS (
       SELECT job_id
-      FROM ${ML_SCHEMA}.schedule_jobs
+      FROM ${QL_SCHEMA}.schedule_jobs
       WHERE
         schedule_id = :scheduleID
     ),
     other_queries AS (
       SELECT query_id
-      FROM ${ML_SCHEMA}.schedule_queries
+      FROM ${QL_SCHEMA}.schedule_queries
       WHERE
         schedule_id = :scheduleID
         AND query_id <> :queryID
     ),
     delete AS (
-      DELETE FROM ${ML_SCHEMA}.schedule_queries
+      DELETE FROM ${QL_SCHEMA}.schedule_queries
       WHERE
         schedule_id = :scheduleID
         AND query_id = :queryID
     )
-    DELETE FROM ${ML_SCHEMA}.schedules
+    DELETE FROM ${QL_SCHEMA}.schedules
     WHERE
       schedule_id = :scheduleID
       AND NOT EXISTS (SELECT * FROM jobs)
@@ -176,8 +172,8 @@ const getScheduleJob = async (jobID) => {
       j.job_ts AS "jobTS",
       j.status,
       j.status_ts AS "statusTS"
-    FROM ${ML_SCHEMA}.schedule_jobs j
-    JOIN ${ML_SCHEMA}.schedules s ON s.schedule_id = j.schedule_id
+    FROM ${QL_SCHEMA}.schedule_jobs j
+    JOIN ${QL_SCHEMA}.schedules s ON s.schedule_id = j.schedule_id
     JOIN public.customers c ON c.customerid = s.customer_id
     WHERE j.job_id = :jobID
   `, { jobID })
@@ -207,7 +203,7 @@ const updateScheduleJob = async (
     return
   }
   await knex.raw(`
-    UPDATE ${ML_SCHEMA}.schedule_jobs
+    UPDATE ${QL_SCHEMA}.schedule_jobs
     SET ${columns.map(col => `${col} = ?`).concat(expressions).join(', ')}
     WHERE job_id = ?
   `, [...values, jobID])
@@ -236,14 +232,14 @@ const getScheduleJobQueryIDs = async (jobID) => {
           'cron', s.cron
         ) ORDER BY all_sq.schedule_id
       ) AS "schedules"
-    FROM ${ML_SCHEMA}.schedule_jobs j
-    JOIN ${ML_SCHEMA}.schedule_queries sq ON sq.schedule_id = j.schedule_id
-    JOIN ${ML_SCHEMA}.schedule_queries all_sq ON all_sq.query_id = sq.query_id
-    JOIN ${ML_SCHEMA}.schedules s ON s.schedule_id = all_sq.schedule_id
-    LEFT JOIN ${ML_SCHEMA}.schedule_jobs all_j ON
+    FROM ${QL_SCHEMA}.schedule_jobs j
+    JOIN ${QL_SCHEMA}.schedule_queries sq ON sq.schedule_id = j.schedule_id
+    JOIN ${QL_SCHEMA}.schedule_queries all_sq ON all_sq.query_id = sq.query_id
+    JOIN ${QL_SCHEMA}.schedules s ON s.schedule_id = all_sq.schedule_id
+    LEFT JOIN ${QL_SCHEMA}.schedule_jobs all_j ON
       all_j.schedule_id = all_sq.schedule_id
       AND all_j.job_ts = j.job_ts
-    LEFT JOIN ${ML_SCHEMA}.executions e ON
+    LEFT JOIN ${QL_SCHEMA}.executions e ON
       e.query_id = sq.query_id
       AND e.schedule_job_id = j.job_id
     WHERE
@@ -289,7 +285,7 @@ const getScheduleJobQueryIDs = async (jobID) => {
   }, [])
 }
 
-// let errors bubble up so the query can be retried
+// let errors bubble up so the job can be retried
 // timestamp is the airflow execution date
 const runScheduleJob = async (jobID) => {
   try {
@@ -434,20 +430,6 @@ const listQuerySchedules = async (req, res, next) => {
     next(apiError('Failed to delete the query schedule', 500))
   }
 }
-
-const test = () => {
-  // getScheduleJobQueryIDs(1).then(console.log)
-  // getScheduleJobQueryIDs(2).then(console.log)
-  // queueQueryExecution(230, 2).then(console.log)
-  // runScheduleJob(2).then(console.log)
-  // getSetSchedule(9593, '0 0 8 * *')
-  //   .then(id => upsertQuerySchedule(id, 230, { startDate: new Date(2021, 7, 9) }))
-  //   // .then(id => upsertQuerySchedule(id, 230, { startDate: null }))
-  //   .then(console.log)
-
-}
-
-test()
 
 module.exports = {
   scheduleJobHandler,

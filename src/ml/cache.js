@@ -5,9 +5,9 @@ const { promisify } = require('util')
 const { apiError, APIError } = require('../util/api-error')
 const { s3 } = require('../util/aws')
 const { client: redis } = require('../util/redis')
+const { QUERY_BUCKET } = require('./constants')
 
 
-const QUERY_BUCKET = process.env.ML_QUERY_BUCKET
 const gzipAsync = promisify(gzip)
 const gunzipAsync = promisify(gunzip)
 const evalRedisAsync = promisify(redis.eval).bind(redis)

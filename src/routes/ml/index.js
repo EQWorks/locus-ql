@@ -40,7 +40,7 @@ router.get('/', (req, _, next) => {
 }, listViewsMW)
 // main query endpoint -> replaced by POST /executions
 router.post(
-  '/executions/',
+  '/',
   loadQuery(false), // run saved query
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,

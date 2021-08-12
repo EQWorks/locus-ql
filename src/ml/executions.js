@@ -6,16 +6,19 @@ const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
 const { putToS3Cache, getFromS3Cache } = require('./cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
+const {
+  QL_SCHEMA,
+  EXECUTION_BUCKET,
+  LAMBDA_EXECUTOR_ARN,
+  STATUS_QUEUED,
+  STATUS_SOURCING,
+  STATUS_RUNNING,
+  STATUS_RETRYING,
+  STATUS_SUCCEEDED,
+  STATUS_CANCELLED,
+  STATUS_FAILED,
+} = require('./constants')
 
-
-const { ML_SCHEMA, ML_EXECUTION_BUCKET, ML_LAMBDA_EXECUTOR_ARN } = process.env
-const STATUS_QUEUED = 'QUEUED'
-const STATUS_SOURCING = 'SOURCING'
-const STATUS_RUNNING = 'RUNNING'
-const STATUS_RETRYING = 'RETRYING'
-const STATUS_SUCCEEDED = 'SUCCEEDED'
-const STATUS_CANCELLED = 'CANCELLED'
-const STATUS_FAILED = 'FAILED'
 
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
@@ -69,11 +72,11 @@ const getExecutionMetas = async ({
       e.cost,
       s.cron AS "scheduleCron",
       sj.job_ts AS "scheduleTS"
-    FROM ${ML_SCHEMA}.executions e
+    FROM ${QL_SCHEMA}.executions e
     JOIN public.customers c ON c.customerid = e.customer_id
-    LEFT JOIN ${ML_SCHEMA}.queries q ON q.query_id = e.query_id AND q.is_active
-    LEFT JOIN ${ML_SCHEMA}.schedule_jobs sj ON sj.job_id = e.schedule_job_id
-    LEFT JOIN ${ML_SCHEMA}.schedules s ON s.schedule_id = sj.schedule_id
+    LEFT JOIN ${QL_SCHEMA}.queries q ON q.query_id = e.query_id AND q.is_active
+    LEFT JOIN ${QL_SCHEMA}.schedule_jobs sj ON sj.job_id = e.schedule_job_id
+    LEFT JOIN ${QL_SCHEMA}.schedules s ON s.schedule_id = sj.schedule_id
     WHERE
       TRUE
       ${executionID ? 'AND e.execution_id = :executionID' : ''}
@@ -111,7 +114,7 @@ const getExecutionMetas = async ({
  * @returns {string|Object} Query results
  */
 const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
-  getFromS3Cache(`${customerID}/${executionID}`, { bucket: ML_EXECUTION_BUCKET, parseFromJson })
+  getFromS3Cache(`${customerID}/${executionID}`, { bucket: EXECUTION_BUCKET, parseFromJson })
 
 /**
  * Creates an execution
@@ -184,7 +187,7 @@ const createExecution = async (
   }
 
   const { rows: [{ executionID } = {}] } = await knexClient.raw(`
-    INSERT INTO ${ML_SCHEMA}.executions
+    INSERT INTO ${QL_SCHEMA}.executions
       (${cols.join(', ')})
     VALUES
       (${cols.map(() => '?').join(', ')})
@@ -229,11 +232,11 @@ const updateExecution = async (
   }
   // values.push(executionID)
   await knexClient.raw(`
-    UPDATE ${ML_SCHEMA}.executions
+    UPDATE ${QL_SCHEMA}.executions
     SET ${columns.map(col => `${col} = ?`).concat(expressions).join(', ')}
     WHERE
       execution_id = ?
-      ${optOutStatuses ? `AND NOT (status = ANY(?::${ML_SCHEMA}.ml_status[]))` : ''}
+      ${optOutStatuses ? `AND NOT (status = ANY(?::${QL_SCHEMA}.ml_status[]))` : ''}
   `, [...values, executionID, optOutStatuses])
 }
 
@@ -264,11 +267,11 @@ const sortViewDependencies = (viewDependencies) => {
  */
 const triggerExecution = async (executionID) => {
   try {
-    if (!ML_LAMBDA_EXECUTOR_ARN) {
+    if (!LAMBDA_EXECUTOR_ARN) {
       throw new Error('Lambda executor env variable not set')
     }
     const res = await lambda.invoke({
-      FunctionName: ML_LAMBDA_EXECUTOR_ARN,
+      FunctionName: LAMBDA_EXECUTOR_ARN,
       InvocationType: 'Event',
       Payload: JSON.stringify({ execution_id: executionID }),
     }).promise()
@@ -437,7 +440,7 @@ const runExecution = async (executionID) => {
     await putToS3Cache(
       `${customerID}/${executionID}`,
       results,
-      { gzip: true, json: true, bucket: ML_EXECUTION_BUCKET },
+      { gzip: true, json: true, bucket: EXECUTION_BUCKET },
     )
 
     // update status to succeeded

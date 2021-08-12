@@ -4,9 +4,8 @@ const { getView, getQueryViews } = require('./views')
 const { validateQuery } = require('./engine')
 const { updateExecution, queueExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
+const { QL_SCHEMA } = require('./constants')
 
-
-const { ML_SCHEMA } = process.env
 
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
@@ -81,14 +80,14 @@ const getQueryMetas = async ({
           ) FILTER (WHERE sq.schedule_id IS NOT NULL)
         ) i ORDER BY i->'isPaused', i->'scheduleID'
       ) AS "schedules"` : ''}
-    FROM ${ML_SCHEMA}.queries q
+    FROM ${QL_SCHEMA}.queries q
     JOIN public.customers c ON c.customerid = q.customer_id
     ${showExecutions || executionID ? `
-      LEFT JOIN ${ML_SCHEMA}.executions e ON e.query_id = q.query_id
+      LEFT JOIN ${QL_SCHEMA}.executions e ON e.query_id = q.query_id
     ` : ''}
     ${showSchedules || scheduleID ? `
-      LEFT JOIN ${ML_SCHEMA}.schedule_queries sq ON sq.query_id = q.query_id
-      LEFT JOIN ${ML_SCHEMA}.schedules s ON s.schedule_id = sq.schedule_id
+      LEFT JOIN ${QL_SCHEMA}.schedule_queries sq ON sq.query_id = q.query_id
+      LEFT JOIN ${QL_SCHEMA}.schedules s ON s.schedule_id = sq.schedule_id
     ` : ''}
     WHERE
       q.is_active
@@ -162,17 +161,17 @@ const createQuery = async (
   const expressionCols = ['name']
   const expressions = [`
     CASE WHEN EXISTS (
-      SELECT query_id FROM ${ML_SCHEMA}.queries
+      SELECT query_id FROM ${QL_SCHEMA}.queries
       WHERE
         customer_id = ?
         AND name = ?
-    ) THEN ? || ' - ' || currval(pg_get_serial_sequence('${ML_SCHEMA}.queries', 'query_id'))
+    ) THEN ? || ' - ' || currval(pg_get_serial_sequence('${QL_SCHEMA}.queries', 'query_id'))
     ELSE ? END
   `]
   const expressionValues = [customerID, name, name, name]
 
   const { rows: [{ queryID }] } = await knexClient.raw(`
-    INSERT INTO ${ML_SCHEMA}.queries
+    INSERT INTO ${QL_SCHEMA}.queries
       (${[...cols, ...expressionCols].join(', ')})
     VALUES
       (${cols.map(() => '?').concat(expressions).join(', ')})
@@ -220,7 +219,7 @@ const updateQuery = async (
   if (name) {
     expressions.push(`
       name = CASE WHEN EXISTS (
-        SELECT query_id FROM ${ML_SCHEMA}.queries
+        SELECT query_id FROM ${QL_SCHEMA}.queries
         WHERE
           customer_id = q.customer_id
           AND query_id <> q.query_id
@@ -258,7 +257,7 @@ const updateQuery = async (
     return
   }
   await knexClient.raw(`
-    UPDATE ${ML_SCHEMA}.queries q
+    UPDATE ${QL_SCHEMA}.queries q
     SET ${cols.map(col => `${col} = ?`).concat(expressions).join(', ')}
     WHERE query_id = ?
   `, [...values, ...expressionValues, queryID])
@@ -358,7 +357,7 @@ const deleteQuery = async (req, res, next) => {
 /**
  * Queues an execution for a query given its ID
  * @param {number} queryID Query ID
- * @param {number} scheduleJobID The ID of the schedule job which triggered the execution, if any
+ * @param {number} [scheduleJobID] The ID of the schedule job which triggered the execution, if any
  * @returns {number} Execution ID or undefined
  */
 const queueQueryExecution = async (queryID, scheduleJobID) => {
