@@ -31,14 +31,6 @@ module.exports.pgAtomRead = {
   password: process.env.PG_ATOM_PW,
 }
 
-module.exports.mappingPg = {
-  host: process.env.MAPPING_PG_HOST,
-  port: process.env.MAPPING_PG_PORT,
-  database: process.env.MAPPING_PG_DB,
-  user: process.env.MAPPING_PG_USER,
-  password: process.env.MAPPING_PG_PW,
-}
-
 module.exports.mapzen = {
   baseURL: process.env.MAP_ZEN_BASE_URL,
   apikey: process.env.API_KEY,

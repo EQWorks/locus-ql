@@ -7,7 +7,6 @@ const config = require('../../config')
 const applicationName = process.env.PGAPPNAME || `firstorder-${process.env.STAGE || 'dev'}`
 const pool = new Pool({ ...config.pg, max: 1, application_name: applicationName })
 const mlPool = new Pool({ ...config.pgML, max: 1, application_name: applicationName })
-const mapPool = new Pool({ ...config.mappingPg, max: 1, application_name: applicationName })
 const atomPool = new Pool({ ...config.pgAtom, max: 1, application_name: applicationName })
 const knex = Knex({
   client: 'pg',
@@ -18,12 +17,6 @@ const knex = Knex({
 const mlKnex = Knex({
   client: 'pg',
   connection: { ...config.pgML, application_name: applicationName },
-  pool: { min: 1, max: 1 },
-  debug: ['1', 'true'].includes((process.env.DEBUG || '').toLowerCase()),
-})
-const mapKnex = Knex({
-  client: 'pg',
-  connection: { ...config.mappingPg, application_name: applicationName },
   pool: { min: 1, max: 1 },
   debug: ['1', 'true'].includes((process.env.DEBUG || '').toLowerCase()),
 })
@@ -39,9 +32,6 @@ const newPGClientFromPoolConfig = (pgPool = pool, options = {}) => {
   switch (pgPool) {
     case pool:
       Object.assign(pgOptions, config.pg)
-      break
-    case mapPool:
-      Object.assign(pgOptions, config.mappingPg)
       break
     case mlPool:
       Object.assign(pgOptions, config.pgML)
@@ -125,7 +115,7 @@ const fdwConnectByName = (pgConnection, { connectionName, timeout }) => {
       creds = config.pgAtom
       break
     case MAPS_FDW_CONNECTION:
-      creds = config.mappingPg
+      creds = config.pg
       break
     default:
       creds = config.pgAtom
@@ -148,11 +138,11 @@ const knexBuilderToRaw = (builder) => {
 module.exports = {
   pool,
   mlPool,
-  mapPool,
+  mapPool: pool, // TODO: legacy stub, to be removed
   atomPool,
   knex,
   mlKnex,
-  mapKnex,
+  mapKnex: knex, // TODO: legacy stub, to be removed
   newPGClientFromPoolConfig,
   fdwConnect,
   fdwDisconnect,
