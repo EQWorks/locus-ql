@@ -1,3 +1,4 @@
+/* QL LOG VIEW CONSTANTS */
 module.exports = {
   PG_CACHE_DAYS: 90, // days of logs to import into cache
 
@@ -10,6 +11,4 @@ module.exports = {
   ACCESS_CUSTOMER: 1, // access type enum
   ACCESS_INTERNAL: 2, // access type enum
   ACCESS_PRIVATE: 3, // access type enum - not exposed to UI
-
-  ML_SCHEMA: process.env.ML_SCHEMA,
 }

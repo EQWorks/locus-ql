@@ -6,7 +6,7 @@ const express = require('express')
 const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
 const { getViewCategoryTreeMW } = require('../../ml/views/taxonomies')
 const {
-  queueExecution,
+  queueExecutionMW,
   listExecutions,
   loadExecution,
   respondWithExecution,
@@ -20,7 +20,12 @@ const {
   loadQuery,
   respondWithQuery,
 } = require('../../ml/queries')
-const { validateQuery } = require('../../ml/engine')
+const {
+  putQuerySchedule,
+  deleteQueryScheduleMW,
+  listQuerySchedules,
+} = require('../../ml/schedules/queries')
+const { validateQueryMW } = require('../../ml/engine')
 const { accessHasSingleCustomer } = require('../../middleware/validation')
 
 
@@ -35,13 +40,13 @@ router.get('/', (req, _, next) => {
 }, listViewsMW)
 // main query endpoint -> replaced by POST /executions
 router.post(
-  '/executions/',
+  '/',
   loadQuery(false), // run saved query
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
   loadQueryViews(),
-  validateQuery(),
-  queueExecution,
+  validateQueryMW(),
+  queueExecutionMW,
 )
 
 /* -- TAXONOMIES -- */
@@ -140,8 +145,8 @@ router.post(
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
   loadQueryViews(),
-  validateQuery(),
-  queueExecution,
+  validateQueryMW(),
+  queueExecutionMW,
 )
 
 
@@ -173,7 +178,7 @@ router.put(
   '/queries/:id(\\d+)',
   loadQuery(true),
   loadQueryViews(true),
-  validateQuery(true),
+  validateQueryMW(true),
   putQuery,
 )
 
@@ -223,8 +228,56 @@ router.post(
   loadExecution(false), // use execution as template (superseded by saved query)
   accessHasSingleCustomer,
   loadQueryViews(),
-  validateQuery(),
+  validateQueryMW(),
   postQuery,
+)
+
+
+/* -- QUERY SCHEDULES -- */
+
+/**
+ * @api {get} /queries/:id/schedules/
+ * @apiName Get the list of query schedules
+ * @apiDescription Returns an array of schedules attached to a specific query
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the query for which to retrieve schedules
+*/
+router.get(
+  '/queries/:id(\\d+)/schedules/',
+  loadQuery(true),
+  listQuerySchedules,
+)
+
+
+/**
+ * @api {post} /queries/:id/schedules/
+ * @apiName Create or update a query schedule
+ * @apiDescription Create or update a query schedule as identifed by a query ID and CRON expression
+ * @apiGroup ml
+ * @apiParam (param) {number} id ID of the saved query the schedule should be attached to
+ * @apiParam (Req body) {string} cron CRON expression
+ * @apiParam (Req body) {string|number} [startDate] Start date (inclusive) in ISO or epoch format
+ * @apiParam (Req body) {string|number} [endDate] End date (inclusive) in ISO or epoch format
+ * @apiParam (Req body) {boolean} [isPaused] 'true' if the schedule should be in 'paused' state
+*/
+router.post(
+  '/queries/:id(\\d+)/schedules/',
+  loadQuery(true),
+  putQuerySchedule,
+)
+
+/**
+ * @api {delete} /queries/:id/schedules/
+ * @apiName Delete a query schedule
+ * @apiDescription Delete a query schedule as identifed by a query ID and CRON expression
+ * @apiGroup ml
+ * @apiParam (param) {number} id ID of the saved query the schedule belongs to
+ * @apiParam (Req body) {string} cron CRON expression
+*/
+router.delete(
+  '/queries/:id(\\d+)/schedules/',
+  loadQuery(true),
+  deleteQueryScheduleMW,
 )
 
 module.exports = router

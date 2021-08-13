@@ -13,8 +13,8 @@ const {
   CU_ADVERTISER,
   ACCESS_INTERNAL,
   ACCESS_CUSTOMER,
-  ML_SCHEMA,
 } = require('./constants')
+const { QL_SCHEMA } = require('../../constants')
 const { getPgView } = require('./pg-views')
 const { viewTypes } = require('../taxonomies')
 
@@ -276,7 +276,7 @@ const prepareAthenaQuery = (agencyID, advertiserID, logType, viewColumns) => {
 const getViewCacheID = async (agencyID, logType, viewHash) => {
   const { rows: [{ viewID } = {}] } = await knex.raw(`
     SELECT view_id AS "viewID"
-    FROM ${ML_SCHEMA}.log_views
+    FROM ${QL_SCHEMA}.log_views
     WHERE
       log_type = ?
       AND customer_id = ?
@@ -300,7 +300,7 @@ const createViewCache = (agencyID, logType, viewHash, viewColumns, athenaQuery) 
   .transaction(async (trx) => {
     // insert view
     const { rows: [{ viewID }] } = await trx.raw(`
-      INSERT INTO ${ML_SCHEMA}.log_views
+      INSERT INTO ${QL_SCHEMA}.log_views
         (log_type, customer_id, view_hash, athena_query)
       VALUES
         (:logType, :agencyID, :viewHash, :athenaQuery)
@@ -327,7 +327,7 @@ const createViewCache = (agencyID, logType, viewHash, viewColumns, athenaQuery) 
       groupByColumns.push(`${col} ${logTypes[logType].columns[col].pgType}`)
     })
     await trx.raw(`
-      CREATE TABLE IF NOT EXISTS ${ML_SCHEMA}.log_view_${viewID} (
+      CREATE TABLE IF NOT EXISTS ${QL_SCHEMA}.log_view_${viewID} (
         ${[...groupByColumns, ...aggColumns].join(', ')}
       )
     `)
@@ -421,7 +421,7 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
               timezone('UTC', date + hour * INTERVAL '1 hour')
             )::timestamptz AS time_tz
           `, timeZone))
-          .from(`${ML_SCHEMA}.log_view_${cacheID}`),
+          .from(`${QL_SCHEMA}.log_view_${cacheID}`),
       })
   }
 

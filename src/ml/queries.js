@@ -1,11 +1,11 @@
 const { knex } = require('../util/db')
 const { apiError, APIError } = require('../util/api-error')
-const { getView } = require('./views')
-const { updateExecution } = require('./executions')
+const { getView, getQueryViews } = require('./views')
+const { validateQuery } = require('./engine')
+const { updateExecution, queueExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
+const { QL_SCHEMA } = require('./constants')
 
-
-const { ML_SCHEMA } = process.env
 
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
@@ -16,12 +16,15 @@ const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
  * @param {-1|number[]} [filters.whitelabelIDs] Array of whitelabel IDs (agency ID)
  * @param {-1|number[]} [filters.customerIDs] Array of customer IDs (agency ID)
  * @param {number} [filters.executionID] Execution ID
+ * @param {number} [filters.scheduleID] Schedule ID
  * @param {string} [filters.queryHash] Query hash (unique to the query)
  * @param {string} [filters.columnHash] Column hash (unique to the name/type of the results)
  * @param {boolean} [filters.hideInternal=false] Whether or not to filter out queries
  * using internal fields
  * @param {boolean} [filters.showExecutions=false] Whether or not to append the list of
  * executions to the query object
+ * @param {boolean} [filters.showSchedules=false] Whether or not to append the list of
+ * schedules to the query object
  * @returns {Promise<Array>}
  */
 const getQueryMetas = async ({
@@ -29,10 +32,12 @@ const getQueryMetas = async ({
   whitelabelIDs,
   customerIDs,
   executionID,
+  scheduleID,
   queryHash,
   columnHash,
   hideInternal = false,
   showExecutions = false,
+  showSchedules = false,
 } = {}) => {
   const { rows } = await knex.raw(`
     SELECT
@@ -48,35 +53,56 @@ const getQueryMetas = async ({
       q.view_ids AS "viewIDs",
       q.columns,
       q.is_internal AS "isInternal"
-      ${showExecutions ? `, coalesce(
-        array_agg(
-          json_build_object(
-            'executionID', e.execution_id,
-            'queryHash', e.query_hash,
-            'columnHash', e.column_hash,
-            'status', e.status,
-            'statusTS', e.status_ts,
-            'isInternal', e.is_internal
-          ) ORDER BY e.execution_id DESC
-        ) FILTER (WHERE e.execution_id IS NOT NULL),
-        '{}'
+      ${showExecutions ? `, ARRAY(
+        SELECT i FROM UNNEST(
+          array_agg(
+            DISTINCT jsonb_build_object(
+              'executionID', e.execution_id,
+              'queryHash', e.query_hash,
+              'columnHash', e.column_hash,
+              'status', e.status,
+              'statusTS', e.status_ts,
+              'isInternal', e.is_internal
+            )
+          ) FILTER (WHERE e.execution_id IS NOT NULL)
+        ) i ORDER BY i->'executionID' DESC
       ) AS "executions"` : ''}
-    FROM ${ML_SCHEMA}.queries q
+      ${showSchedules ? `, ARRAY(
+        SELECT i - 'scheduleID' FROM UNNEST(
+          array_agg(
+            DISTINCT jsonb_build_object(
+              'scheduleID', sq.schedule_id,
+              'cron', s.cron,
+              'startDate', sq.start_date,
+              'endDate', sq.end_date,
+              'isPaused', sq.is_paused
+            )
+          ) FILTER (WHERE sq.schedule_id IS NOT NULL)
+        ) i ORDER BY i->'isPaused', i->'scheduleID'
+      ) AS "schedules"` : ''}
+    FROM ${QL_SCHEMA}.queries q
     JOIN public.customers c ON c.customerid = q.customer_id
-    ${showExecutions || executionID ? `LEFT JOIN ${ML_SCHEMA}.executions e USING (query_id)` : ''}
+    ${showExecutions || executionID ? `
+      LEFT JOIN ${QL_SCHEMA}.executions e ON e.query_id = q.query_id
+    ` : ''}
+    ${showSchedules || scheduleID ? `
+      LEFT JOIN ${QL_SCHEMA}.schedule_queries sq ON sq.query_id = q.query_id
+      LEFT JOIN ${QL_SCHEMA}.schedules s ON s.schedule_id = sq.schedule_id
+    ` : ''}
     WHERE
       q.is_active
       ${queryID ? 'AND q.query_id = :queryID' : ''}
       ${whitelabelIDs && whitelabelIDs !== -1 ? 'AND c.whitelabelid = ANY(:whitelabelIDs)' : ''}
       ${customerIDs && customerIDs !== -1 ? 'AND c.customerid = ANY(:customerIDs)' : ''}
       ${executionID ? 'AND e.execution_id = :executionID' : ''}
+      ${scheduleID ? 'AND sq.schedule_id = :scheduleID' : ''}
       ${queryHash ? 'AND q.query_hash = :queryHash' : ''}
       ${columnHash ? 'AND q.column_hash = :columnHash' : ''}
       ${hideInternal ? 'AND q.is_internal <> TRUE' : ''}
       ${showExecutions && hideInternal ? 'AND e.is_internal <> TRUE' : ''}
-    ${showExecutions ? 'GROUP BY 1, 2, 3, 4, 5, 6, 7' : ''}
+    ${showExecutions || showSchedules ? 'GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12' : ''}
   ORDER BY 1 DESC
-  `, { queryID, whitelabelIDs, customerIDs, executionID, queryHash, columnHash })
+  `, { queryID, whitelabelIDs, customerIDs, executionID, scheduleID, queryHash, columnHash })
   return rows
 }
 
@@ -135,17 +161,17 @@ const createQuery = async (
   const expressionCols = ['name']
   const expressions = [`
     CASE WHEN EXISTS (
-      SELECT query_id FROM ${ML_SCHEMA}.queries
+      SELECT query_id FROM ${QL_SCHEMA}.queries
       WHERE
         customer_id = ?
         AND name = ?
-    ) THEN ? || ' - ' || currval(pg_get_serial_sequence('${ML_SCHEMA}.queries', 'query_id'))
+    ) THEN ? || ' - ' || currval(pg_get_serial_sequence('${QL_SCHEMA}.queries', 'query_id'))
     ELSE ? END
   `]
   const expressionValues = [customerID, name, name, name]
 
   const { rows: [{ queryID }] } = await knexClient.raw(`
-    INSERT INTO ${ML_SCHEMA}.queries
+    INSERT INTO ${QL_SCHEMA}.queries
       (${[...cols, ...expressionCols].join(', ')})
     VALUES
       (${cols.map(() => '?').concat(expressions).join(', ')})
@@ -193,7 +219,7 @@ const updateQuery = async (
   if (name) {
     expressions.push(`
       name = CASE WHEN EXISTS (
-        SELECT query_id FROM ${ML_SCHEMA}.queries
+        SELECT query_id FROM ${QL_SCHEMA}.queries
         WHERE
           customer_id = q.customer_id
           AND query_id <> q.query_id
@@ -231,7 +257,7 @@ const updateQuery = async (
     return
   }
   await knexClient.raw(`
-    UPDATE ${ML_SCHEMA}.queries q
+    UPDATE ${QL_SCHEMA}.queries q
     SET ${cols.map(col => `${col} = ?`).concat(expressions).join(', ')}
     WHERE query_id = ?
   `, [...values, ...expressionValues, queryID])
@@ -328,6 +354,57 @@ const deleteQuery = async (req, res, next) => {
   }
 }
 
+/**
+ * Queues an execution for a query given its ID
+ * @param {number} queryID Query ID
+ * @param {number} [scheduleJobID] The ID of the schedule job which triggered the execution, if any
+ * @returns {number} Execution ID or undefined
+ */
+const queueQueryExecution = async (queryID, scheduleJobID) => {
+  const [queryMeta] = await getQueryMetas({ queryID })
+  if (!queryMeta) {
+    throw apiError('Invalid query ID')
+  }
+  const { whitelabelID, customerID, query, viewIDs, isInternal } = queryMeta
+  const access = {
+    whitelabel: [whitelabelID],
+    customers: [customerID],
+    prefix: isInternal ? 'internal' : 'customers',
+  }
+
+  // get views
+  const views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
+
+  // get query views
+  const {
+    mlViews,
+    mlViewColumns,
+    mlViewDependencies,
+    mlViewIsInternal,
+    mlViewFdwConnections,
+  } = await getQueryViews(access, views, query)
+
+  const {
+    mlQueryHash,
+    mlQueryColumnHash,
+    mlQueryColumns,
+  } = await validateQuery(mlViews, mlViewColumns, mlViewFdwConnections, query, access)
+
+  const executionID = await queueExecution(
+    customerID,
+    mlQueryHash,
+    mlQueryColumnHash,
+    query,
+    mlViews,
+    mlViewDependencies,
+    mlViewIsInternal,
+    mlQueryColumns,
+    { queryID, scheduleJobID },
+  )
+
+  return executionID
+}
+
 // isRequired flags whether or not 'query' is a mandatory route/query param
 const loadQuery = (isRequired = true) => async (req, _, next) => {
   try {
@@ -349,6 +426,7 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
       customerIDs,
       hideInternal,
       showExecutions: true,
+      showSchedules: true,
     })
     if (!query) {
       throw apiError('Invalid query ID', 404)
@@ -476,6 +554,7 @@ module.exports = {
   postQuery,
   putQuery,
   deleteQuery,
+  queueQueryExecution,
   loadQuery,
   respondWithQuery,
   listQueries,

@@ -6,16 +6,19 @@ const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
 const { putToS3Cache, getFromS3Cache } = require('./cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
+const {
+  QL_SCHEMA,
+  EXECUTION_BUCKET,
+  LAMBDA_EXECUTOR_ARN,
+  STATUS_QUEUED,
+  STATUS_SOURCING,
+  STATUS_RUNNING,
+  STATUS_RETRYING,
+  STATUS_SUCCEEDED,
+  STATUS_CANCELLED,
+  STATUS_FAILED,
+} = require('./constants')
 
-
-const { ML_SCHEMA, ML_EXECUTION_BUCKET, ML_LAMBDA_EXECUTOR_ARN } = process.env
-const STATUS_QUEUED = 'QUEUED'
-const STATUS_SOURCING = 'SOURCING'
-const STATUS_RUNNING = 'RUNNING'
-const STATUS_RETRYING = 'RETRYING'
-const STATUS_SUCCEEDED = 'SUCCEEDED'
-const STATUS_CANCELLED = 'CANCELLED'
-const STATUS_FAILED = 'FAILED'
 
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
@@ -66,10 +69,14 @@ const getExecutionMetas = async ({
       e.columns,
       e.is_internal AS "isInternal",
       e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
-      e.cost
-    FROM ${ML_SCHEMA}.executions e
+      e.cost,
+      s.cron AS "scheduleCron",
+      sj.job_ts AS "scheduleTS"
+    FROM ${QL_SCHEMA}.executions e
     JOIN public.customers c ON c.customerid = e.customer_id
-    LEFT JOIN ${ML_SCHEMA}.queries q ON q.query_id = e.query_id AND q.is_active
+    LEFT JOIN ${QL_SCHEMA}.queries q ON q.query_id = e.query_id AND q.is_active
+    LEFT JOIN ${QL_SCHEMA}.schedule_jobs sj ON sj.job_id = e.schedule_job_id
+    LEFT JOIN ${QL_SCHEMA}.schedules s ON s.schedule_id = sj.schedule_id
     WHERE
       TRUE
       ${executionID ? 'AND e.execution_id = :executionID' : ''}
@@ -107,7 +114,7 @@ const getExecutionMetas = async ({
  * @returns {string|Object} Query results
  */
 const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
-  getFromS3Cache(`${customerID}/${executionID}`, { bucket: ML_EXECUTION_BUCKET, parseFromJson })
+  getFromS3Cache(`${customerID}/${executionID}`, { bucket: EXECUTION_BUCKET, parseFromJson })
 
 /**
  * Creates an execution
@@ -120,11 +127,14 @@ const getExecutionResults = (customerID, executionID, parseFromJson = true) =>
  * @param {boolean} isInternal Whether or not the query accesses views restricted to internal users
  * @param {Object.<string, number[]>} dependencies Dynamic views the query depends on (e.g. log or
  * ext views). In the form {dep_type: dep_id[]}
- * @param {number} [queryID] When the execution is tied to a saved query, the id of such query
- * @param {string} [status] Initial status
- * @param {Knex} [knexClient=knex] Knex client to use to run the SQL query. Defaults to the
+ * @param {Object} [options] Optional args
+ * @param {number} [options.queryID] If the execution is tied to a saved query, the id of such query
+ * @param {string} [options.status] Initial status
+ * @param {Knex} [options.knexClient=knex] Knex client to use to run the SQL query. Defaults to the
  * global client
- * @returns {Promise<number>} The execution ID
+ * @param {Date} [options.scheduleJobID] The ID of the schedule job which triggered the
+ * execution, if any
+ * @returns {Promise<number>} The execution ID or undefined when a SQL conflict is encountered
  */
 const createExecution = async (
   customerID,
@@ -135,9 +145,7 @@ const createExecution = async (
   columns,
   isInternal,
   dependencies,
-  queryID,
-  status,
-  knexClient = knex,
+  { queryID, status, knexClient = knex, scheduleJobID } = {},
 ) => {
   const cols = [
     'customer_id',
@@ -173,11 +181,17 @@ const createExecution = async (
     values.push(status)
   }
 
-  const { rows: [{ executionID }] } = await knexClient.raw(`
-    INSERT INTO ${ML_SCHEMA}.executions
+  if (scheduleJobID) {
+    cols.push('schedule_job_id')
+    values.push(scheduleJobID)
+  }
+
+  const { rows: [{ executionID } = {}] } = await knexClient.raw(`
+    INSERT INTO ${QL_SCHEMA}.executions
       (${cols.join(', ')})
     VALUES
       (${cols.map(() => '?').join(', ')})
+    ON CONFLICT DO NOTHING
     RETURNING execution_id AS "executionID"
   `, values)
 
@@ -218,11 +232,11 @@ const updateExecution = async (
   }
   // values.push(executionID)
   await knexClient.raw(`
-    UPDATE ${ML_SCHEMA}.executions
+    UPDATE ${QL_SCHEMA}.executions
     SET ${columns.map(col => `${col} = ?`).concat(expressions).join(', ')}
     WHERE
       execution_id = ?
-      ${optOutStatuses ? `AND NOT (status = ANY(?::${ML_SCHEMA}.ml_status[]))` : ''}
+      ${optOutStatuses ? `AND NOT (status = ANY(?::${QL_SCHEMA}.ml_status[]))` : ''}
   `, [...values, executionID, optOutStatuses])
 }
 
@@ -253,11 +267,11 @@ const sortViewDependencies = (viewDependencies) => {
  */
 const triggerExecution = async (executionID) => {
   try {
-    if (!ML_LAMBDA_EXECUTOR_ARN) {
+    if (!LAMBDA_EXECUTOR_ARN) {
       throw new Error('Lambda executor env variable not set')
     }
     const res = await lambda.invoke({
-      FunctionName: ML_LAMBDA_EXECUTOR_ARN,
+      FunctionName: LAMBDA_EXECUTOR_ARN,
       InvocationType: 'Event',
       Payload: JSON.stringify({ execution_id: executionID }),
     }).promise()
@@ -275,13 +289,67 @@ const triggerExecution = async (executionID) => {
   }
 }
 
+/**
+ * Creates an entry for the execution in the database and triggers such execution when
+ * it is dependency-free
+ * @param {Object.<string, Knex.QueryBuilder|Knex.Raw>} views Map of view ID's and knex
+ * view objects
+ * @param {Object.<string, [string, number][]>} viewDependencies Map of view ID's and
+ * dependency arrays
+ * @param {Object.<string, boolean>} viewIsInternal Map of view ID's and internal flags
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {string} queryHash Query hash (unique to the query)
+ * @param {string} columnHash Column hash (unique to the name/type of the results)
+ * @param {Object} query Query object
+ * @param {[string, number][]} columns List of the query columns formatted as [name, pgTypeOID]
+ * @param {Object} [options] Optional args
+ * @param {number} [options.queryID] If the execution is tied to a saved query, the ID of such query
+ * @param {Date} [options.scheduleJobID] The ID of the schedule job which triggered the
+ * execution, if any
+ * @returns {Promise<number>} The execution ID or undefined
+ */
+const queueExecution = async (
+  customerID,
+  queryHash,
+  columnHash,
+  query,
+  views,
+  viewDependencies,
+  viewIsInternal,
+  columns,
+  { queryID, scheduleJobID } = {},
+) => {
+  const viewIDs = Object.keys(views)
+  const dependencies = sortViewDependencies(viewDependencies)
+  // if no dependencies, can start execution right away
+  const status = Object.keys(dependencies).length ? STATUS_QUEUED : STATUS_RUNNING
+  // determine whether or not query uses internal-only views
+  const isInternal = Object.values(viewIsInternal).some(is => is)
+  // insert into executions
+  const executionID = await createExecution(
+    customerID,
+    queryHash,
+    columnHash,
+    query,
+    viewIDs,
+    columns,
+    isInternal,
+    dependencies,
+    { queryID, status, scheduleJobID },
+  )
+  // trigger execution when no deps
+  if (executionID && status === STATUS_RUNNING) {
+    await triggerExecution(executionID)
+  }
+  return executionID
+}
+
 // extracts async and saved queries and queues them as executions
-const queueExecution = async (req, res, next) => {
+const queueExecutionMW = async (req, res, next) => {
   try {
     const {
       queryID,
       query: loadedQuery,
-      viewIDs: loadedViewIDs,
     } = req.mlQuery || req.mlExecution || {}
     const { query } = req.body
     const {
@@ -293,34 +361,26 @@ const queueExecution = async (req, res, next) => {
       mlQueryColumnHash,
       mlQueryColumns,
     } = req
-    const dependencies = sortViewDependencies(mlViewDependencies)
-    // if no dependencies, can start execution right away
-    const status = Object.keys(dependencies).length ? STATUS_QUEUED : STATUS_RUNNING
-    // determine whether or not query uses internal-only views
-    const isInternal = Object.values(mlViewIsInternal).some(is => is)
-    // insert into executions
-    const executionID = await createExecution(
+    const executionID = await queueExecution(
       access.customers[0],
       mlQueryHash,
       mlQueryColumnHash,
       loadedQuery || query,
-      loadedViewIDs || Object.keys(mlViews),
+      mlViews,
+      mlViewDependencies,
+      mlViewIsInternal,
       mlQueryColumns,
-      isInternal,
-      dependencies,
       queryID,
-      status,
     )
-    // trigger execution when no deps
-    if (status === STATUS_RUNNING) {
-      await triggerExecution(executionID)
+    if (!executionID) {
+      throw apiError('Execution already exists', 400)
     }
     res.json({ executionID })
   } catch (err) {
     if (err instanceof APIError) {
       return next(err)
     }
-    next(apiError('Query execution could not be started', 500))
+    next(apiError('Failed to queue the query execution', 500))
   }
 }
 
@@ -380,7 +440,7 @@ const runExecution = async (executionID) => {
     await putToS3Cache(
       `${customerID}/${executionID}`,
       results,
-      { gzip: true, json: true, bucket: ML_EXECUTION_BUCKET },
+      { gzip: true, json: true, bucket: EXECUTION_BUCKET },
     )
 
     // update status to succeeded
@@ -640,6 +700,7 @@ module.exports = {
   createExecution,
   updateExecution,
   queueExecution,
+  queueExecutionMW,
   executionHandler,
   loadExecution,
   respondWithExecution,
