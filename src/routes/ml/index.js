@@ -24,7 +24,7 @@ const {
   putQuerySchedule,
   deleteQueryScheduleMW,
   listQuerySchedules,
-} = require('../../ml/schedules')
+} = require('../../ml/schedules/queries')
 const { validateQueryMW } = require('../../ml/engine')
 const { accessHasSingleCustomer } = require('../../middleware/validation')
 
