@@ -9,6 +9,22 @@ const { viewTypes, viewCategories } = require('./taxonomies')
 const CONNECTION_TABLE = 'ext_conn.connections'
 const SETS_TABLE = 'ext_conn.sets'
 
+const viewCategoryToConnType = {
+  [viewCategories.EXT_AZURE_BLOB]: 'azure blob',
+  [viewCategories.EXT_DIRECT]: 'direct',
+  [viewCategories.EXT_GOOGLE_ANALYTICS]: 'google analytics 4',
+  [viewCategories.EXT_GOOGLE_GCP_CS]: 'gcp cs',
+  [viewCategories.EXT_GOOGLE_SHEET]: 'google sheet',
+  // [viewCategories.EXT_HUBSPOT]: 'hubspot',
+  [viewCategories.EXT_S3]: 's3',
+  [viewCategories.EXT_SHOPIFY]: 'shopify',
+  [viewCategories.EXT_STRIPE]: 'stripe',
+}
+const connTypeToViewCategory = Object.entries(viewCategoryToConnType).reduce((acc, [k, v]) => {
+  acc[v] = k
+  return acc
+}, {})
+
 const getQueryView = async (access, { conn_id }) => {
   const viewID = `${viewTypes.EXT}_${conn_id}`
   const { whitelabel, customers } = access
@@ -51,7 +67,7 @@ const getQueryView = async (access, { conn_id }) => {
   return { viewID, mlView, mlViewColumns, mlViewDependencies }
 }
 
-const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) => {
+const listViews = async ({ access, filter: { conn_id, categories } = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
@@ -107,6 +123,24 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
     }
   }
 
+  if (categories) {
+    const connTypeFilters = []
+    if (categories.includes(viewCategories.EXT_OTHER)) {
+      query.values.push(Object.values(viewCategoryToConnType))
+      connTypeFilters.push(`NOT (c.type = ANY($${query.values.length}))`)
+    }
+    const connTypes = categories.map(cat => viewCategoryToConnType[cat])
+    if (connTypes.length) {
+      query.values.push(connTypes)
+      connTypeFilters.push(`c.type = ANY($${query.values.length})`)
+    }
+
+    query.text = `
+      ${query.text}
+      AND (${connTypeFilters.join(' OR ')})
+    `
+  }
+
   const connections = await pgWithCache(
     query.text,
     query.values,
@@ -122,7 +156,7 @@ const listViews = async ({ access, filter: { conn_id } = {}, inclMeta = true }) 
       view: {
         id: `${viewTypes.EXT}_${id}`,
         type: viewTypes.EXT,
-        category: viewCategories.EXT,
+        category: connTypeToViewCategory[type] || viewCategories.EXT_OTHER,
         conn_id: id,
       },
     }
@@ -216,7 +250,7 @@ const getView = async (access, viewID) => {
     view: {
       id: `${viewTypes.EXT}_${conn_id}`,
       type: viewTypes.EXT,
-      category: viewCategories.EXT,
+      category: connTypeToViewCategory[type] || viewCategories.EXT_OTHER,
       conn_id,
     },
     columns,

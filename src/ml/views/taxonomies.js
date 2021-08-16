@@ -31,6 +31,16 @@ const viewCategories = {
   CUSTOMER_DATA: 'customer_data',
   EQ_DATA: 'eq_data',
   EXT: 'external_data',
+  EXT_AZURE_BLOB: 'ext_azure_blob',
+  EXT_DIRECT: 'ext_direct',
+  EXT_GOOGLE_ANALYTICS: 'ext_google_analytics',
+  EXT_GOOGLE_GCP_CS: 'ext_google_gcp_cs',
+  EXT_GOOGLE_SHEET: 'ext_google_sheet',
+  // EXT_HUBSPOT: 'ext_hubspot',
+  EXT_OTHER: 'ext_other',
+  EXT_S3: 'ext_s3',
+  EXT_SHOPIFY: 'ext_shopify',
+  EXT_STRIPE: 'ext_stripe',
   GEO: 'geographic',
   LAYERS: 'layers',
   LOCUS_BEACONS: 'locus_beacons',
@@ -55,7 +65,8 @@ const viewCategoryValues = Object.entries(viewCategories).reduce((acc, [k, v]) =
 const rootViewCategories = [
   viewCategories.EQ_DATA,
   viewCategories.MARKETPLACE_DATA,
-  viewCategories.CUSTOMER_DATA,
+  // viewCategories.CUSTOMER_DATA,
+  viewCategories.EXT,
 ]
 
 const viewCategoryDesc = {
@@ -132,12 +143,63 @@ const viewCategoryDesc = {
     name: 'Geographic',
     type: viewTypes.GEO,
   },
-  [viewCategories.CUSTOMER_DATA]: {
-    name: 'Customer Data',
-    children: [viewCategories.EXT],
-  },
+  // [viewCategories.CUSTOMER_DATA]: {
+  //   name: 'Customer Data',
+  //   children: [viewCategories.EXT],
+  // },
   [viewCategories.EXT]: {
     name: 'External Data',
+    children: [
+      viewCategories.EXT_AZURE_BLOB,
+      viewCategories.EXT_DIRECT,
+      viewCategories.EXT_GOOGLE_ANALYTICS,
+      viewCategories.EXT_GOOGLE_GCP_CS,
+      viewCategories.EXT_GOOGLE_SHEET,
+      // viewCategories.EXT_HUBSPOT,
+      viewCategories.EXT_OTHER,
+      viewCategories.EXT_S3,
+      viewCategories.EXT_SHOPIFY,
+      viewCategories.EXT_STRIPE,
+    ],
+  },
+  [viewCategories.EXT_AZURE_BLOB]: {
+    name: 'Azure Blob Storage',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_DIRECT]: {
+    name: 'Direct Upload',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_GOOGLE_ANALYTICS]: {
+    name: 'Google Analytics',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_GOOGLE_GCP_CS]: {
+    name: 'Google Cloud Storage',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_GOOGLE_SHEET]: {
+    name: 'Google Sheets',
+    type: viewTypes.EXT,
+  },
+  // [viewCategories.EXT_HUBSPOT]: {
+  //   name: 'HubSpot',
+  //   type: viewTypes.EXT,
+  // },
+  [viewCategories.EXT_OTHER]: {
+    name: 'Other',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_S3]: {
+    name: 'AWS S3',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_SHOPIFY]: {
+    name: 'Shopify',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_STRIPE]: {
+    name: 'Stripe',
     type: viewTypes.EXT,
   },
 }
@@ -183,7 +245,7 @@ const reduceViewCategoryTree = (cb, initAcc, root) => {
   return initAccOut
 }
 
-const getViewCategoryTree = root => reduceViewCategoryTree(
+const getViewCategoryTree = (root, sorted = false) => reduceViewCategoryTree(
   (nodeKey, currentAcc) => {
     const { name, type } = viewCategoryDesc[nodeKey] || {}
     const node = {
@@ -197,6 +259,16 @@ const getViewCategoryTree = root => reduceViewCategoryTree(
       return [node, node.children]
     }
     currentAcc.push(node)
+    if (sorted) {
+      currentAcc.sort((a, b) => {
+        const nameA = a.name.toLowerCase()
+        const nameB = b.name.toLowerCase()
+        if (nameA === nameB) {
+          return 0
+        }
+        return nameA > nameB ? 1 : -1
+      })
+    }
     return [currentAcc, node.children]
   },
   undefined,
@@ -231,7 +303,7 @@ const listViewCategoriesByViewType = root => reduceViewCategoryTree(
 const getViewCategoryTreeMW = (req, res, next) => {
   try {
     const { root } = req.query
-    const tree = getViewCategoryTree(root)
+    const tree = getViewCategoryTree(root, true)
     res.status(200).json(tree)
   } catch (err) {
     if (err instanceof APIError) {

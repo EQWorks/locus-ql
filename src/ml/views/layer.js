@@ -47,16 +47,15 @@ const getLayerColumns = (table, resolution) => {
   return columns
 }
 
-const layerTypeToViewCategory = {
-  18: viewCategories.LAYER_DEMOGRAPHIC,
-  19: viewCategories.LAYER_DEMOGRAPHIC,
-  20: viewCategories.LAYER_PROPENSITY,
-}
-const viewCategoryTolayerType = {
+const viewCategoryToLayerType = {
   [viewCategories.LAYER_DEMOGRAPHIC]: 18,
   [viewCategories.LAYER_DEMOGRAPHIC]: 19,
   [viewCategories.LAYER_PROPENSITY]: 20,
 }
+const layerTypeToViewCategory = Object.entries(viewCategoryToLayerType).reduce((acc, [k, v]) => {
+  acc[v] = k
+  return acc
+}, {})
 
 const getKnexLayerQuery = async (access, { categories, ...filter } = {}) => {
   const { whitelabel, customers, email = '' } = access
@@ -66,7 +65,7 @@ const getKnexLayerQuery = async (access, { categories, ...filter } = {}) => {
 
   // const layerTypes = [18, 19, 20] // demo, prop and persona
   const layerTypes = categories
-    ? categories.map(cat => viewCategoryTolayerType[cat])
+    ? categories.map(cat => viewCategoryToLayerType[cat])
     : [18, 19, 20] // demo, prop and persona
 
   const layerQuery = knex('layer')
