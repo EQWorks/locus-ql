@@ -28,7 +28,7 @@ const viewTypeValues = Object.entries(viewTypes).reduce((acc, [k, v]) => {
 const viewCategories = {
   ATOM_CAMPAIGNS: 'atom_campaigns',
   ATOM_VAST_EVENTS: 'atom_vast_events',
-  CUSTOMER_DATA: 'customer_data',
+  CUSTOMER_DATA: 'customer_data', // legacy (same as ext)
   EQ_DATA: 'eq_data',
   EXT: 'external_data',
   EXT_AZURE_BLOB: 'ext_azure_blob',
@@ -64,15 +64,35 @@ const viewCategoryValues = Object.entries(viewCategories).reduce((acc, [k, v]) =
 
 const rootViewCategories = [
   viewCategories.EQ_DATA,
+  viewCategories.EXT,
   viewCategories.MARKETPLACE_DATA,
   // viewCategories.CUSTOMER_DATA,
-  viewCategories.EXT,
 ]
 
 const viewCategoryDesc = {
   [viewCategories.EQ_DATA]: {
     name: 'EQ Data',
-    children: [viewCategories.REPORT, viewCategories.MARKETING_DATA],
+    children: [viewCategories.MARKETING_DATA, viewCategories.REPORT],
+  },
+  [viewCategories.MARKETING_DATA]: {
+    name: 'Marketing Data',
+    children: [
+      viewCategories.ATOM_CAMPAIGNS,
+      viewCategories.ATOM_VAST_EVENTS,
+      viewCategories.LOCUS_BEACONS,
+    ],
+  },
+  [viewCategories.ATOM_CAMPAIGNS]: {
+    name: 'ATOM Campaigns',
+    type: viewTypes.LOGS,
+  },
+  [viewCategories.ATOM_VAST_EVENTS]: {
+    name: 'ATOM Vast Events',
+    type: viewTypes.LOGS,
+  },
+  [viewCategories.LOCUS_BEACONS]: {
+    name: 'LOCUS Beacons',
+    type: viewTypes.LOGS,
   },
   [viewCategories.REPORT]: {
     name: 'Reports',
@@ -94,72 +114,24 @@ const viewCategoryDesc = {
     name: 'Cross Walk-in Reports',
     type: viewTypes.REPORT_XWI,
   },
-  [viewCategories.MARKETING_DATA]: {
-    name: 'Marketing Data',
-    children: [
-      viewCategories.ATOM_CAMPAIGNS,
-      viewCategories.ATOM_VAST_EVENTS,
-      viewCategories.LOCUS_BEACONS,
-    ],
+  // legacy, alias for EXT - not attached to tree root
+  [viewCategories.CUSTOMER_DATA]: {
+    name: 'Customer Data',
+    children: [viewCategories.EXT],
   },
-  [viewCategories.ATOM_CAMPAIGNS]: {
-    name: 'Atom Campaigns',
-    type: viewTypes.LOGS,
-  },
-  [viewCategories.ATOM_VAST_EVENTS]: {
-    name: 'Atom Vast Events',
-    type: viewTypes.LOGS,
-  },
-  [viewCategories.LOCUS_BEACONS]: {
-    name: 'Locus Beacons',
-    type: viewTypes.LOGS,
-  },
-  [viewCategories.MARKETPLACE_DATA]: {
-    name: 'Marketplace Data',
-    children: [viewCategories.LAYERS],
-  },
-  [viewCategories.LAYERS]: {
-    name: 'Layers',
-    children: [
-      viewCategories.LAYER_DEMOGRAPHIC,
-      viewCategories.LAYER_PROPENSITY,
-      viewCategories.WEATHER,
-      viewCategories.GEO,
-    ],
-  },
-  [viewCategories.LAYER_DEMOGRAPHIC]: {
-    name: 'Demographic',
-    type: viewTypes.LAYER,
-  },
-  [viewCategories.LAYER_PROPENSITY]: {
-    name: 'Propensity',
-    type: viewTypes.LAYER,
-  },
-  [viewCategories.WEATHER]: {
-    name: 'Weather',
-    type: viewTypes.WEATHER,
-  },
-  [viewCategories.GEO]: {
-    name: 'Geographic',
-    type: viewTypes.GEO,
-  },
-  // [viewCategories.CUSTOMER_DATA]: {
-  //   name: 'Customer Data',
-  //   children: [viewCategories.EXT],
-  // },
   [viewCategories.EXT]: {
     name: 'External Data',
     children: [
+      viewCategories.EXT_S3,
       viewCategories.EXT_AZURE_BLOB,
       viewCategories.EXT_DIRECT,
       viewCategories.EXT_GOOGLE_ANALYTICS,
       viewCategories.EXT_GOOGLE_GCP_CS,
       viewCategories.EXT_GOOGLE_SHEET,
       // viewCategories.EXT_HUBSPOT,
-      viewCategories.EXT_OTHER,
-      viewCategories.EXT_S3,
       viewCategories.EXT_SHOPIFY,
       viewCategories.EXT_STRIPE,
+      viewCategories.EXT_OTHER,
     ],
   },
   [viewCategories.EXT_AZURE_BLOB]: {
@@ -202,6 +174,35 @@ const viewCategoryDesc = {
     name: 'Stripe',
     type: viewTypes.EXT,
   },
+  [viewCategories.MARKETPLACE_DATA]: {
+    name: 'Marketplace Data',
+    children: [viewCategories.LAYERS],
+  },
+  [viewCategories.LAYERS]: {
+    name: 'Layers',
+    children: [
+      viewCategories.LAYER_DEMOGRAPHIC,
+      viewCategories.GEO,
+      viewCategories.LAYER_PROPENSITY,
+      viewCategories.WEATHER,
+    ],
+  },
+  [viewCategories.LAYER_DEMOGRAPHIC]: {
+    name: 'Demographic',
+    type: viewTypes.LAYER,
+  },
+  [viewCategories.LAYER_PROPENSITY]: {
+    name: 'Propensity',
+    type: viewTypes.LAYER,
+  },
+  [viewCategories.WEATHER]: {
+    name: 'Weather',
+    type: viewTypes.WEATHER,
+  },
+  [viewCategories.GEO]: {
+    name: 'Geographic',
+    type: viewTypes.GEO,
+  },
 }
 
 // walk tree with callback using accumulator
@@ -209,14 +210,14 @@ const viewCategoryDesc = {
 const reduceViewCategoryTree = (cb, initAcc, root) => {
   // stack = [[[child1, child2...], array to append child nodes to], ]
   // visit last child first so can pop entry from children in bubble-up phase instead
-  // of shifting (reallocation cost)
+  // of shifting (reallocation cost) - reverse array first to preserve order
   const stack = []
 
   // root node
   const isRoot = !(root in viewCategoryDesc)
   const [initAccOut, nextAcc] = cb(isRoot ? 'root' : root, initAcc)
   stack.push([
-    isRoot ? [...rootViewCategories] : [...(viewCategoryDesc[root].children || [])],
+    (isRoot ? [...rootViewCategories] : [...(viewCategoryDesc[root].children || [])]).reverse(),
     nextAcc,
   ])
 
@@ -239,13 +240,13 @@ const reduceViewCategoryTree = (cb, initAcc, root) => {
     // replace current stack frame acc
     stack.slice(-1)[0][1] = currentAccOut
     // push node's children to stack
-    stack.push([[...(viewCategoryDesc[currentNode].children || [])], nextAcc])
+    stack.push([[...(viewCategoryDesc[currentNode].children || [])].reverse(), nextAcc])
   }
 
   return initAccOut
 }
 
-const getViewCategoryTree = (root, sorted = false) => reduceViewCategoryTree(
+const getViewCategoryTree = root => reduceViewCategoryTree(
   (nodeKey, currentAcc) => {
     const { name, type } = viewCategoryDesc[nodeKey] || {}
     const node = {
@@ -259,16 +260,6 @@ const getViewCategoryTree = (root, sorted = false) => reduceViewCategoryTree(
       return [node, node.children]
     }
     currentAcc.push(node)
-    if (sorted) {
-      currentAcc.sort((a, b) => {
-        const nameA = a.name.toLowerCase()
-        const nameB = b.name.toLowerCase()
-        if (nameA === nameB) {
-          return 0
-        }
-        return nameA > nameB ? 1 : -1
-      })
-    }
     return [currentAcc, node.children]
   },
   undefined,
@@ -303,7 +294,7 @@ const listViewCategoriesByViewType = root => reduceViewCategoryTree(
 const getViewCategoryTreeMW = (req, res, next) => {
   try {
     const { root } = req.query
-    const tree = getViewCategoryTree(root, true)
+    const tree = getViewCategoryTree(root)
     res.status(200).json(tree)
   } catch (err) {
     if (err instanceof APIError) {
