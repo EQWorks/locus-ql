@@ -1,5 +1,5 @@
 /* QL CONSTANTS */
-module.export = {
+module.exports = {
   // statuses
   STATUS_QUEUED: 'QUEUED',
   STATUS_SOURCING: 'SOURCING',
