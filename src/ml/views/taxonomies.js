@@ -28,9 +28,19 @@ const viewTypeValues = Object.entries(viewTypes).reduce((acc, [k, v]) => {
 const viewCategories = {
   ATOM_CAMPAIGNS: 'atom_campaigns',
   ATOM_VAST_EVENTS: 'atom_vast_events',
-  CUSTOMER_DATA: 'customer_data',
+  CUSTOMER_DATA: 'customer_data', // legacy (same as ext)
   EQ_DATA: 'eq_data',
   EXT: 'external_data',
+  EXT_AZURE_BLOB: 'ext_azure_blob',
+  EXT_DIRECT: 'ext_direct',
+  EXT_GOOGLE_ANALYTICS: 'ext_google_analytics',
+  EXT_GOOGLE_GCP_CS: 'ext_google_gcp_cs',
+  EXT_GOOGLE_SHEET: 'ext_google_sheet',
+  // EXT_HUBSPOT: 'ext_hubspot',
+  EXT_OTHER: 'ext_other',
+  EXT_S3: 'ext_s3',
+  EXT_SHOPIFY: 'ext_shopify',
+  EXT_STRIPE: 'ext_stripe',
   GEO: 'geographic',
   LAYERS: 'layers',
   LOCUS_BEACONS: 'locus_beacons',
@@ -54,14 +64,35 @@ const viewCategoryValues = Object.entries(viewCategories).reduce((acc, [k, v]) =
 
 const rootViewCategories = [
   viewCategories.EQ_DATA,
+  viewCategories.EXT,
   viewCategories.MARKETPLACE_DATA,
-  viewCategories.CUSTOMER_DATA,
+  // viewCategories.CUSTOMER_DATA,
 ]
 
 const viewCategoryDesc = {
   [viewCategories.EQ_DATA]: {
     name: 'EQ Data',
-    children: [viewCategories.REPORT, viewCategories.MARKETING_DATA],
+    children: [viewCategories.MARKETING_DATA, viewCategories.REPORT],
+  },
+  [viewCategories.MARKETING_DATA]: {
+    name: 'Marketing Data',
+    children: [
+      viewCategories.ATOM_CAMPAIGNS,
+      viewCategories.ATOM_VAST_EVENTS,
+      viewCategories.LOCUS_BEACONS,
+    ],
+  },
+  [viewCategories.ATOM_CAMPAIGNS]: {
+    name: 'ATOM Campaigns',
+    type: viewTypes.LOGS,
+  },
+  [viewCategories.ATOM_VAST_EVENTS]: {
+    name: 'ATOM Vast Events',
+    type: viewTypes.LOGS,
+  },
+  [viewCategories.LOCUS_BEACONS]: {
+    name: 'LOCUS Beacons',
+    type: viewTypes.LOGS,
   },
   [viewCategories.REPORT]: {
     name: 'Reports',
@@ -83,25 +114,65 @@ const viewCategoryDesc = {
     name: 'Cross Walk-in Reports',
     type: viewTypes.REPORT_XWI,
   },
-  [viewCategories.MARKETING_DATA]: {
-    name: 'Marketing Data',
+  // legacy, alias for EXT - not attached to tree root
+  [viewCategories.CUSTOMER_DATA]: {
+    name: 'Customer Data',
+    children: [viewCategories.EXT],
+  },
+  [viewCategories.EXT]: {
+    name: 'External Data',
     children: [
-      viewCategories.ATOM_CAMPAIGNS,
-      viewCategories.ATOM_VAST_EVENTS,
-      viewCategories.LOCUS_BEACONS,
+      viewCategories.EXT_S3,
+      viewCategories.EXT_AZURE_BLOB,
+      viewCategories.EXT_DIRECT,
+      viewCategories.EXT_GOOGLE_ANALYTICS,
+      viewCategories.EXT_GOOGLE_GCP_CS,
+      viewCategories.EXT_GOOGLE_SHEET,
+      // viewCategories.EXT_HUBSPOT,
+      viewCategories.EXT_SHOPIFY,
+      viewCategories.EXT_STRIPE,
+      viewCategories.EXT_OTHER,
     ],
   },
-  [viewCategories.ATOM_CAMPAIGNS]: {
-    name: 'Atom Campaigns',
-    type: viewTypes.LOGS,
+  [viewCategories.EXT_AZURE_BLOB]: {
+    name: 'Azure Blob Storage',
+    type: viewTypes.EXT,
   },
-  [viewCategories.ATOM_VAST_EVENTS]: {
-    name: 'Atom Vast Events',
-    type: viewTypes.LOGS,
+  [viewCategories.EXT_DIRECT]: {
+    name: 'Direct Upload',
+    type: viewTypes.EXT,
   },
-  [viewCategories.LOCUS_BEACONS]: {
-    name: 'Locus Beacons',
-    type: viewTypes.LOGS,
+  [viewCategories.EXT_GOOGLE_ANALYTICS]: {
+    name: 'Google Analytics',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_GOOGLE_GCP_CS]: {
+    name: 'Google Cloud Storage',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_GOOGLE_SHEET]: {
+    name: 'Google Sheets',
+    type: viewTypes.EXT,
+  },
+  // [viewCategories.EXT_HUBSPOT]: {
+  //   name: 'HubSpot',
+  //   type: viewTypes.EXT,
+  // },
+  [viewCategories.EXT_OTHER]: {
+    name: 'Other',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_S3]: {
+    name: 'AWS S3',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_SHOPIFY]: {
+    name: 'Shopify',
+    type: viewTypes.EXT,
+  },
+  [viewCategories.EXT_STRIPE]: {
+    name: 'Stripe',
+    type: viewTypes.EXT,
   },
   [viewCategories.MARKETPLACE_DATA]: {
     name: 'Marketplace Data',
@@ -111,9 +182,9 @@ const viewCategoryDesc = {
     name: 'Layers',
     children: [
       viewCategories.LAYER_DEMOGRAPHIC,
+      viewCategories.GEO,
       viewCategories.LAYER_PROPENSITY,
       viewCategories.WEATHER,
-      viewCategories.GEO,
     ],
   },
   [viewCategories.LAYER_DEMOGRAPHIC]: {
@@ -132,14 +203,6 @@ const viewCategoryDesc = {
     name: 'Geographic',
     type: viewTypes.GEO,
   },
-  [viewCategories.CUSTOMER_DATA]: {
-    name: 'Customer Data',
-    children: [viewCategories.EXT],
-  },
-  [viewCategories.EXT]: {
-    name: 'External Data',
-    type: viewTypes.EXT,
-  },
 }
 
 // walk tree with callback using accumulator
@@ -147,14 +210,14 @@ const viewCategoryDesc = {
 const reduceViewCategoryTree = (cb, initAcc, root) => {
   // stack = [[[child1, child2...], array to append child nodes to], ]
   // visit last child first so can pop entry from children in bubble-up phase instead
-  // of shifting (reallocation cost)
+  // of shifting (reallocation cost) - reverse array first to preserve order
   const stack = []
 
   // root node
   const isRoot = !(root in viewCategoryDesc)
   const [initAccOut, nextAcc] = cb(isRoot ? 'root' : root, initAcc)
   stack.push([
-    isRoot ? [...rootViewCategories] : [...(viewCategoryDesc[root].children || [])],
+    (isRoot ? [...rootViewCategories] : [...(viewCategoryDesc[root].children || [])]).reverse(),
     nextAcc,
   ])
 
@@ -177,7 +240,7 @@ const reduceViewCategoryTree = (cb, initAcc, root) => {
     // replace current stack frame acc
     stack.slice(-1)[0][1] = currentAccOut
     // push node's children to stack
-    stack.push([[...(viewCategoryDesc[currentNode].children || [])], nextAcc])
+    stack.push([[...(viewCategoryDesc[currentNode].children || [])].reverse(), nextAcc])
   }
 
   return initAccOut
