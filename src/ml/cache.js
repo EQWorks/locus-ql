@@ -156,6 +156,9 @@ const getFromS3Cache = async (
   if (maxAge > 0) {
     params.IfModifiedSince = Math.floor(Date.now() / 1000) - maxAge
   }
+
+  console.log(params)
+
   try {
     const { Body, ContentEncoding, ContentType } = await s3.getObject(params).promise()
     let value = Body
@@ -171,6 +174,7 @@ const getFromS3Cache = async (
     if (['NoSuchKey', 'NotModified'].includes(err.code)) {
       return
     }
+    console.log('error:', err)
     throw err
   }
 }
