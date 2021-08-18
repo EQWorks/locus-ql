@@ -49,7 +49,6 @@ const newPGClientFromPoolConfig = (pgPool = pool, options = {}) => {
 // dblink connect functions (foreign-data wrapper)
 // https://www.postgresql.org/docs/9.6/dblink.html
 const ATOM_READ_FDW_CONNECTION = 'locus_atom_fdw'
-const MAPS_FDW_CONNECTION = 'locus_maps_fdw'
 
 const fdwConnect = async (
   pgConnection,
@@ -114,9 +113,6 @@ const fdwConnectByName = (pgConnection, { connectionName, timeout }) => {
     case ATOM_READ_FDW_CONNECTION:
       creds = config.pgAtom
       break
-    case MAPS_FDW_CONNECTION:
-      creds = config.pg
-      break
     default:
       creds = config.pgAtom
   }
@@ -138,16 +134,13 @@ const knexBuilderToRaw = (builder) => {
 module.exports = {
   pool,
   mlPool,
-  mapPool: pool, // TODO: legacy stub, to be removed
   atomPool,
   knex,
   mlKnex,
-  mapKnex: knex, // TODO: legacy stub, to be removed
   newPGClientFromPoolConfig,
   fdwConnect,
   fdwDisconnect,
   ATOM_READ_FDW_CONNECTION,
-  MAPS_FDW_CONNECTION,
   fdwConnectByName,
   knexBuilderToRaw,
 }

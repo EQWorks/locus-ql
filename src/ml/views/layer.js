@@ -1,6 +1,6 @@
 /* eslint-disable indent */
 /* eslint-disable no-use-before-define */
-const { knex, mapKnex, MAPS_FDW_CONNECTION } = require('../../util/db')
+const { knex } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC } = require('../type')
 const { apiError } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
@@ -151,52 +151,28 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   // add schema if missing
   const schema = (table || slug).indexOf('.') === -1 ? 'public.' : ''
 
-  let columnExpressions
-  let columnDefinitions
-  if ((table || slug).startsWith('persona')) {
-    columnExpressions = `
-      L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
-      1 AS has_persona
+  const columnExpressions = (table || slug).startsWith('persona')
+    ? '1 AS has_persona'
+    : `
+      L.summary_data::json #>> '{main_number_pcnt, value}' AS value,
+      L.summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
+      L.summary_data::json #>> '{main_number_pcnt, units}' AS units
     `
-    columnDefinitions = `
-      title text,
-      has_persona int
-    `
-  } else {
-    columnExpressions = `
-      L.summary_data::json #>> ''{main_number_pcnt, title}'' AS title,
-      L.summary_data::json #>> ''{main_number_pcnt, value}'' AS value,
-      L.summary_data::json #>> ''{main_number_pcnt, percent}'' AS percent,
-      L.summary_data::json #>> ''{main_number_pcnt, units}'' AS units
-    `
-    columnDefinitions = `
-      title text,
-      value real,
-      percent real,
-      units text
-    `
-  }
 
-  const mlView = mapKnex.raw(`
-    SELECT * FROM dblink(:fdwConnection, '
-      SELECT
-        GM.ggid AS id,
-        L.geo_id,
-        L.geo_id AS geo_ca_${resolution},
-        ${columnExpressions}
-      FROM ${schema}${table || slug} as L
-      INNER JOIN config.ggid_map as GM ON GM.type = ''${resolution}'' AND GM.local_id = L.geo_id
-      INNER JOIN ${geo.schema}.${geo.table} as GT ON GT.${geo.idColumn} = L.geo_id
-      WHERE GT.wkb_geometry IS NOT NULL
-    ') AS t(
-      id int,
-      geo_id text,
-      geo_ca_${resolution} text,
-      ${columnDefinitions}
-    )
-  `, { fdwConnection: MAPS_FDW_CONNECTION })
+  const mlView = knex.raw(`
+    SELECT
+      GM.ggid AS id,
+      L.geo_id,
+      L.geo_id AS geo_ca_${resolution},
+      L.summary_data::json #>> '{main_number_pcnt, title}' AS title,
+      ${columnExpressions}
+    FROM ${schema}${table || slug} as L
+    INNER JOIN config.ggid_map as GM ON GM.type = '${resolution}' AND GM.local_id = L.geo_id
+    INNER JOIN ${geo.schema}.${geo.table} as GT ON GT.${geo.idColumn} = L.geo_id
+    WHERE GT.wkb_geometry IS NOT NULL
+  `)
 
-  return { viewID, mlView, mlViewColumns, mlViewFdwConnections: [MAPS_FDW_CONNECTION] }
+  return { viewID, mlView, mlViewColumns }
 }
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {
