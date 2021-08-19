@@ -166,7 +166,7 @@ const dataProviderAuth = (req, res, next) => {
   return next(apiError('Only data providers are allowed', 403))
 }
 
-const dev = ({ access: { prefix, whitelabel, customers } = {} }, _, next) => {
+const isDev = ({ access: { prefix, whitelabel, customers } = {} }, _, next) => {
   if (prefix === 'dev' && whitelabel === -1 && customers === -1) {
     return next()
   }
@@ -287,7 +287,7 @@ module.exports = {
   layer: layerAuth,
   internal: internalAuth,
   dataProvider: dataProviderAuth,
-  dev,
+  isDev,
   map: mapAuth,
   write: hasWrite,
   whitelabel: whitelabelAuth,
