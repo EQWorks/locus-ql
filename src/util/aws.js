@@ -8,8 +8,8 @@ const lambda = new AWS.Lambda({
 
 const s3 = new AWS.S3({ region: 'us-east-1' })
 
-const kinesis = new AWS.Kinesis({
-  apiVersion: '2013-12-02',
+const firehose = new AWS.Firehose({
+  apiVersion: '2015-08-04',
   region: 'us-east-1',
 })
 
@@ -62,4 +62,4 @@ async function listS3Objects(bucket, prefix) {
   return keys
 }
 
-module.exports = { invokeLambda, s3, lambda, listS3Objects, kinesis }
+module.exports = { invokeLambda, s3, lambda, listS3Objects, firehose }
