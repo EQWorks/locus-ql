@@ -37,7 +37,7 @@
     "cryptr": "^6.0.2",
     "csv-stringify": "^5.3.0",
     "express": "^4.16.3",
-    "facebook-nodejs-business-sdk": "^6.0.0",
+    "facebook-nodejs-business-sdk": "^11.0.0",
     "jsonwebtoken": "^8.2.0",
     "knex": "^0.21.12",
     "lodash": "^4.17.13",
