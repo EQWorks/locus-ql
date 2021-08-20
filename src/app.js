@@ -20,7 +20,7 @@ app.use(compression())
 // logger
 app.use(logger('dev'))
 // body parser
-app.use(express.json())
+app.use(express.json({ limit: '4mb' }))
 app.use(express.urlencoded({ extended: false }))
 
 // favicon 404 supression
