@@ -59,13 +59,23 @@ function jwtMiddleware(req, _, next) {
     }
     return next()
   }
+  if(prefix === 'mobilesdk')
+  {
+    axios({
+      url: `${KEY_WARDEN_BASE}/confirm`,
+      method: 'get',
+      headers: { 'eq-api-jwt': token },
+      params: { product : tokenProduct, light : 1},
+    }).then(() => next()).catch(next)
+  }else{
   // else confirm access
-  axios({
-    url: `${KEY_WARDEN_BASE}/confirm`,
-    method: 'get',
-    headers: { 'eq-api-jwt': token },
-    params: { product },
-  }).then(() => next()).catch(next)
+    axios({
+      url: `${KEY_WARDEN_BASE}/confirm`,
+      method: 'get',
+      headers: { 'eq-api-jwt': token },
+      params: { product },
+    }).then(() => next()).catch(next)
+  }
 }
 
 const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
