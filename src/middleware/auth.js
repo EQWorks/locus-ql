@@ -60,11 +60,12 @@ function jwtMiddleware(req, _, next) {
     return next()
   }
 
+  const light = prefix === 'mobilesdk'
   axios({
     url: `${KEY_WARDEN_BASE}/confirm`,
     method: 'get',
     headers: { 'eq-api-jwt': token },
-    params: { product: product, light: prefix === 'mobilesdk' },
+    params: { product, light },
   }).then(() => next()).catch(next)
 }
 
