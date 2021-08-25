@@ -31,11 +31,8 @@ const credentials = require('./credentials')
 const log = require('./log')
 const activity = require('./activity')
 const dataset = require('./dataset')
-<<<<<<< HEAD
 const mobilesdk = require('./mobilesdk')
 const usage = require('./usage')
-=======
->>>>>>> 8ba89a4... locussdk - add sdk routes to root router
 const locussdk = require('./locussdk')
 
 
@@ -66,11 +63,8 @@ rootRouter.use('/credentials', credentials)
 rootRouter.use('/log', log)
 rootRouter.use('/activity', activity)
 rootRouter.use('/dataset', dataset)
-<<<<<<< HEAD
 rootRouter.use('/mobilesdk', mobilesdk)
 rootRouter.use('/usage', usage)
-=======
->>>>>>> 8ba89a4... locussdk - add sdk routes to root router
 rootRouter.use('/locussdk', locussdk)
 rootRouter.use(api)
 
