@@ -173,6 +173,13 @@ const isDev = ({ access: { prefix, whitelabel, customers } = {} }, _, next) => {
   return next(apiError('Only devs are allowed', 403))
 }
 
+const isAppReviewer = ({ access: { prefix } = {} }, _, next) => {
+  if (prefix === 'appreviewer') {
+    return next()
+  }
+  return next(apiError('Only appreviewers are allowed', 403))
+}
+
 const mapAuth = (pathToID = 'params.id') => async (req, res, next) => {
   const { whitelabel: wl, customers: cu, email } = req.access
   let where = 'WHERE map_id = $1'
@@ -288,6 +295,7 @@ module.exports = {
   internal: internalAuth,
   dataProvider: dataProviderAuth,
   isDev,
+  isAppReviewer,
   map: mapAuth,
   write: hasWrite,
   whitelabel: whitelabelAuth,
