@@ -33,6 +33,7 @@ const activity = require('./activity')
 const dataset = require('./dataset')
 const mobilesdk = require('./mobilesdk')
 const usage = require('./usage')
+const facebook = require('./facebook')
 
 
 rootRouter.use(isMaint)
@@ -64,6 +65,7 @@ rootRouter.use('/activity', activity)
 rootRouter.use('/dataset', dataset)
 rootRouter.use('/mobilesdk', mobilesdk)
 rootRouter.use('/usage', usage)
+rootRouter.use('/facebook', facebook)
 rootRouter.use(api)
 
 
