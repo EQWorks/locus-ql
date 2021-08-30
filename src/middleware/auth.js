@@ -126,8 +126,7 @@ const validateAccess = ({
   authorizedPrefix = [],
   unAuthorizedPrefix = [],
 } = {}) => (req, _, next) => {
-  const token = req.get('eq-api-jwt') || req.get('x-firstorder-token')
-  const { prefix } = req.authorizerAccess || jwt.decode(token)
+  const { prefix } = req.access
 
   if (authorizedPrefix.length) {
     if (!authorizedPrefix.includes(prefix)) {
@@ -302,7 +301,7 @@ const hubAuth = (req, _, next) => {
   return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
 }
 
-const mobilesdk = validateAccess({ authorizedPrefix: ['mobilesdk', 'dev'] })
+const includeMobileSDK = validateAccess({ authorizedPrefix: ['mobilesdk', 'dev'] })
 
 const excludeMobileSDK = validateAccess({ unAuthorizedPrefix: ['mobilesdk'] })
 
@@ -320,6 +319,6 @@ module.exports = {
   hhSegments: hhSegmentAuth,
   popularTimes: popularTimesAuth,
   hub: hubAuth,
-  mobilesdk,
+  includeMobileSDK,
   excludeMobileSDK,
 }
