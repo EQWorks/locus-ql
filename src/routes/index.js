@@ -2,7 +2,7 @@ const express = require('express')
 
 
 const rootRouter = express.Router()
-const { jwt } = require('../middleware/auth')
+const { jwt, excludeMobileSDK } = require('../middleware/auth')
 const { maintenance: { isMaint } } = require('../middleware')
 
 const map = require('./map')
@@ -64,6 +64,7 @@ rootRouter.use('/log', log)
 rootRouter.use('/activity', activity)
 rootRouter.use('/dataset', dataset)
 rootRouter.use('/mobilesdk', mobilesdk)
+rootRouter.use(excludeMobileSDK)
 rootRouter.use('/usage', usage)
 rootRouter.use('/facebook', facebook)
 rootRouter.use(api)

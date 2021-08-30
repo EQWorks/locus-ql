@@ -122,6 +122,29 @@ const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
   }
 }
 
+const validateAccess = ({
+  authorizedPrefix = [],
+  unAuthorizedPrefix = [],
+} = {}) => (req, _, next) => {
+  const token = req.get('eq-api-jwt') || req.get('x-firstorder-token')
+  const { prefix } = req.authorizerAccess || jwt.decode(token)
+
+  if (authorizedPrefix.length) {
+    if (!authorizedPrefix.includes(prefix)) {
+      return next(apiError('Not authorized to access', 403))
+    }
+    return next()
+  }
+
+  if (unAuthorizedPrefix.length) {
+    if (unAuthorizedPrefix.includes(prefix)) {
+      return next(apiError('Not authorized to access', 403))
+    }
+    return next()
+  }
+  next()
+}
+
 // assumes req.access exist
 // pathToID should lead to either a layerID or an array of layerID
 const layerAuth = (pathToID = 'params.id', pathToSecondaryID = false) => async (req, res, next) => {
@@ -279,16 +302,9 @@ const hubAuth = (req, _, next) => {
   return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
 }
 
-const mobilesdk = (req, _, next) => {
-  const { whitelabel, customers, prefix } = req.access
-  const internal = whitelabel === -1 && customers === -1
-  const prefixes = ['dev', 'mobilesdk']
-  const byPrefix = prefixes.includes(prefix)
-  if (internal || byPrefix) {
-    return next()
-  }
-  return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
-}
+const mobilesdk = validateAccess({ authorizedPrefix: ['mobilesdk', 'dev'] })
+
+const excludeMobileSDK = validateAccess({ unAuthorizedPrefix: ['mobilesdk'] })
 
 module.exports = {
   jwt: jwtMiddleware,
@@ -305,4 +321,5 @@ module.exports = {
   popularTimes: popularTimesAuth,
   hub: hubAuth,
   mobilesdk,
+  excludeMobileSDK,
 }
