@@ -46,13 +46,13 @@ const upsertQuerySchedule = async (scheduleID, queryID, { startDate, endDate, is
   if (startDate !== undefined) {
     cols.push('start_date')
     updateCols.push('start_date')
-    values.push(startDate)
+    values.push(startDate.toISOString())
   }
 
   if (endDate !== undefined) {
     cols.push('end_date')
     updateCols.push('end_date')
-    values.push(endDate)
+    values.push(endDate.toISOString())
   }
 
   if (isPaused !== undefined) {

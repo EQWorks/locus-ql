@@ -104,7 +104,7 @@ const getScheduleJobQueryIDs = async (jobID) => {
     ORDER BY 1
   `, { jobID })
 
-  const cronValueMemo = {}
+  const cronHasInstanceAtJobTS = {}
   let cronParserOptions
   let jobTSValue
 
@@ -120,13 +120,19 @@ const getScheduleJobQueryIDs = async (jobID) => {
         filteredQueries.push(queryID)
         break
       }
-      // parse cron and add to memo
-      if (!(cron in cronValueMemo)) {
+      // check if cron intersects with jobTS
+      if (!(cron in cronHasInstanceAtJobTS)) {
         const parsed = cronParser.parseExpression(cron, cronParserOptions)
-        cronValueMemo[cron] = new Date(parsed.next().toString()).valueOf()
+        try {
+          parsed.next() // throws if out of range (i.e. no instance at jobTS)
+          cronHasInstanceAtJobTS[cron] = true
+        } catch (_) {
+          // cron does not resolve to current job ts
+          cronHasInstanceAtJobTS[cron] = false
+        }
       }
       // if competing schedule, exclude query
-      if (cronValueMemo[cron] === jobTSValue) {
+      if (cronHasInstanceAtJobTS[cron]) {
         break
       }
     }
