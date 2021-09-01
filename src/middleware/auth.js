@@ -59,12 +59,13 @@ function jwtMiddleware(req, _, next) {
     }
     return next()
   }
-  // else confirm access
+
+  const light = prefix === 'mobilesdk'
   axios({
     url: `${KEY_WARDEN_BASE}/confirm`,
     method: 'get',
     headers: { 'eq-api-jwt': token },
-    params: { product },
+    params: { product, light },
   }).then(() => next()).catch(next)
 }
 
@@ -119,6 +120,28 @@ const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
     console.log(error)
     return []
   }
+}
+
+const validateAccess = ({
+  authorizedPrefix = [],
+  unAuthorizedPrefix = [],
+} = {}) => (req, _, next) => {
+  const { prefix } = req.access
+
+  if (authorizedPrefix.length) {
+    if (!authorizedPrefix.includes(prefix)) {
+      return next(apiError('Not authorized to access', 403))
+    }
+    return next()
+  }
+
+  if (unAuthorizedPrefix.length) {
+    if (unAuthorizedPrefix.includes(prefix)) {
+      return next(apiError('Not authorized to access', 403))
+    }
+    return next()
+  }
+  next()
 }
 
 // assumes req.access exist
@@ -278,16 +301,9 @@ const hubAuth = (req, _, next) => {
   return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
 }
 
-const mobilesdk = (req, _, next) => {
-  const { whitelabel, customers, prefix } = req.access
-  const internal = whitelabel === -1 && customers === -1
-  const prefixes = ['dev', 'mobilesdk']
-  const byPrefix = prefixes.includes(prefix)
-  if (internal || byPrefix) {
-    return next()
-  }
-  return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
-}
+const includeMobileSDK = validateAccess({ authorizedPrefix: ['mobilesdk', 'dev'] })
+
+const excludeMobileSDK = validateAccess({ unAuthorizedPrefix: ['mobilesdk'] })
 
 module.exports = {
   jwt: jwtMiddleware,
@@ -303,5 +319,6 @@ module.exports = {
   hhSegments: hhSegmentAuth,
   popularTimes: popularTimesAuth,
   hub: hubAuth,
-  mobilesdk,
+  includeMobileSDK,
+  excludeMobileSDK,
 }

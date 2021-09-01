@@ -8,6 +8,11 @@ const lambda = new AWS.Lambda({
 
 const s3 = new AWS.S3({ region: 'us-east-1' })
 
+const firehose = new AWS.Firehose({
+  apiVersion: '2015-08-04',
+  region: 'us-east-1',
+})
+
 async function invokeLambda(params) {
   const response = { statusCode: 200 }
   // TODO: this function does not support `Event` invoke type
@@ -57,4 +62,4 @@ async function listS3Objects(bucket, prefix) {
   return keys
 }
 
-module.exports = { invokeLambda, s3, lambda, listS3Objects }
+module.exports = { invokeLambda, s3, lambda, listS3Objects, firehose }

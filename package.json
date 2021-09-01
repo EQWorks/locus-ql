@@ -10,6 +10,7 @@
     "offline": "env $(print-env) API_VER=offline sls offline start",
     "tag": "./scripts/tag",
     "deploy": "env $(print-env) sls deploy",
+    "deploy-dev": "env $(print-env) sls deploy --stage dev",
     "serve": "env $(print-env) node src/index.js",
     "test": "yarn unit:test && yarn lint",
     "unit:test": "echo \"no test runner specified\"",
