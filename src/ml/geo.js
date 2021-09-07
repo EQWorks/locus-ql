@@ -27,7 +27,7 @@ const geoTypes = {
 const geoMapping = {
   [geoTypes.CA_FSA]: {
     schema: 'canada_geo',
-    table: 'fsa',
+    table: 'fsa_simplified',
     idType: CAT_STRING,
     idColumn: 'fsa',
     geometryColumn: 'wkb_geometry',
@@ -59,7 +59,7 @@ const geoMapping = {
   },
   [geoTypes.CA_POSTALCODE]: {
     schema: 'canada_geo',
-    table: 'postalcode_2018',
+    table: 'postalcode_simplified',
     idType: CAT_STRING,
     idColumn: 'postalcode',
     geometryColumn: 'wkb_geometry',

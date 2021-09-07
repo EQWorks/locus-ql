@@ -154,8 +154,8 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   const columnExpressions = (table || slug).startsWith('persona')
     ? '1 AS has_persona'
     : `
-      L.summary_data::json #>> '{main_number_pcnt, value}' AS value,
-      L.summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
+      (L.summary_data::json #>> '{main_number_pcnt, value}')::real AS value,
+      (L.summary_data::json #>> '{main_number_pcnt, percent}')::real AS percent,
       L.summary_data::json #>> '{main_number_pcnt, units}' AS units
     `
 
