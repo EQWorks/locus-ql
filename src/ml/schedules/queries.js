@@ -1,7 +1,7 @@
 const cronParser = require('cron-parser')
 
 const { knex } = require('../../util/db')
-const { apiError, APIError } = require('../../util/api-error')
+const { apiError, getSetAPIError } = require('../../util/api-error')
 const { QL_SCHEMA } = require('../constants')
 const { getSetSchedule, getScheduleID } = require('./schedules')
 
@@ -157,10 +157,7 @@ const putQuerySchedule = async (req, res, next) => {
 
     res.json({ queryID, cron: safeCron })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to create or update the query schedule', 500))
+    next(getSetAPIError(err, 'Failed to create or update the query schedule', 500))
   }
 }
 
@@ -186,10 +183,7 @@ const deleteQueryScheduleMW = async (req, res, next) => {
     await deleteQuerySchedule(scheduleID, queryID)
     res.json({ queryID, cron: safeCron })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to delete the query schedule', 500))
+    next(getSetAPIError(err, 'Failed to delete the query schedule', 500))
   }
 }
 
@@ -200,10 +194,7 @@ const listQuerySchedules = async (req, res, next) => {
     const schedules = await getQuerySchedules(queryID)
     res.json(schedules)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to delete the query schedule', 500))
+    next(getSetAPIError(err, 'Failed to delete the query schedule', 500))
   }
 }
 

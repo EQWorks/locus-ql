@@ -1,6 +1,7 @@
 const { knex, mlPool, newPGClientFromPoolConfig } = require('../util/db')
-const { apiError, APIError } = require('../util/api-error')
+const { apiError, APIError, getSetAPIError } = require('../util/api-error')
 const { lambda } = require('../util/aws')
+const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
 const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
@@ -377,10 +378,7 @@ const queueExecutionMW = async (req, res, next) => {
     }
     res.json({ executionID })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to queue the query execution', 500))
+    next(getSetAPIError(err, 'Failed to queue the query execution', 500))
   }
 }
 
@@ -501,6 +499,7 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
     }
     // attach to req
     req.mlExecution = execution
+    getContext(req, ERROR_QL_CTX).executionID = executionID
     // set customer to that of the execution
     req.access = {
       ...access,
@@ -509,10 +508,7 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
     }
     next()
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to load the execution', 500))
+    next(getSetAPIError(err, 'Failed to load the execution', 500))
   }
 }
 
@@ -547,10 +543,7 @@ const respondWithExecution = async (req, res, next) => {
     })))
     res.json(req.mlExecution)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve the execution', 500))
+    next(getSetAPIError(err, 'Failed to retrieve the execution', 500))
   }
 }
 
@@ -666,10 +659,7 @@ const listExecutions = async (req, res, next) => {
     }, []))
     res.json(executions)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve the executions', 500))
+    next(getSetAPIError(err, 'Failed to retrieve the executions', 500))
   }
 }
 
@@ -686,10 +676,7 @@ const cancelExecution = async (req, res, next) => {
     )
     res.json({ executionID })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to cancel the execution', 500))
+    next(getSetAPIError(err, 'Failed to cancel the execution', 500))
   }
 }
 

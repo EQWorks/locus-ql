@@ -1,5 +1,6 @@
 const { knex } = require('../util/db')
-const { apiError, APIError } = require('../util/api-error')
+const { apiError, getSetAPIError, APIError } = require('../util/api-error')
+const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
 const { validateQuery } = require('./engine')
 const { updateExecution, queueExecution } = require('./executions')
@@ -296,6 +297,7 @@ const postQuery = async (req, res, next) => {
         description.trim(),
         trx,
       )
+      getContext(req, ERROR_QL_CTX).queryID = queryID
       // if execution supplied, attach it to the created query if not already attached to a query
       if (executionID && !executionQueryID && !isOrphaned) {
         await updateExecution(executionID, { queryID }, { knexClient: trx })
@@ -305,10 +307,7 @@ const postQuery = async (req, res, next) => {
 
     res.json({ queryID })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to save the query', 500))
+    next(getSetAPIError(err, 'Failed to save the query', 500))
   }
 }
 
@@ -334,10 +333,7 @@ const putQuery = async (req, res, next) => {
     })
     res.json({ queryID })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to update the query', 500))
+    next(getSetAPIError(err, 'Failed to update the query', 500))
   }
 }
 
@@ -347,10 +343,7 @@ const deleteQuery = async (req, res, next) => {
     await updateQuery(queryID, { isActive: false })
     res.json({ queryID })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to delete the query', 500))
+    next(getSetAPIError(err, 'Failed to delete the query', 500))
   }
 }
 
@@ -433,6 +426,7 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
     }
     // attach to req
     req.mlQuery = query
+    getContext(req, ERROR_QL_CTX).queryID = queryID
     // set customer to that of the query
     req.access = {
       ...access,
@@ -441,10 +435,7 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
     }
     next()
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to load the query', 500))
+    next(getSetAPIError(err, 'Failed to load the query', 500))
   }
 }
 
@@ -475,10 +466,7 @@ const respondWithQuery = async (req, res, next) => {
     })))
     res.json(req.mlQuery)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve the query', 500))
+    next(getSetAPIError(err, 'Failed to retrieve the query', 500))
   }
 }
 
@@ -542,10 +530,7 @@ const listQueries = async (req, res, next) => {
     }, []))
     res.json(queries)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve the queries', 500))
+    next(getSetAPIError(err, 'Failed to retrieve the queries', 500))
   }
 }
 

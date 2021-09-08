@@ -1,4 +1,4 @@
-const { apiError, APIError } = require('../../util/api-error')
+const { getSetAPIError } = require('../../util/api-error')
 
 
 // one module = one type
@@ -297,10 +297,7 @@ const getViewCategoryTreeMW = (req, res, next) => {
     const tree = getViewCategoryTree(root)
     res.status(200).json(tree)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve view categories', 500))
+    next(getSetAPIError(err, 'Failed to retrieve view categories', 500))
   }
 }
 

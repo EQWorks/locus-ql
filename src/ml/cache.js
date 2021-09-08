@@ -2,7 +2,7 @@ const { createHash } = require('crypto')
 const { gzip, gunzip } = require('zlib')
 const { promisify } = require('util')
 
-const { apiError, APIError } = require('../util/api-error')
+const { apiError, getSetAPIError } = require('../util/api-error')
 const { s3 } = require('../util/aws')
 const { client: redis } = require('../util/redis')
 const { QUERY_BUCKET } = require('./constants')
@@ -367,10 +367,7 @@ const getResFromS3Cache = async (req, res, next) => {
 
     next()
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve data from cache', 500))
+    next(getSetAPIError(err, 'Failed to retrieve data from cache', 500))
   }
 }
 
