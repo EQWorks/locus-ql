@@ -99,8 +99,22 @@ const getReportLayers = (wl, cu, { layerID, reportID }) => {
   if (layerID) {
     whereFilters.layer_id = layerID
   }
+  const groupByCols = [
+    'layer.name',
+    'layer.layer_id',
+    'layer.customer',
+    'layer.whitelabel',
+    'layer.report_id',
+    'report.type',
+    { report_name: 'report.name' },
+    { report_created: 'report.created' },
+    { report_updated: 'report.updated' },
+    { report_description: 'report.description' },
+    'report.tld',
+    'report.poi_list_id',
+  ]
   const layerQuery = knex('layer')
-  layerQuery.column(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
+  layerQuery.column(groupByCols)
   layerQuery.select(knex.raw(`
     COALESCE(
       ARRAY_AGG(DISTINCT ARRAY[
@@ -136,7 +150,7 @@ const getReportLayers = (wl, cu, { layerID, reportID }) => {
       layerQuery.whereRaw('(layer.customer = ANY (?) OR customers.agencyid = ANY (?))', [cu, cu])
     }
   }
-  layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
+  layerQuery.groupByRaw(groupByCols.map((_, i) => i + 1).join(', '))
   return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
 }
 
@@ -191,6 +205,14 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
     dates,
     vendors,
     camps,
+    report_name,
+    whitelabel: wl,
+    customer,
+    report_created,
+    report_updated,
+    report_description,
+    tld,
+    poi_list_id,
   }) => {
     const view = {
       name,
@@ -210,6 +232,14 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
       Object.assign(view, {
         columns,
         report_type: type,
+        report_name,
+        whitelabel: wl,
+        customer,
+        report_created,
+        report_updated,
+        report_description,
+        tld,
+        poi_list_id,
         dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
         vendors,
         camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
@@ -258,7 +288,21 @@ const getView = async (access, viewID) => {
     if (!reportLayer) {
       return null
     }
-    const { name, type, dates, vendors, camps } = reportLayer
+    const {
+      name,
+      type,
+      dates,
+      vendors,
+      camps,
+      report_name,
+      whitelabel: wl,
+      customer,
+      report_created,
+      report_updated,
+      report_description,
+      tld,
+      poi_list_id,
+    } = reportLayer
     const hasAOI = await hasAOIData(whitelabel, layer_id, reportID)
     // const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
     const { columns } = options
@@ -274,6 +318,14 @@ const getView = async (access, viewID) => {
       },
       columns,
       report_type: type,
+      report_name,
+      whitelabel: wl,
+      customer,
+      report_created,
+      report_updated,
+      report_description,
+      tld,
+      poi_list_id,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
       vendors,
       camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
