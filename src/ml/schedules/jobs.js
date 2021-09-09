@@ -1,10 +1,12 @@
 const cronParser = require('cron-parser')
 
 const { knex } = require('../../util/db')
-const { apiError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const { queueQueryExecution } = require('../queries')
 const { QL_SCHEMA, STATUS_RUNNING, STATUS_RETRYING, STATUS_SUCCEEDED } = require('../constants')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 /**
  * Returns an array of execution metas based on the supplied filters

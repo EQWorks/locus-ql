@@ -8,10 +8,12 @@ const {
   CAT_BOOL,
 } = require('../../type')
 const { geoTypes } = require('../../geo')
-const { apiError } = require('../../../util/api-error')
+const { useAPIErrorOptions } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 const { viewTypes, viewCategories } = require('../taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const options = {
   columns: {

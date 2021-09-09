@@ -6,9 +6,11 @@ const { createHash } = require('crypto')
 const { knex, mlPool, knexBuilderToRaw, fdwConnectByName } = require('../util/db')
 const { Expression } = require('./expressions')
 const { insertGeo } = require('./geo')
-const { apiError, APIError } = require('../util/api-error')
+const { useAPIErrorOptions } = require('../util/api-error')
 const { knexWithCache, queryWithCache, cacheTypes } = require('./cache')
 
+
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 // const TYPE_STRING = 'string'
 
@@ -282,10 +284,7 @@ const validateQueryMW = (onlyUseBodyQuery = false) => async (req, _, next) => {
     Object.assign(req, values)
     next()
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to parse the query'))
+    next(getSetAPIError(err, 'Failed to parse the query', 500))
   }
 }
 

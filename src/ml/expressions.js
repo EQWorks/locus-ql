@@ -4,9 +4,11 @@
 // comlpex expressions
 // reference: https://github.com/EQWorks/firstorder/wiki/Locus-ML-Expression
 const { knex } = require('../util/db')
-const { apiError } = require('../util/api-error')
+const { useAPIErrorOptions } = require('../util/api-error')
 const { CAT_DATE, CAT_NUMERIC, CAT_JSON, CAT_STRING } = require('./type')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const TYPE_STRING = 'string'
 const TYPE_OBJECT = 'object'
