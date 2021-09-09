@@ -3,7 +3,7 @@
 const { createHash } = require('crypto')
 
 const { knex } = require('../../../util/db')
-const { apiError } = require('../../../util/api-error')
+const { useAPIErrorOptions } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 const { Expression } = require('../../expressions')
 const impView = require('./imp')
@@ -18,6 +18,8 @@ const { QL_SCHEMA } = require('../../constants')
 const { getPgView } = require('./pg-views')
 const { viewTypes } = require('../taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const logTypes = {
   imp: impView,

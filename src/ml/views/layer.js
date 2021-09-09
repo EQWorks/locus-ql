@@ -2,11 +2,13 @@
 /* eslint-disable no-use-before-define */
 const { knex } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC } = require('../type')
-const { apiError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
 const { geoMapping } = require('../geo')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const getLayerColumns = (table, resolution) => {
   const geoType = `ca-${resolution}`

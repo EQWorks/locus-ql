@@ -3,10 +3,12 @@
 /* eslint-disable no-plusplus */
 /* eslint-disable no-continue */
 const { knex } = require('../util/db')
-const { apiError } = require('../util/api-error')
+const { useAPIErrorOptions } = require('../util/api-error')
 const { CAT_STRING, CAT_NUMERIC } = require('./type')
 const { Expression } = require('./expressions')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const DEFAULT_RADIUS = 500 // 500 metres
 

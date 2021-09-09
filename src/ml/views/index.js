@@ -1,7 +1,7 @@
 /* eslint-disable global-require */
 /* eslint-disable import/no-dynamic-require */
 
-const { apiError, getSetAPIError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const {
   viewTypes,
   viewTypeValues,
@@ -9,6 +9,8 @@ const {
   listViewCategoriesByViewType,
 } = require('./taxonomies')
 
+
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const viewTypesToModules = {
   [viewTypes.EXT]: require('./ext'),

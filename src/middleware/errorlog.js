@@ -41,6 +41,10 @@ const logError = (err, req, res, next) => {
           scope.setContext(name, getContext(req, path))
         }
       })
+      // append tags
+      if (err.tags) {
+        scope.setTags(err.tags)
+      }
       const sentryHandler = Sentry.Handlers.errorHandler()
       sentryHandler(err.originalError || err, req, res, () => next(err))
     })

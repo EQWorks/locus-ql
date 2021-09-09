@@ -1,5 +1,5 @@
 const { knex, mlPool, newPGClientFromPoolConfig } = require('../util/db')
-const { apiError, APIError, getSetAPIError } = require('../util/api-error')
+const { APIError, useAPIErrorOptions } = require('../util/api-error')
 const { lambda } = require('../util/aws')
 const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
@@ -21,6 +21,7 @@ const {
 } = require('./constants')
 
 
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
 /**

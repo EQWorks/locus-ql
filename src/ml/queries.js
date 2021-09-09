@@ -1,5 +1,5 @@
 const { knex } = require('../util/db')
-const { apiError, getSetAPIError, APIError } = require('../util/api-error')
+const { APIError, useAPIErrorOptions } = require('../util/api-error')
 const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
 const { validateQuery } = require('./engine')
@@ -8,6 +8,7 @@ const { typeToCatMap, CAT_STRING } = require('./type')
 const { QL_SCHEMA } = require('./constants')
 
 
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
 /**

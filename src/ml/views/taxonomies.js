@@ -1,5 +1,7 @@
-const { getSetAPIError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 
+
+const { getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 // one module = one type
 /**

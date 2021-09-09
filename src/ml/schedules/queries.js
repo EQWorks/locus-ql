@@ -1,10 +1,12 @@
 const cronParser = require('cron-parser')
 
 const { knex } = require('../../util/db')
-const { apiError, getSetAPIError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const { QL_SCHEMA } = require('../constants')
 const { getSetSchedule, getScheduleID } = require('./schedules')
 
+
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 /**
  * Returns all the schedules attached to a given query

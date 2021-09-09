@@ -1,10 +1,12 @@
 /* eslint-disable no-use-before-define */
 const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
-const { apiError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const { knexWithCache, pgWithCache } = require('../cache')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const CONNECTION_TABLE = 'ext_conn.connections'
 const SETS_TABLE = 'ext_conn.sets'

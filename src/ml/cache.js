@@ -2,12 +2,13 @@ const { createHash } = require('crypto')
 const { gzip, gunzip } = require('zlib')
 const { promisify } = require('util')
 
-const { apiError, getSetAPIError } = require('../util/api-error')
+const { useAPIErrorOptions } = require('../util/api-error')
 const { s3 } = require('../util/aws')
 const { client: redis } = require('../util/redis')
 const { QUERY_BUCKET } = require('./constants')
 
 
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 const gzipAsync = promisify(gzip)
 const gunzipAsync = promisify(gunzip)
 const evalRedisAsync = promisify(redis.eval).bind(redis)

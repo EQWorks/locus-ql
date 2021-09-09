@@ -6,9 +6,11 @@ const { createHash } = require('crypto')
 const { knex, mlPool, knexBuilderToRaw, fdwConnectByName } = require('../util/db')
 const { Expression } = require('./expressions')
 const { insertGeo } = require('./geo')
-const { apiError, getSetAPIError } = require('../util/api-error')
+const { useAPIErrorOptions } = require('../util/api-error')
 const { knexWithCache, queryWithCache, cacheTypes } = require('./cache')
 
+
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 // const TYPE_STRING = 'string'
 
