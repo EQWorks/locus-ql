@@ -157,8 +157,6 @@ const getFromS3Cache = async (
     params.IfModifiedSince = Math.floor(Date.now() / 1000) - maxAge
   }
 
-  console.log(params)
-
   try {
     const { Body, ContentEncoding, ContentType } = await s3.getObject(params).promise()
     let value = Body
