@@ -518,10 +518,10 @@ const respondWithExecution = async (req, res, next) => {
     const { executionID, customerID, status, viewIDs, columns } = req.mlExecution
     const { results } = req.query
     // attach results
+
     if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
       req.mlExecution.results = await getExecutionResults(customerID, executionID)
     }
-
     // convert columns from array to object
     req.mlExecution.columns = columns.map(([name, pgType]) => ({
       name,
