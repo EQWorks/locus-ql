@@ -13,6 +13,7 @@ Sentry.init({
   dsn: SENTRY_DNS,
   release: API_VER,
   environment: STAGE,
+  maxValueLength: 10000, // max size of value logged (default is 250)
 })
 
 const initRequestContext = Sentry.Handlers.requestHandler({
@@ -23,7 +24,7 @@ const initRequestContext = Sentry.Handlers.requestHandler({
 // log 1) to console in DEBUG mode, 2) to Sentry otherwise
 const logError = (err, req, res, next) => {
   // log to console
-  if (['1', 'true'].includes((DEBUG || '').toLowerCase())) {
+  if (['1', 'true'].includes((DEBUG).toLowerCase())) {
     console.log(err.originalError || err)
     return next(err)
   }
