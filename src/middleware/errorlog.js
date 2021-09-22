@@ -3,7 +3,7 @@ const Sentry = require('@sentry/node')
 const { getContext, hasContext, ERROR_CTX, ERROR_QL_CTX } = require('../util/context')
 
 
-const { STAGE = 'dev', API_VER, DEBUG, SENTRY_DNS } = process.env
+const { STAGE = 'dev', API_VER, DEBUG = '', SENTRY_DNS } = process.env
 const errorCtx = {
   'App context': ERROR_CTX,
   'QL context': ERROR_QL_CTX,
