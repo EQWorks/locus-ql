@@ -31,6 +31,7 @@ const activity = require('./activity')
 const dataset = require('./dataset')
 const mobilesdk = require('./mobilesdk')
 const usage = require('./usage')
+const locussdk = require('./locussdk')
 const facebook = require('./facebook')
 
 
@@ -69,6 +70,9 @@ const rootRouter = express.Router()
 rootRouter.use(isMaint)
 rootRouter.use(jwt)
 rootRouter.use('/mobilesdk', mobilesdk)
+rootRouter.use('/usage', usage)
+rootRouter.use('/locussdk', locussdk)
+rootRouter.use(api)
 rootRouter.use(nonMobileSDKRouter)
 
 module.exports = rootRouter
