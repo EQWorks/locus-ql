@@ -1,11 +1,13 @@
 /* eslint-disable no-use-before-define */
 const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
-const { apiError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
 const { geoMapping } = require('../geo')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const GEO_TABLES = {
   ...Object.entries(geoMapping).reduce((acc, [key, val]) => {

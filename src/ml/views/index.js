@@ -1,7 +1,7 @@
 /* eslint-disable global-require */
 /* eslint-disable import/no-dynamic-require */
 
-const { apiError, APIError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const {
   viewTypes,
   viewTypeValues,
@@ -9,6 +9,8 @@ const {
   listViewCategoriesByViewType,
 } = require('./taxonomies')
 
+
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const viewTypesToModules = {
   [viewTypes.EXT]: require('./ext'),
@@ -82,10 +84,7 @@ const listViewsMW = async (req, res, next) => {
     )
     res.status(200).json(views)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve views', 500))
+    next(getSetAPIError(err, 'Failed to retrieve views', 500))
   }
 }
 
@@ -163,10 +162,7 @@ const loadQueryViews = (onlyUseBodyQuery = false) => async (req, _, next) => {
     Object.assign(req, mlViews)
     next()
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to load the query views', 500))
+    next(getSetAPIError(err, 'Failed to load the query views', 500))
   }
 }
 
@@ -178,10 +174,7 @@ const getViewMW = async (req, res, next) => {
     const view = await getView(access, viewID)
     res.status(200).json(view)
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to rerieve view', 500))
+    next(getSetAPIError(err, 'Failed to rerieve view', 500))
   }
 }
 

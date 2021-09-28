@@ -2,11 +2,13 @@
 /* eslint-disable no-use-before-define */
 const { knex } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC } = require('../type')
-const { apiError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const { knexWithCache } = require('../cache')
 const { geoMapping } = require('../geo')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const getLayerColumns = (table, resolution) => {
   const geoType = `ca-${resolution}`
@@ -154,8 +156,8 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
   const columnExpressions = (table || slug).startsWith('persona')
     ? '1 AS has_persona'
     : `
-      L.summary_data::json #>> '{main_number_pcnt, value}' AS value,
-      L.summary_data::json #>> '{main_number_pcnt, percent}' AS percent,
+      (L.summary_data::json #>> '{main_number_pcnt, value}')::real AS value,
+      (L.summary_data::json #>> '{main_number_pcnt, percent}')::real AS percent,
       L.summary_data::json #>> '{main_number_pcnt, units}' AS units
     `
 

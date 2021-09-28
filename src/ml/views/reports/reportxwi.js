@@ -7,10 +7,12 @@ const {
   CAT_JSON,
 } = require('../../type')
 const { geoTypes } = require('../../geo')
-const { apiError } = require('../../../util/api-error')
+const { useAPIErrorOptions } = require('../../../util/api-error')
 const { knexWithCache } = require('../../cache')
 const { viewTypes, viewCategories } = require('../taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const options = {
   columns: {
@@ -76,8 +78,22 @@ const getReportLayers = (wl, cu, { layerID, reportID }) => {
   if (layerID) {
     whereFilters.layer_id = layerID
   }
+  const groupByCols = [
+    'layer.name',
+    'layer.layer_id',
+    'layer.customer',
+    'layer.whitelabel',
+    'layer.report_id',
+    'report.type',
+    { report_name: 'report.name' },
+    { report_created: 'report.created' },
+    { report_updated: 'report.updated' },
+    { report_description: 'report.description' },
+    'report.tld',
+    'report.poi_list_id',
+  ]
   const layerQuery = knex('layer')
-  layerQuery.column(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
+  layerQuery.column(groupByCols)
   layerQuery.select(knex.raw(`
     COALESCE(
       ARRAY_AGG(DISTINCT ARRAY[
@@ -100,7 +116,7 @@ const getReportLayers = (wl, cu, { layerID, reportID }) => {
       layerQuery.whereRaw('(layer.customer = ANY (?) OR customers.agencyid = ANY (?))', [cu, cu])
     }
   }
-  layerQuery.groupBy(['layer.name', 'layer.layer_id', 'layer.report_id', 'report.type'])
+  layerQuery.groupByRaw(groupByCols.map((_, i) => i + 1).join(', '))
   return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
 }
 
@@ -124,7 +140,21 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
     throw apiError('Invalid access permissions', 403)
   }
   const reportLayers = await getReportLayers(whitelabel, customers, filter)
-  return reportLayers.map(({ name, layer_id, report_id, type, dates }) => {
+  return reportLayers.map(({
+    name,
+    layer_id,
+    report_id,
+    type,
+    dates,
+    report_name,
+    whitelabel: wl,
+    customer,
+    report_created,
+    report_updated,
+    report_description,
+    tld,
+    poi_list_id,
+  }) => {
     const view = {
       name,
       view: {
@@ -140,6 +170,14 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
       Object.assign(view, {
         columns: options.columns,
         report_type: type,
+        report_name,
+        whitelabel: wl,
+        customer,
+        report_created,
+        report_updated,
+        report_description,
+        tld,
+        poi_list_id,
         dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
       })
     }
@@ -185,7 +223,19 @@ const getView = async (access, viewID) => {
     if (!reportLayer) {
       return null
     }
-    const { name, type, dates } = reportLayer
+    const {
+      name,
+      type,
+      dates,
+      report_name,
+      whitelabel: wl,
+      customer,
+      report_created,
+      report_updated,
+      report_description,
+      tld,
+      poi_list_id,
+    } = reportLayer
     Object.entries(options.columns).forEach(([key, column]) => { column.key = key })
     return {
       name,
@@ -198,6 +248,14 @@ const getView = async (access, viewID) => {
       },
       columns: options.columns,
       report_type: type,
+      report_name,
+      whitelabel: wl,
+      customer,
+      report_created,
+      report_updated,
+      report_description,
+      tld,
+      poi_list_id,
       dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
     }
   }))

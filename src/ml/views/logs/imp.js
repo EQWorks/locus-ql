@@ -549,7 +549,7 @@ module.exports = {
     geo_cohort_id: {
       category: CAT_NUMERIC,
       pgType: 'int',
-      expression: 'geo_cohort_id',
+      expression: 'geo_cohort_list_id',
       inFastViews: [pgViews.LOCUS_GEO_COHORTS, pgViews.ATOM_CH_GEOCOHORT_ID_ITEM],
     },
     geo_cohort_name: {

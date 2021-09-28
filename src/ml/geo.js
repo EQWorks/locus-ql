@@ -3,10 +3,12 @@
 /* eslint-disable no-plusplus */
 /* eslint-disable no-continue */
 const { knex } = require('../util/db')
-const { apiError } = require('../util/api-error')
+const { useAPIErrorOptions } = require('../util/api-error')
 const { CAT_STRING, CAT_NUMERIC } = require('./type')
 const { Expression } = require('./expressions')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const DEFAULT_RADIUS = 500 // 500 metres
 
@@ -27,7 +29,7 @@ const geoTypes = {
 const geoMapping = {
   [geoTypes.CA_FSA]: {
     schema: 'canada_geo',
-    table: 'fsa',
+    table: 'fsa_simplified',
     idType: CAT_STRING,
     idColumn: 'fsa',
     geometryColumn: 'wkb_geometry',
@@ -59,7 +61,7 @@ const geoMapping = {
   },
   [geoTypes.CA_POSTALCODE]: {
     schema: 'canada_geo',
-    table: 'postalcode_2018',
+    table: 'postalcode_simplified',
     idType: CAT_STRING,
     idColumn: 'postalcode',
     geometryColumn: 'wkb_geometry',

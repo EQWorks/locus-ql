@@ -7,9 +7,11 @@ const {
   CAT_JSON,
 } = require('../type')
 const { geoTypes } = require('../geo')
-const { apiError } = require('../../util/api-error')
+const { useAPIErrorOptions } = require('../../util/api-error')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
+
+const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const FREQ_DAILY = 'daily'
 const FREQ_HOURLY = 'hourly'

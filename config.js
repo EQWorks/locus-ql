@@ -31,11 +31,6 @@ module.exports.pgAtomRead = {
   password: process.env.PG_ATOM_PW,
 }
 
-module.exports.mapzen = {
-  baseURL: process.env.MAP_ZEN_BASE_URL,
-  apikey: process.env.API_KEY,
-}
-
 module.exports.mapbox = {
   geocodeURL: process.env.MAP_BOX_GEOCODE_URL,
   appId: process.env.MAP_BOX_APP_ID,
