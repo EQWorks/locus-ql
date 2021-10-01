@@ -10,7 +10,7 @@ const {
   listExecutions,
   loadExecution,
   respondWithExecution,
-  respondWithOrRedirectToExecutionResults,
+  respondWithOrRedirectToExecutionResultsURL,
   cancelExecution,
 } = require('../../ml/executions')
 const {
@@ -101,7 +101,7 @@ router.get('/views/:viewID', getViewMW)
 router.get(
   '/executions/:id(\\d+)/results',
   loadExecution(true),
-  respondWithOrRedirectToExecutionResults,
+  respondWithOrRedirectToExecutionResultsURL,
 )
 
 /**

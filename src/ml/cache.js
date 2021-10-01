@@ -188,8 +188,8 @@ const getFromS3Cache = async (
     let value = Body
     if (ContentEncoding === 'gzip') {
       value = await gunzipAsync(value)
-      value = value.toString('utf8')
     }
+    value = value.toString('utf8')
     if (ContentType === 'application/json' && parseFromJson) {
       return JSON.parse(value)
     }

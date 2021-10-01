@@ -18,6 +18,8 @@ const {
   STATUS_SUCCEEDED,
   STATUS_CANCELLED,
   STATUS_FAILED,
+  RESULTS_PART_SIZE,
+  RESULTS_PART_SIZE_FIRST,
 } = require('./constants')
 
 
@@ -72,6 +74,16 @@ const getExecutionMetas = async ({
       e.is_internal AS "isInternal",
       e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
       e.cost,
+      CASE WHEN e.results_parts IS NOT NULL THEN
+        ARRAY(
+          SELECT
+            jsonb_build_object(
+              'part', rank() OVER (ORDER BY rp),
+              'end', rp
+            )
+          FROM UNNEST(e.results_parts) rp
+        )
+      END AS "resultsParts",
       s.cron AS "scheduleCron",
       sj.job_ts AS "scheduleTS"
     FROM ${QL_SCHEMA}.executions e
@@ -109,32 +121,96 @@ const getExecutionMetas = async ({
 }
 
 /**
+ * Deterministically generates a cache key for the execution results
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {number} executionID Execution ID
+ * @param {number} [part] Results part number
+ * @returns {string} Cache key
+ */
+const getExecutionResultsKey = (customerID, executionID, part) =>
+  `${customerID}/${executionID}${part ? `/${part}` : ''}`
+
+/**
  * Pulls the execution results from storage
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
  * @param {Object} options
- * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an oject
+ * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an object
  * @param {number} [options.maxSize] Max size of the results in bytes
- * @returns {string|Object|undefined} Query results or undefined if not found or too large
+ * @param {number} [options.part] Results part number (required for multi-part results)
+ * @returns {Promise<string|Object[]|undefined>} Query results or undefined if not found
+ * or too large
  */
-const getExecutionResults = (customerID, executionID, { parseFromJson = true, maxSize } = {}) =>
-  getFromS3Cache(
-    `${customerID}/${executionID}`,
-    { bucket: EXECUTION_BUCKET, parseFromJson, maxSize },
-  )
+const getExecutionResults = (
+  customerID,
+  executionID,
+  { parseFromJson = true, maxSize, part } = {},
+) => getFromS3Cache(
+  getExecutionResultsKey(customerID, executionID, part),
+  { bucket: EXECUTION_BUCKET, parseFromJson, maxSize },
+)
+
+/**
+ * Pulls multi-part execution results from storage given an array of part numbers
+ * Parts are concatenated in accordance with their part number in ascending order
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {number} executionID Execution ID
+ * @param {boolean} [parseFromJson=true] Whether or not to parse the results into an object
+ * @param {number} [part] Results parts to pull from cache
+ * @returns {Promise<string|Object[]|undefined>} Query results or undefined if not found
+ */
+const getExecutionResultsParts = async (customerID, executionID, parts, parseFromJson = true) => {
+  const rawParts = await Promise
+    // get all parts from s3
+    .all(parts
+      .sort((a, b) => a - b)
+      .map(p => getFromS3Cache(
+        getExecutionResultsKey(customerID, executionID, p),
+        { bucket: EXECUTION_BUCKET, parseFromJson },
+      )))
+    .reduce((acc, p, i, allParts) => {
+      // filter out undefined (part does not exist)
+      if (!p) {
+        return acc
+      }
+      // if json, push individual objects in acc
+      if (parseFromJson) {
+        acc.push(...p)
+        return acc
+      }
+      // else push entire parts as strings
+      // remove square brackets between parts
+      acc.push(p.slice(
+        !i ? 0 : 1, // keep entry bracket on first part
+        i === allParts.length - 1 ? allParts.length : -1, // keep exit bracket on last part
+      ))
+      return acc
+    }, [])
+  // no results
+  if (!rawParts) {
+    return
+  }
+  return parseFromJson ? rawParts : rawParts.join(', ')
+}
 
 /**
  * Returns a temporary URL to the execution results
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
- * @param {number} [ttl=900] URL validity in seconds. Defaults to 900 (15 minutes)
- * @returns {string|undefined} URL to the query results or undefined if not found
+ * @param {Object} options
+ * @param {number} [options.ttl=900] URL validity in seconds. Defaults to 900 (15 minutes)
+ * @param {number} [options.part] Results part number
+ * @returns {Promise<string|undefined>} URL to the query results or undefined if not found
  */
-const getExecutionResultsURL = (customerID, executionID, ttl = 900) => queryWithCache(
-  ['execution-results', executionID],
-  () => getS3CacheURL(`${customerID}/${executionID}`, { bucket: EXECUTION_BUCKET, ttl }),
-  { ttl, maxAge: ttl, gzip: false, json: false },
-)
+const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part } = {}) =>
+  queryWithCache(
+    ['execution-results', executionID, part],
+    () => getS3CacheURL(
+      getExecutionResultsKey(customerID, executionID, part),
+      { bucket: EXECUTION_BUCKET, ttl },
+    ),
+    { ttl, maxAge: ttl, gzip: false, json: false },
+  )
 
 /**
  * Creates an execution
@@ -224,6 +300,8 @@ const createExecution = async (
  * @param {Object} updates
  * @param {string} [updates.status] New status
  * @param {Object} [updates.queryID] New query ID to attach the execution to
+ * @param {number[]} [updates.resultsParts] Array of part end indexes (relative
+ * to the full result set - e.g. [10000, 20000, 30000])
  * @param {Object} options
  * @param {string[]} [options.optOutStatuses] Execution statuses for which to skip the update
  * @param {Knex} [options.knexClient=knex] Knex client to use to run the SQL query. Defaults to the
@@ -231,7 +309,7 @@ const createExecution = async (
  */
 const updateExecution = async (
   executionID,
-  { status, queryID },
+  { status, queryID, resultsParts },
   { optOutStatuses, knexClient = knex } = {},
 ) => {
   const columns = []
@@ -245,6 +323,10 @@ const updateExecution = async (
   if (queryID) {
     columns.push('query_id')
     values.push(queryID)
+  }
+  if (resultsParts) {
+    columns.push('results_parts')
+    values.push(resultsParts)
   }
   if (!columns.length && !expressions.length) {
     // nothing to update
@@ -453,17 +535,30 @@ const runExecution = async (executionID) => {
       pgConnection.end()
     }
 
-    // persist to S3
-    await putToS3Cache(
-      `${customerID}/${executionID}`,
-      results,
-      { gzip: true, json: true, bucket: EXECUTION_BUCKET },
-    )
+    // split results into parts
+    const resultsParts = []
+    const cacheParts = []
+    let partStart = 0
+    while (partStart < results.length) {
+      const partSize = resultsParts.length ? RESULTS_PART_SIZE : RESULTS_PART_SIZE_FIRST
+      const partEnd = Math.min(partStart + partSize, results.length) - 1
+      // part will be referred to by its end index relative to the result set
+      resultsParts.push(partEnd)
+      // persist part to S3
+      cacheParts.push(putToS3Cache(
+        getExecutionResultsKey(customerID, executionID, resultsParts.length),
+        results.slice(partStart, partEnd + 1),
+        { gzip: true, json: true, bucket: EXECUTION_BUCKET },
+      ))
+      partStart = partEnd + 1
+    }
+    // wait for parts to be persisted to s3
+    await Promise.all(cacheParts)
 
-    // update status to succeeded
+    // update status to succeeded + breakdown of parts
     await updateExecution(
       executionID,
-      { status: STATUS_SUCCEEDED },
+      { status: STATUS_SUCCEEDED, resultsParts },
       { optOutStatuses: [STATUS_CANCELLED] },
     )
   } catch (err) {
@@ -533,17 +628,26 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
 
 const respondWithExecution = async (req, res, next) => {
   try {
-    const { executionID, customerID, status, viewIDs, columns } = req.mlExecution
+    const { executionID, customerID, status, viewIDs, columns, resultsParts } = req.mlExecution
     const { results } = req.query
     // attach results
-
+    // TODO: deprecate - retrieve results via results route
     if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
-      // undefined if results is too large
-      req.mlExecution.results = await getExecutionResults(
-        customerID,
-        executionID,
-        { maxSize: 1024 }, // 1MB
-      )
+      if (resultsParts) {
+        req.mlExecution.results = resultsParts.length
+          ? await getExecutionResultsParts(
+            customerID,
+            executionID,
+            resultsParts.map((_, i) => i + 1),
+          )
+          : []
+      } else {
+        req.mlExecution.results = await getExecutionResults(
+          customerID,
+          executionID,
+          // { maxSize: 1024 }, // 1MB
+        )
+      }
     }
     // convert columns from array to object
     req.mlExecution.columns = columns.map(([name, pgType]) => ({
@@ -571,15 +675,29 @@ const respondWithExecution = async (req, res, next) => {
   }
 }
 
-const respondWithOrRedirectToExecutionResults = async (req, res, next) => {
+const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
   try {
-    const { executionID, customerID, status } = req.mlExecution
-    const { redirect } = req.query
+    const { executionID, customerID, status, resultsParts } = req.mlExecution
+    const { redirect, part } = req.query
     if (status !== STATUS_SUCCEEDED) {
       throw apiError(`The execution is not in '${STATUS_SUCCEEDED}' status`, 400)
     }
+    let safePart
+    if (resultsParts) {
+      if (!resultsParts.length) {
+        // empty result set
+        throw apiError('This execution returned no results')
+      }
+      if (!part) { // should this be a url param?
+        throw apiError('Please provide a part number')
+      }
+      safePart = parseInt(safePart)
+      if (Number.isNaN(safePart) || safePart <= 0 || safePart > resultsParts.length) {
+        throw apiError(`Invalid results part number: ${part}`)
+      }
+    }
     // generate/retrieve URL to results in storage
-    const url = await getExecutionResultsURL(customerID, executionID)
+    const url = await getExecutionResultsURL(customerID, executionID, { part: safePart })
     if (['1', 'true'].includes((redirect || '').toLowerCase())) {
       return res.redirect(302, url)
     }
@@ -737,7 +855,7 @@ module.exports = {
   executionHandler,
   loadExecution,
   respondWithExecution,
-  respondWithOrRedirectToExecutionResults,
+  respondWithOrRedirectToExecutionResultsURL,
   listExecutions,
   cancelExecution,
   getExecutionMetas,
