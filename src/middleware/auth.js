@@ -35,15 +35,9 @@ function jwtMiddleware(req, _, next) {
   const wlID = parseInt(_wl)
   const cuID = parseInt(_customer)
   // validate _wl and _customer
-  if (_wl && wlID && (!_customer || cuID)) {
-    const isInternal = whitelabel === -1 && customers === -1
-    if (isInternal || whitelabel.includes(wlID)) {
-      whitelabel = [wlID]
-    }
-
-    if (_customer && (isInternal ||
-      (whitelabel.includes(wlID) && (customers === -1 || customers.includes(cuID)))
-    )) {
+  if (wlID && (whitelabel === -1 || whitelabel.includes(wlID))) {
+    whitelabel = [wlID]
+    if (cuID && (customers === -1 || customers.includes(cuID))) {
       customers = [cuID]
     }
   }

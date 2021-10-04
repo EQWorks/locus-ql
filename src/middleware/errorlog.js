@@ -29,8 +29,8 @@ const logError = (err, req, res, next) => {
     return next(err)
   }
 
-  // log to sentry when no known status or in 500 series
-  if (!err.status || err.status >= 500) {
+  // log to sentry when no known level or 'error'
+  if (!err.level || err.level === 'error') {
     return Sentry.withScope((scope) => {
       // append user context
       if (req.access) {

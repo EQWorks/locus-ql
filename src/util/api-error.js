@@ -1,11 +1,12 @@
 // API errors are safe to return to the client
 class APIError extends Error {
-  constructor(errorMessage, { statusCode, originalError, tags } = {}) {
+  constructor(errorMessage, { statusCode, originalError, level, tags } = {}) {
     super(errorMessage)
     this.status = statusCode || 400
     if (originalError) {
       this.originalError = originalError
     }
+    this.level = level || (statusCode >= 500 ? 'error' : 'warning')
     // { tagKey2: tagValue1, tagKey2: tagValue2, ... }
     if (tags) {
       this.tags = tags
