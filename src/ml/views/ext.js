@@ -52,12 +52,19 @@ const getConnections = ({ whitelabel, customers, conn_id, categories } = {}) => 
       values.push(Object.values(viewCategoryToConnType))
       connTypeFilters.push(`NOT (c.type = ANY($${values.length}))`)
     }
-    const connTypes = categories.map(cat => viewCategoryToConnType[cat])
+    const connTypes = categories.reduce((types, cat) => {
+      if (cat in viewCategoryToConnType) {
+        types.push(viewCategoryToConnType[cat])
+      }
+      return types
+    }, [])
     if (connTypes.length) {
       values.push(connTypes)
       connTypeFilters.push(`c.type = ANY($${values.length})`)
     }
-    filters.push(connTypeFilters.join(' OR '))
+    if (connTypeFilters.length) {
+      filters.push(`(${connTypeFilters.join(' OR ')})`)
+    }
   }
 
   return pgWithCache(
@@ -94,6 +101,7 @@ const getConnections = ({ whitelabel, customers, conn_id, categories } = {}) => 
         AND pc.relkind = 'r'
       WHERE
         c.last_sync IS NOT NULL
+        AND NOT c.deprecated
         ${filters.length ? `AND ${filters.join(' AND ')}` : ''}
     `,
     values,
