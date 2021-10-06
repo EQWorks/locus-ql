@@ -5,48 +5,66 @@ const { QL_SCHEMA } = require('../constants')
 /**
  * Returns the schedule ID corresponding to the customer ID + CRON combination.
  * Creates said schedule if it does not already exists.
+ * @param {number} whitelabelID Whitelabel ID
  * @param {number} customerID Customer ID
  * @param {string} cron CRON expression
  * @returns {Promise<number>} Schedule ID
  */
-const getSetSchedule = async (customerID, cron) => {
+const getSetSchedule = async (whitelabelID, customerID, cron) => {
   const { rows: [{ scheduleID } = {}] } = await knex.raw(`
-    WITH existing AS (
+    WITH access AS (
+      SELECT customerid FROM public.customers
+      WHERE
+        whitelabelid = :whitelabelID
+        AND customerid = :customerID
+    ),
+    existing AS (
       SELECT schedule_id AS "scheduleID"
       FROM ${QL_SCHEMA}.schedules
       WHERE
-        customer_id = :customerID
+        EXISTS (SELECT * FROM access)
+        AND customer_id = :customerID
         AND cron = :cron
     ),
     new AS (
       INSERT INTO ${QL_SCHEMA}.schedules
         (customer_id, cron)
         SELECT :customerID, :cron
-        WHERE NOT EXISTS (SELECT * FROM existing)
+        WHERE
+          EXISTS (SELECT * FROM access)
+          AND NOT EXISTS (SELECT * FROM existing)
       RETURNING schedule_id AS "scheduleID"
     )
     SELECT * FROM existing
     UNION
     SELECT * FROM new
-  `, { customerID, cron })
+  `, { whitelabelID, customerID, cron })
   return scheduleID
 }
 
 /**
  * Returns the schedule ID corresponding to the customer ID + CRON combination.
+ * @param {number} whitelabelID Whitelabel ID
  * @param {number} customerID Customer ID
  * @param {string} cron CRON expression
  * @returns {Promise<number>} Schedule ID or undefined if not found
  */
-const getScheduleID = async (customerID, cron) => {
+const getScheduleID = async (whitelabelID, customerID, cron) => {
   const { rows: [{ scheduleID } = {}] } = await knex.raw(`
+    WITH access AS (
+      SELECT customerid FROM public.customers
+      WHERE
+        whitelabelid = :whitelabelID
+        AND customerid = :customerID
+    ),
     SELECT
       schedule_id AS "scheduleID"
     FROM ${QL_SCHEMA}.schedules
     WHERE
-      customer_id = ?
-      AND cron = ?
-  `, [customerID, cron])
+      EXISTS (SELECT * FROM access)
+      AND customer_id = :customerID
+      AND cron = :cron
+  `, { whitelabelID, customerID, cron })
   return scheduleID
 }
 

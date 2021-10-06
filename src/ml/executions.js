@@ -216,6 +216,7 @@ const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part } = {
 
 /**
  * Creates an execution
+ * @param {number} whitelabelID Whitelabel ID
  * @param {number} customerID Customer ID (agency ID)
  * @param {string} queryHash Query hash (unique to the query)
  * @param {string} columnHash Column hash (unique to the name/type of the results)
@@ -235,6 +236,7 @@ const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part } = {
  * @returns {Promise<number>} The execution ID or undefined when a SQL conflict is encountered
  */
 const createExecution = async (
+  whitelabelID,
   customerID,
   queryHash,
   columnHash,
@@ -255,6 +257,8 @@ const createExecution = async (
     'is_internal',
   ]
   const values = [
+    whitelabelID,
+    customerID,
     customerID,
     queryHash,
     columnHash,
@@ -285,10 +289,17 @@ const createExecution = async (
   }
 
   const { rows: [{ executionID } = {}] } = await knexClient.raw(`
+    WITH access AS (
+      SELECT customerid FROM public.customers
+      WHERE
+        whitelabelid = ?
+        AND customerid = ?
+    ),
     INSERT INTO ${QL_SCHEMA}.executions
       (${cols.join(', ')})
     VALUES
       (${cols.map(() => '?').join(', ')})
+    WHERE EXISTS (SELECT * FROM access)
     ON CONFLICT DO NOTHING
     RETURNING execution_id AS "executionID"
   `, values)
@@ -396,15 +407,16 @@ const triggerExecution = async (executionID) => {
 /**
  * Creates an entry for the execution in the database and triggers such execution when
  * it is dependency-free
+ * @param {number} whitelabelID Whitelabel ID
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {string} queryHash Query hash (unique to the query)
+ * @param {string} columnHash Column hash (unique to the name/type of the results)
+ * @param {Object} query Query object
  * @param {Object.<string, Knex.QueryBuilder|Knex.Raw>} views Map of view ID's and knex
  * view objects
  * @param {Object.<string, [string, number][]>} viewDependencies Map of view ID's and
  * dependency arrays
  * @param {Object.<string, boolean>} viewIsInternal Map of view ID's and internal flags
- * @param {number} customerID Customer ID (agency ID)
- * @param {string} queryHash Query hash (unique to the query)
- * @param {string} columnHash Column hash (unique to the name/type of the results)
- * @param {Object} query Query object
  * @param {[string, number][]} columns List of the query columns formatted as [name, pgTypeOID]
  * @param {Object} [options] Optional args
  * @param {number} [options.queryID] If the execution is tied to a saved query, the ID of such query
@@ -413,6 +425,7 @@ const triggerExecution = async (executionID) => {
  * @returns {Promise<number>} The execution ID or undefined
  */
 const queueExecution = async (
+  whitelabelID,
   customerID,
   queryHash,
   columnHash,
@@ -431,6 +444,7 @@ const queueExecution = async (
   const isInternal = Object.values(viewIsInternal).some(is => is)
   // insert into executions
   const executionID = await createExecution(
+    whitelabelID,
     customerID,
     queryHash,
     columnHash,
@@ -463,6 +477,7 @@ const queueExecutionMW = async (req, res, next) => {
       mlQueryColumns,
     } = req
     const executionID = await queueExecution(
+      access.whitelabel[0],
       access.customers[0],
       mlQueryHash,
       mlQueryColumnHash,

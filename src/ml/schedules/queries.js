@@ -115,6 +115,7 @@ const putQuerySchedule = async (req, res, next) => {
   try {
     const { queryID } = req.mlQuery
     const { cron, startDate, endDate, isPaused } = req.body
+    const { whitelabel, customers } = req.access
 
     // input validation
     if (!cron) {
@@ -149,7 +150,10 @@ const putQuerySchedule = async (req, res, next) => {
     }
 
     // get/set schedule for cron expression
-    const scheduleID = await getSetSchedule(req.access.customers[0], safeCron)
+    const scheduleID = await getSetSchedule(whitelabel[0], customers[0], safeCron)
+    if (!scheduleID) {
+      throw apiError('Invalid access permissions', 403)
+    }
     // create/update query schedule
     await upsertQuerySchedule(scheduleID, queryID, {
       startDate: safeStartDate,
@@ -167,6 +171,7 @@ const deleteQueryScheduleMW = async (req, res, next) => {
   try {
     const { queryID } = req.mlQuery
     const { cron } = req.body
+    const { whitelabel, customers } = req.access
 
     // input validation
     if (!cron) {
@@ -180,7 +185,10 @@ const deleteQueryScheduleMW = async (req, res, next) => {
     }
 
     // retrieve schedule ID
-    const scheduleID = await getScheduleID(req.access.customers[0], safeCron)
+    const scheduleID = await getScheduleID(whitelabel[0], customers[0], safeCron)
+    if (!scheduleID) {
+      throw apiError('Query schedule not found', 404)
+    }
     // delete
     await deleteQuerySchedule(scheduleID, queryID)
     res.json({ queryID, cron: safeCron })
@@ -196,7 +204,7 @@ const listQuerySchedules = async (req, res, next) => {
     const schedules = await getQuerySchedules(queryID)
     res.json(schedules)
   } catch (err) {
-    next(getSetAPIError(err, 'Failed to delete the query schedule', 500))
+    next(getSetAPIError(err, 'Failed to retrieve the query schedules', 500))
   }
 }
 
