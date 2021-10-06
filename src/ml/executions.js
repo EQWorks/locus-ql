@@ -294,12 +294,11 @@ const createExecution = async (
       WHERE
         whitelabelid = ?
         AND customerid = ?
-    ),
+    )
     INSERT INTO ${QL_SCHEMA}.executions
       (${cols.join(', ')})
-    VALUES
-      (${cols.map(() => '?').join(', ')})
-    WHERE EXISTS (SELECT * FROM access)
+      SELECT ${cols.map(() => '?').join(', ')}
+      WHERE EXISTS (SELECT * FROM access)
     ON CONFLICT DO NOTHING
     RETURNING execution_id AS "executionID"
   `, values)

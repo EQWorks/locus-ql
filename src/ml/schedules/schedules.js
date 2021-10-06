@@ -56,7 +56,7 @@ const getScheduleID = async (whitelabelID, customerID, cron) => {
       WHERE
         whitelabelid = :whitelabelID
         AND customerid = :customerID
-    ),
+    )
     SELECT
       schedule_id AS "scheduleID"
     FROM ${QL_SCHEMA}.schedules

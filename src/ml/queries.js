@@ -182,12 +182,11 @@ const createQuery = async (
       WHERE
         whitelabelid = ?
         AND customerid = ?
-    ),
+    )
     INSERT INTO ${QL_SCHEMA}.queries
       (${[...cols, ...expressionCols].join(', ')})
-    VALUES
-      (${cols.map(() => '?').concat(expressions).join(', ')})
-    WHERE EXISTS (SELECT * FROM access)
+      SELECT ${cols.map(() => '?').concat(expressions).join(', ')}
+      WHERE EXISTS (SELECT * FROM access)
     RETURNING query_id AS "queryID"
   `, [...values, ...expressionValues])
 
