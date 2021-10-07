@@ -96,10 +96,11 @@ router.get('/views/:viewID', getViewMW)
  * @apiDescription Redirects or returns a url to the execution's results based on an id
  * @apiGroup ml
  * @apiParam (params) {number} id ID of the execution
+ * @apiParam (params) {number} [part] Part number (1-based). Required for multi-part results.
  * @apiParam (query) {string} [redirect] '1' or 'true' to redirect to the results URL
 */
 router.get(
-  '/executions/:id(\\d+)/results',
+  '/executions/:id(\\d+)/results(/:part(\\d+))?',
   loadExecution(true),
   respondWithOrRedirectToExecutionResultsURL,
 )

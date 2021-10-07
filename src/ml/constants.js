@@ -17,9 +17,9 @@ module.exports = {
   EXECUTION_BUCKET: process.env.ML_EXECUTION_BUCKET,
 
   // size of execution result parts
-  RESULTS_PART_SIZE: 10000,
+  RESULTS_PART_SIZE: 100000,
   // first part is smaller to allow quick preview with minimal data transfer
-  RESULTS_PART_SIZE_FIRST: 10000,
+  RESULTS_PART_SIZE_FIRST: 1000,
 
   // query executor
   LAMBDA_EXECUTOR_ARN: process.env.ML_LAMBDA_EXECUTOR_ARN,

@@ -78,12 +78,16 @@ const getExecutionMetas = async ({
         ARRAY(
           SELECT
             jsonb_build_object(
-              'part', rank() OVER (ORDER BY rp),
-              'end', rp
+              'part', row_number() OVER (),
+              'firstIndex', lag(rp + 1, 1, 0) over(),
+              'lastIndex', rp
             )
           FROM UNNEST(e.results_parts) rp
         )
       END AS "resultsParts",
+      CASE WHEN e.results_parts IS NOT NULL THEN
+        COALESCE(e.results_parts[array_length(e.results_parts, 1)] + 1, 0)
+      END AS "resultsSize",
       s.cron AS "scheduleCron",
       sj.job_ts AS "scheduleTS"
     FROM ${QL_SCHEMA}.executions e
@@ -155,24 +159,22 @@ const getExecutionResults = (
  * Parts are concatenated in accordance with their part number in ascending order
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
+ * @param {number[]} parts Results parts to pull from cache
  * @param {boolean} [parseFromJson=true] Whether or not to parse the results into an object
- * @param {number} [part] Results parts to pull from cache
  * @returns {Promise<string|Object[]|undefined>} Query results or undefined if not found
  */
 const getExecutionResultsParts = async (customerID, executionID, parts, parseFromJson = true) => {
-  const rawParts = await Promise
+  const rawParts = (await Promise
     // get all parts from s3
     .all(parts
       .sort((a, b) => a - b)
       .map(p => getFromS3Cache(
         getExecutionResultsKey(customerID, executionID, p),
         { bucket: EXECUTION_BUCKET, parseFromJson },
-      )))
+      ))))
+    // filter out undefined (part does not exist)
+    .filter(p => p)
     .reduce((acc, p, i, allParts) => {
-      // filter out undefined (part does not exist)
-      if (!p) {
-        return acc
-      }
       // if json, push individual objects in acc
       if (parseFromJson) {
         acc.push(...p)
@@ -182,12 +184,12 @@ const getExecutionResultsParts = async (customerID, executionID, parts, parseFro
       // remove square brackets between parts
       acc.push(p.slice(
         !i ? 0 : 1, // keep entry bracket on first part
-        i === allParts.length - 1 ? allParts.length : -1, // keep exit bracket on last part
+        i === allParts.length - 1 ? p.length : -1, // keep exit bracket on last part
       ))
       return acc
     }, [])
   // no results
-  if (!rawParts) {
+  if (!rawParts.length) {
     return
   }
   return parseFromJson ? rawParts : rawParts.join(', ')
@@ -203,7 +205,7 @@ const getExecutionResultsParts = async (customerID, executionID, parts, parseFro
  * @returns {Promise<string|undefined>} URL to the query results or undefined if not found
  */
 const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part } = {}) =>
-  queryWithCache(
+  queryWithCache( // cache pre-signed url for ttl seconds
     ['execution-results', executionID, part],
     () => getS3CacheURL(
       getExecutionResultsKey(customerID, executionID, part),
@@ -472,7 +474,7 @@ const queueExecutionMW = async (req, res, next) => {
       mlViewDependencies,
       mlViewIsInternal,
       mlQueryColumns,
-      {queryID},
+      { queryID },
     )
     if (!executionID) {
       throw apiError('Execution already exists', 400)
@@ -633,14 +635,16 @@ const respondWithExecution = async (req, res, next) => {
     // attach results
     // TODO: deprecate - retrieve results via results route
     if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
+      // multi-part
       if (resultsParts) {
         req.mlExecution.results = resultsParts.length
           ? await getExecutionResultsParts(
             customerID,
             executionID,
-            resultsParts.map((_, i) => i + 1),
+            resultsParts.map(({ part }) => part),
           )
           : []
+      // legacy single part
       } else {
         req.mlExecution.results = await getExecutionResults(
           customerID,
@@ -678,7 +682,8 @@ const respondWithExecution = async (req, res, next) => {
 const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
   try {
     const { executionID, customerID, status, resultsParts } = req.mlExecution
-    const { redirect, part } = req.query
+    const { redirect } = req.query
+    const { part } = req.params
     if (status !== STATUS_SUCCEEDED) {
       throw apiError(`The execution is not in '${STATUS_SUCCEEDED}' status`, 400)
     }
@@ -688,10 +693,10 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
         // empty result set
         throw apiError('This execution returned no results')
       }
-      if (!part) { // should this be a url param?
+      if (!part) {
         throw apiError('Please provide a part number')
       }
-      safePart = parseInt(safePart)
+      safePart = parseInt(part)
       if (Number.isNaN(safePart) || safePart <= 0 || safePart > resultsParts.length) {
         throw apiError(`Invalid results part number: ${part}`)
       }
@@ -703,10 +708,7 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
     }
     res.json({ url })
   } catch (err) {
-    if (err instanceof APIError) {
-      return next(err)
-    }
-    next(apiError('Failed to retrieve the execution results', 500))
+    next(getSetAPIError(err, 'Failed to retrieve the execution results', 500))
   }
 }
 
@@ -845,7 +847,7 @@ const cancelExecution = async (req, res, next) => {
 }
 
 // to test out handler (replace ID)
-// executionHandler({ execution_id: '335' }).then(() => console.log('ml execution done'))
+// executionHandler({ execution_id: '748' }).then(() => console.log('ml execution done'))
 
 module.exports = {
   createExecution,
