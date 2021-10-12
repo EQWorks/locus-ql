@@ -372,7 +372,7 @@ const queueExecutionMW = async (req, res, next) => {
       mlViewDependencies,
       mlViewIsInternal,
       mlQueryColumns,
-      queryID,
+      {queryID},
     )
     if (!executionID) {
       throw apiError('Execution already exists', 400)
