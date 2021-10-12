@@ -62,4 +62,9 @@ async function listS3Objects(bucket, prefix) {
   return keys
 }
 
-module.exports = { invokeLambda, s3, lambda, listS3Objects, firehose }
+async function getS3PresignedURL(bucket, key) {
+  const params = { Bucket: bucket, Key: key }
+  return s3.getSignedUrlPromise('getObject', params)
+}
+
+module.exports = { invokeLambda, s3, lambda, listS3Objects, getS3PresignedURL, firehose }
