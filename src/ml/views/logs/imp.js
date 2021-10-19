@@ -1,6 +1,6 @@
 const { CAT_STRING, CAT_NUMERIC, CAT_DATE } = require('../../type')
 const { geoTypes } = require('../../geo')
-const { CU_ADVERTISER, ACCESS_INTERNAL, ACCESS_CUSTOMER, ACCESS_PRIVATE } = require('./constants')
+const { CU_ADVERTISER, ACCESS_INTERNAL, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
 const { viewCategories } = require('../taxonomies')
 
@@ -332,10 +332,7 @@ module.exports = {
       viewExpression: 'SUM(COALESCE(log._revenue_in_currency, log._revenue, 0))',
       isAggregate: true,
     },
-    spend: {
-      aliasFor: 'revenue',
-      access: ACCESS_CUSTOMER,
-    },
+    spend: { aliasFor: 'revenue' },
     _cost: {
       category: CAT_NUMERIC,
       pgType: 'numeric(19, 4)',
