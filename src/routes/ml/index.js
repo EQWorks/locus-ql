@@ -7,6 +7,7 @@ const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
 const { getViewCategoryTreeMW } = require('../../ml/views/taxonomies')
 const {
   queueExecutionMW,
+  previewExecutionMW,
   listExecutions,
   loadExecution,
   respondWithExecution,
@@ -150,6 +151,8 @@ router.get('/executions/', listExecutions)
  * @apiParam (query) {number} [query] ID of the saved query to execute
  * @apiParam (query) {number} [execution] ID of a previous execution to use as template (i.e.
  * rerun). Ignored when `query` has a value
+ * @apiParam (query) {number} [preview] '1' or 'true' if the execution only needs to be evaluated
+ * but not submitted (e.g. generate query hash or price execution)
  * @apiParam (Req body) {Object} [query] Query markup. Need only be sent when none of `query`
  * and `execution` have a value
  * @apiParam (Req body) {Array} [views] Views the query depends on. Need only be sent when
@@ -162,6 +165,7 @@ router.post(
   accessHasSingleCustomer,
   loadQueryViews(),
   validateQueryMW(),
+  previewExecutionMW,
   queueExecutionMW,
 )
 
