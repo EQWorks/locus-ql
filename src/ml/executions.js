@@ -451,10 +451,7 @@ const queueExecution = async (
 // extracts async and saved queries and queues them as executions
 const queueExecutionMW = async (req, res, next) => {
   try {
-    const {
-      queryID,
-      query: loadedQuery,
-    } = req.mlQuery || req.mlExecution || {}
+    const { queryID, query: loadedQuery } = req.mlQuery || req.mlExecution || {}
     const { query } = req.body
     const {
       access,
@@ -482,6 +479,55 @@ const queueExecutionMW = async (req, res, next) => {
     res.json({ executionID })
   } catch (err) {
     next(getSetAPIError(err, 'Failed to queue the query execution', 500))
+  }
+}
+
+const previewExecutionMW = async (req, res, next) => {
+  try {
+    const { preview } = req.query
+    if (!['1', 'true'].includes((preview || '').toLowerCase())) {
+      return next()
+    }
+    const { queryID, query: loadedQuery } = req.mlQuery || req.mlExecution || {}
+    const { query } = req.body
+    const {
+      access,
+      mlViews,
+      mlViewIsInternal,
+      mlQueryHash,
+      mlQueryColumnHash,
+      mlQueryColumns,
+    } = req
+    const { whitelabel, customers } = access
+
+    // convert columns from array to object
+    const columns = mlQueryColumns.map(([name, pgType]) => ({
+      name,
+      category: typeToCatMap.get(pgType) || CAT_STRING,
+    }))
+
+    // populate views
+    const views = []
+    await Promise.all(Object.keys(mlViews).map(id => getView(access, id).then(({ name, view }) => {
+      view.name = name
+      views.push(view)
+    })))
+
+    // respond with execution meta
+    res.json({
+      whitelabelID: whitelabel[0],
+      customerID: customers[0],
+      queryHash: mlQueryHash,
+      columnHash: mlQueryColumnHash,
+      queryID,
+      query: loadedQuery || query,
+      views,
+      columns,
+      isInternal: Object.values(mlViewIsInternal).some(is => is),
+      // cost: 1,
+    })
+  } catch (err) {
+    next(getSetAPIError(err, 'Failed to evaluate the execution', 500))
   }
 }
 
@@ -854,6 +900,7 @@ module.exports = {
   updateExecution,
   queueExecution,
   queueExecutionMW,
+  previewExecutionMW,
   executionHandler,
   loadExecution,
   respondWithExecution,
