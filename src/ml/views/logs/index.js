@@ -69,7 +69,8 @@ const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOME
     }
 
     // add columns to sets
-    const { access, aliasFor, dependsOn } = viewColumns[col.column]
+    const { access, aliasFor } = viewColumns[col.column]
+    const { dependsOn } = viewColumns[aliasFor || col.column]
     if (access && access > accessType) {
       continue
     }
