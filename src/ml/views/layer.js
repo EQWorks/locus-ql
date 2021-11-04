@@ -89,23 +89,19 @@ const getKnexLayerQuery = async (access, { categories, ...filter } = {}) => {
     } else {
       // else can see WL = -1 + WL = whitelabel (subject to customers value) + subscribed layers
 
-      // fetch subscribed layers
-      const rows = await knexWithCache(
-        knex.raw(`
-          SELECT type_id
-          FROM market_ownership_flat MO
-          LEFT JOIN customers as CU ON CU.customerid = MO.customer
-          WHERE
-            MO.type = 'layer'
-            AND MO.whitelabel = ANY (:whitelabel)
-            ${customers !== -1
-              ? 'AND (MO.customer = ANY (:customers) OR CU.agencyid = ANY (:customers))'
-              : ''
-            }
-        `, { whitelabel, customers }),
-        { ttl: 60 }, // 1 minute (to reflect new subscriptions)
-      )
-      const subscribedLayerIDs = rows.map(layer => layer.type_id)
+      // subscribed layers
+      layerQuery.with('subscribed_layers', knex.raw(`
+        SELECT type_id
+        FROM market_ownership_flat MO
+        LEFT JOIN customers as CU ON CU.customerid = MO.customer
+        WHERE
+          MO.type = 'layer'
+          AND MO.whitelabel = ANY (:whitelabel)
+          ${customers !== -1
+            ? 'AND (MO.customer = ANY (:customers) OR CU.agencyid = ANY (:customers))'
+            : ''
+          }
+      `, { whitelabel, customers }))
 
       // join with customers to expose the agency ID
       if (customers !== -1) {
@@ -125,9 +121,9 @@ const getKnexLayerQuery = async (access, { categories, ...filter } = {}) => {
             }
           )
           OR
-          layer.layer_id = ANY (:subscribedLayerIDs)
+          layer.layer_id = ANY (SELECT * FROM subscribed_layers)
         )
-      `, { whitelabel, customers, email, subscribedLayerIDs })
+      `, { whitelabel, customers, email })
     }
   }
   return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes

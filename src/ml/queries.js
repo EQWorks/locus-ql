@@ -110,6 +110,7 @@ const getQueryMetas = async ({
 
 /**
  * Creates a query
+ * @param {number} whitelabelID Whitelabel ID
  * @param {number} customerID Customer ID (agency ID)
  * @param {string} queryHash Query hash (unique to the query)
  * @param {string} columnHash Column hash (unique to the name/type of the results)
@@ -124,6 +125,7 @@ const getQueryMetas = async ({
  * @returns {Promise<number>} The query ID
  */
 const createQuery = async (
+  whitelabelID,
   customerID,
   queryHash,
   columnHash,
@@ -145,6 +147,8 @@ const createQuery = async (
     'is_internal',
   ]
   const values = [
+    whitelabelID,
+    customerID,
     customerID,
     queryHash,
     columnHash,
@@ -173,10 +177,16 @@ const createQuery = async (
   const expressionValues = [customerID, name, name, name]
 
   const { rows: [{ queryID }] } = await knexClient.raw(`
+    WITH access AS (
+      SELECT customerid FROM public.customers
+      WHERE
+        whitelabelid = ?
+        AND customerid = ?
+    )
     INSERT INTO ${QL_SCHEMA}.queries
       (${[...cols, ...expressionCols].join(', ')})
-    VALUES
-      (${cols.map(() => '?').concat(expressions).join(', ')})
+      SELECT ${cols.map(() => '?').concat(expressions).join(', ')}
+      WHERE EXISTS (SELECT * FROM access)
     RETURNING query_id AS "queryID"
   `, [...values, ...expressionValues])
 
@@ -269,7 +279,7 @@ const postQuery = async (req, res, next) => {
   try {
     const { name, description = '', query } = req.body
     const {
-      access: { customers },
+      access: { whitelabel, customers },
       mlViews,
       mlViewIsInternal,
       mlQueryHash,
@@ -287,6 +297,7 @@ const postQuery = async (req, res, next) => {
     // create query + update execution (as applicable) in transaction
     const queryID = await knex.transaction(async (trx) => {
       const queryID = await createQuery(
+        whitelabel[0],
         customers[0],
         mlQueryHash,
         mlQueryColumnHash,
@@ -385,6 +396,7 @@ const queueQueryExecution = async (queryID, scheduleJobID) => {
   } = await validateQuery(mlViews, mlViewColumns, mlViewFdwConnections, query, access)
 
   const executionID = await queueExecution(
+    whitelabelID,
     customerID,
     mlQueryHash,
     mlQueryColumnHash,

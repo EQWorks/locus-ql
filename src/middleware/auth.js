@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken')
 const axios = require('axios')
 const { get } = require('lodash')
 
-const { apiError } = require('../util/api-error')
+const { apiError, getSetAPIError } = require('../util/api-error')
 const { pool } = require('../util/db')
 
 
@@ -30,7 +30,7 @@ function jwtMiddleware(req, _, next) {
   let { wl: whitelabel = [], customers = [] } = api_access
 
   // both are integers
-  const { _wl, _customer } = req.query
+  const { _wl, _customer, payingwl, payingcu } = req.query
   const _product = req.get('X-EQ-Product')
   const wlID = parseInt(_wl)
   const cuID = parseInt(_customer)
@@ -38,11 +38,30 @@ function jwtMiddleware(req, _, next) {
   if (wlID && (whitelabel === -1 || whitelabel.includes(wlID))) {
     whitelabel = [wlID]
     if (cuID && (customers === -1 || customers.includes(cuID))) {
+      // BEWARE: no guarantee is made that customer belongs to wlID
+      // wl/cu affiliation should always be confirmed via table public.customers
       customers = [cuID]
     }
   }
 
-  req.access = { whitelabel, customers, write, read, email, prefix, token }
+  // payer wl/cu
+  // default is whitelabel[0], customers[0]
+  const payer = {
+    whitelabel: whitelabel === -1 ? -1 : whitelabel[0],
+    // BEWARE: no guarantee is made that customer belongs to paying WL
+    // wl/cu affiliation should always be confirmed via table public.customers
+    customer: customers === -1 ? -1 : customers[0],
+  }
+  const payingWhitelabel = parseInt(payingwl)
+  const payingCustomer = parseInt(payingcu)
+  if (payingWhitelabel && (whitelabel === -1 || whitelabel.includes(payingWhitelabel))) {
+    payer.whitelabel = payingWhitelabel
+    if (payingCustomer && (customers === -1 || customers.includes(payingCustomer))) {
+      payer.customer = payingCustomer
+    }
+  }
+
+  req.access = { whitelabel, customers, write, read, email, prefix, token, payer }
 
   const product = _product && ['atom', 'locus'].includes(_product) ? _product : 'locus'
 
@@ -60,58 +79,55 @@ function jwtMiddleware(req, _, next) {
     method: 'get',
     headers: { 'eq-api-jwt': token },
     params: { product, light },
-  }).then(() => next()).catch(next)
+  }).then(() => next()).catch(err => next(getSetAPIError(err, 'Failed to authenticate user', 403)))
 }
 
 const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
-  let where = 'WHERE layer_id = ANY ($1)'
-  let values = [layerIDs]
-  let join = ''
   // TODO: make moduler (e.g. subscribed, owned, by type etc.)
   // TODO: is email necessary?
   // AND account in ('0', '-1', $4)
   try {
-    if (Array.isArray(wl) && wl.length > 0 && cu === -1) {
-      where += ' AND (whitelabel = -1 OR (whitelabel = ANY ($2) AND account in (\'0\', \'-1\')))'
-      values = [...values, wl]
-    } else if (Array.isArray(wl) && wl.length > 0 && Array.isArray(cu) && cu.length > 0) {
-      // get subscribe layers
-      const { rows } = await pool.query(`
-        SELECT type_id
-        FROM market_ownership_flat MO
-        WHERE MO.type = 'layer' AND MO.whitelabel = ${wl[0]} AND MO.customer = ${cu[0]}
-      `)
-      const subscribeLayerIDs = rows.map(layer => layer.type_id)
-      join = 'LEFT JOIN customers as CU ON CU.customerid = layer.customer'
-      where += ` AND
-        (
-          whitelabel = -1
-          OR
-          (
-            whitelabel = ANY ($2)
-            AND (customer = ANY ($3) OR agencyid = ANY ($3))
-          )
-          OR
-          layer_id = ANY ($4)
-        )
-      `
-      values = [...values, wl, cu, subscribeLayerIDs]
-    } else if (!(wl === -1 && cu === -1)) {
-      return []
+    const values = [layerIDs]
+    const subscribed = []
+    const access = []
+
+    // set filters
+    if (wl !== -1 && wl.length && (cu === -1 || cu.length)) {
+      values.push(wl)
+      subscribed.push(`MO.whitelabel = ANY ($${values.length})`)
+      access.push(`whitelabel = ANY ($${values.length})`, "account in ('0', '-1')")
+      if (cu !== -1) {
+        values.push(cu)
+        subscribed
+          .push(`(MO.customer = ANY ($${values.length}) OR CU.agencyid = ANY ($${values.length}))`)
+        access
+          .push(`(layer.customer = ANY (${values.length}) OR CU.agencyid = ANY (${values.length}))`)
+      }
     }
 
-    const { rows: layers } = await pool.query(
-      `
+    const { rows } = await pool.query(`
+      ${subscribed.length ? `
+        WITH subscribed_layers AS (
+          SELECT type_id
+          FROM market_ownership_flat MO
+          LEFT JOIN customers as CU ON CU.customerid = MO.customer
+          WHERE
+            MO.type = 'layer'
+            AND ${subscribed.join(' AND ')}
+        ),
+      ` : ''}
       SELECT *
       FROM layer
-      ${join}
-      ${where}
-      `,
-      values,
-    )
-    return layers
-  } catch (error) {
-    console.log(error)
+      ${cu !== -1 && cu.length ? 'LEFT JOIN customers as CU ON CU.customerid = layer.customer' : ''}
+      WHERE
+        ${wl === -1 ? 'TRUE' : 'layer.whitelabel = -1'}
+        ${access.length ? `OR (${access.join(' AND ')})` : ''}
+        ${subscribed.length ? 'OR layer.layer_id = ANY (SELECT * FROM subscribed_layers)' : ''}
+
+    `, values)
+    return rows
+  } catch (err) {
+    console.log(err)
     return []
   }
 }
