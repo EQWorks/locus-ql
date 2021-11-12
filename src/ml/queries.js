@@ -164,16 +164,20 @@ const createQuery = async (
   }
 
   // rewrite name when duplicate
-  const expressionCols = ['name']
-  const expressions = [`
-    CASE WHEN EXISTS (
-      SELECT query_id FROM ${QL_SCHEMA}.queries
-      WHERE
-        customer_id = ?
-        AND name = ?
-    ) THEN ? || ' - ' || currval(pg_get_serial_sequence('${QL_SCHEMA}.queries', 'query_id'))
-    ELSE ? END
-  `]
+  // populate query_id manually via nextval so that it can be accessed by currval
+  const expressionCols = ['query_id', 'name']
+  const expressions = [
+    `nextval(pg_get_serial_sequence('${QL_SCHEMA}.queries', 'query_id'))`,
+    `
+      CASE WHEN EXISTS (
+        SELECT query_id FROM ${QL_SCHEMA}.queries
+        WHERE
+          customer_id = ?
+          AND name = ?
+      ) THEN ? || ' - ' || currval(pg_get_serial_sequence('${QL_SCHEMA}.queries', 'query_id'))
+      ELSE ? END
+    `,
+  ]
   const expressionValues = [customerID, name, name, name]
 
   const { rows: [{ queryID }] } = await knexClient.raw(`
