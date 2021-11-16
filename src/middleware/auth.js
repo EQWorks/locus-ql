@@ -120,10 +120,12 @@ const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
       FROM layer
       ${cu !== -1 && cu.length ? 'LEFT JOIN customers as CU ON CU.customerid = layer.customer' : ''}
       WHERE
-        ${wl === -1 ? 'TRUE' : 'layer.whitelabel = -1'}
-        ${access.length ? `OR (${access.join(' AND ')})` : ''}
-        ${subscribed.length ? 'OR layer.layer_id = ANY (SELECT * FROM subscribed_layers)' : ''}
-
+        layer.layer_id = ANY($1)
+        AND (
+          ${wl === -1 ? 'TRUE' : 'layer.whitelabel = -1'}
+          ${access.length ? `OR (${access.join(' AND ')})` : ''}
+          ${subscribed.length ? 'OR layer.layer_id = ANY (SELECT * FROM subscribed_layers)' : ''}
+        )
     `, values)
     return rows
   } catch (err) {
