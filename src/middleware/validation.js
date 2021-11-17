@@ -44,3 +44,12 @@ module.exports.accessHasSingleCustomer = (req, _, next) => {
   }
   next()
 }
+
+module.exports.hasFinAccess = ({ access }, _, next) => {
+  const hasFinAccess = [access.whitelabel, access.customers, access.read]
+    .every(k => k === -1) && (access.write === -1 || access.write >= 1000)
+  if (!hasFinAccess) {
+    return next(apiError('No access to finance reports.', 403))
+  }
+  return next()
+}
