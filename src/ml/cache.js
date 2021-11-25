@@ -218,7 +218,7 @@ const getFromS3Cache = async (
 const putToS3Cache = async (
   keys,
   value,
-  { gzip = true, json = true, bucket = QUERY_BUCKET } = {},
+  { gzip = true, json = true, bucket = QUERY_BUCKET, metadata = {} } = {},
 ) => {
   let cacheValue = value
   if (typeof value === 'object') {
@@ -235,6 +235,7 @@ const putToS3Cache = async (
     Body: cacheValue,
     ContentType: json ? 'application/json' : 'text/plain',
     ContentEncoding: gzip ? 'gzip' : 'identity',
+    Metadata: metadata,
   }).promise()
 }
 
