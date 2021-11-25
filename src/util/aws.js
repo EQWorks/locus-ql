@@ -67,4 +67,22 @@ async function getS3PresignedURL(bucket, key) {
   return s3.getSignedUrlPromise('getObject', params)
 }
 
-module.exports = { invokeLambda, s3, lambda, listS3Objects, getS3PresignedURL, firehose }
+async function checkS3ObjectExist(bucket, key) {
+  const params = { Bucket: bucket, Key: key }
+  try {
+    const res = await s3.headObject(params).promise()
+    return res.Metadata.status === 'completed'
+  } catch (err) {
+    return false
+  }
+}
+
+module.exports = {
+  invokeLambda,
+  s3,
+  lambda,
+  listS3Objects,
+  getS3PresignedURL,
+  firehose,
+  checkS3ObjectExist,
+}
