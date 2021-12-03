@@ -14,7 +14,7 @@ const cacheTypes = {
   REDIS: 1,
   S3: 2,
 }
-const API_CACHE_BUCKET = `locus-api-cache-${process.env.STAGE || 'DEV'}`
+const API_CACHE_BUCKET = `locus-api-cache-${process.env.STAGE || 'dev'}`
 
 /**
  * Reduces keys to a single key

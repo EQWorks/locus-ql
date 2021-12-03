@@ -1,6 +1,6 @@
 const express = require('express')
 
-const { jwt, excludeMobileSDK } = require('../middleware/auth')
+const { loadUserAccess, scopeUserAccess, excludeMobileSDK } = require('../middleware/auth')
 const { maintenance: { isMaint } } = require('../middleware')
 
 const map = require('./map')
@@ -68,7 +68,7 @@ nonMobileSDKRouter.use(api)
 
 const rootRouter = express.Router()
 rootRouter.use(isMaint)
-rootRouter.use(jwt)
+rootRouter.use(loadUserAccess, scopeUserAccess)
 rootRouter.use('/mobilesdk', mobilesdk)
 rootRouter.use('/usage', usage)
 rootRouter.use('/locussdk', locussdk)
