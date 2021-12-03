@@ -8,11 +8,12 @@ const {
 } = require('../../type')
 const { geoTypes } = require('../../geo')
 const { useAPIErrorOptions } = require('../../../util/api-error')
-const { knexWithCache } = require('../../cache')
+const { useCacheOptions } = require('../../../util/cache')
 const { viewTypes, viewCategories } = require('../taxonomies')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
+const { knexWithCache } = useCacheOptions({ ttl: 600 }) // 10 minutes
 
 const options = {
   columns: {
@@ -117,7 +118,7 @@ const getReportLayers = (wl, cu, { layerID, reportID }) => {
     }
   }
   layerQuery.groupByRaw(groupByCols.map((_, i) => i + 1).join(', '))
-  return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
+  return knexWithCache(layerQuery)
 }
 
 const getLayerIDs = (wl, cu, reportID) => {
@@ -131,7 +132,7 @@ const getLayerIDs = (wl, cu, reportID) => {
       layerIDQuery.whereRaw('customer = ANY (?)', [cu])
     }
   }
-  return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
+  return knexWithCache(layerIDQuery)
 }
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {

@@ -2,7 +2,7 @@
 const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
 const { useAPIErrorOptions } = require('../../util/api-error')
-const { knexWithCache } = require('../cache')
+const { knexWithCache } = require('../../util/cache')
 const { geoMapping } = require('../geo')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
