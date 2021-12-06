@@ -3,7 +3,7 @@
 const { knex } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC } = require('../type')
 const { useAPIErrorOptions } = require('../../util/api-error')
-const { knexWithCache } = require('../cache')
+const { knexWithCache } = require('../../util/cache')
 const { geoMapping } = require('../geo')
 const { viewTypes, viewCategories } = require('./taxonomies')
 

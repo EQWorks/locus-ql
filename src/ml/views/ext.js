@@ -2,7 +2,7 @@
 const { knex, pool } = require('../../util/db')
 const { typeToCatMap } = require('../type')
 const { useAPIErrorOptions } = require('../../util/api-error')
-const { pgWithCache } = require('../cache')
+const { pgWithCache } = require('../../util/cache')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
 

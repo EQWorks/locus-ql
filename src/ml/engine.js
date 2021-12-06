@@ -6,8 +6,9 @@ const { createHash } = require('crypto')
 const { knex, mlPool, knexBuilderToRaw, fdwConnectByName } = require('../util/db')
 const { Expression } = require('./expressions')
 const { insertGeo } = require('./geo')
+const { QUERY_BUCKET } = require('./constants')
 const { useAPIErrorOptions } = require('../util/api-error')
-const { knexWithCache, queryWithCache, cacheTypes } = require('./cache')
+const { knexWithCache, queryWithCache, cacheTypes } = require('../util/cache')
 
 
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
@@ -212,7 +213,8 @@ const executeQuery = (views, viewColumns, query, { pgConnection, maxAge }) => {
   }
   return knexWithCache(
     knexQuery,
-    { ttl: 1800, maxAge, type: cacheTypes.S3 }, // 30 minutes (subject to maxAge)
+    // 30 minutes (subject to maxAge)
+    { ttl: 1800, maxAge, type: cacheTypes.S3, bucket: QUERY_BUCKET },
   )
 }
 

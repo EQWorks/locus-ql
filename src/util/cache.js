@@ -2,13 +2,10 @@ const { createHash } = require('crypto')
 const { gzip, gunzip } = require('zlib')
 const { promisify } = require('util')
 
-const { useAPIErrorOptions } = require('../util/api-error')
-const { s3 } = require('../util/aws')
-const { client: redis } = require('../util/redis')
-const { QUERY_BUCKET } = require('./constants')
+const { s3 } = require('./aws')
+const { client: redis } = require('./redis')
 
 
-const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 const gzipAsync = promisify(gzip)
 const gunzipAsync = promisify(gunzip)
 const evalRedisAsync = promisify(redis.eval).bind(redis)
@@ -17,6 +14,7 @@ const cacheTypes = {
   REDIS: 1,
   S3: 2,
 }
+const API_CACHE_BUCKET = `locus-api-cache-${process.env.STAGE || 'dev'}`
 
 /**
  * Reduces keys to a single key
@@ -162,7 +160,7 @@ const putToRedisCache = async (keys, value, { ttl = 600, gzip = true, json = tru
  */
 const getFromS3Cache = async (
   keys,
-  { maxAge, maxSize, parseFromJson = true, bucket = QUERY_BUCKET } = {},
+  { maxAge, maxSize, parseFromJson = true, bucket = API_CACHE_BUCKET } = {},
 ) => {
   if (maxAge === 0 || maxSize === 0) {
     // invalidate cache
@@ -218,7 +216,7 @@ const getFromS3Cache = async (
 const putToS3Cache = async (
   keys,
   value,
-  { gzip = true, json = true, bucket = QUERY_BUCKET, metadata = {} } = {},
+  { gzip = true, json = true, bucket = API_CACHE_BUCKET, metadata = {} } = {},
 ) => {
   let cacheValue = value
   if (typeof value === 'object') {
@@ -253,7 +251,7 @@ const putToS3Cache = async (
  */
 const getS3CacheURL = async (
   keys,
-  { maxAge, ttl = 600, bucket = QUERY_BUCKET } = {},
+  { maxAge, ttl = 600, bucket = API_CACHE_BUCKET } = {},
 ) => {
   if (maxAge === 0) {
     // invalidate cache
@@ -283,7 +281,7 @@ const getS3CacheURL = async (
  * results to cache
  * @param {string|any[]]} keys Single key (string) or array of keys which must be serializable
  * into JSON
- * @param {function} runQuery Callback to invoke in order to fetch query results (must
+ * @param {function} queryFn Callback to invoke in order to fetch query results (must
  * resolve to an object)
  * @param {Object} options
  * @param {number} [options.maxAge=600] Max age (in seconds) of query results when pulling from the
@@ -294,13 +292,13 @@ const getS3CacheURL = async (
  * @param {number} [options.type=type.REDIS] Storage type
  * @param {boolean} [options.gzip=true] Whether or not the value in cache is compressed
  * @param {boolean} [options.json=true] Whether or not the value in cache is of type JSON. When
- * runQuery resolves to an object, this parameter is ignored and the content type set to JSON.
- * @param {string} [options.bucket=QUERY_CACHE_BUCKET] Cache bucket
+ * queryFn resolves to an object, this parameter is ignored and the content type set to JSON.
+ * @param {string} [options.bucket=QUERY_CACHE_BUCKET] Cache bucket (when the storage type is S3)
  * @returns {Promise<Object>} Query results
  */
 const queryWithCache = async (
   keys,
-  runQuery,
+  queryFn,
   {
     maxAge = 600,
     ttl = 600,
@@ -308,7 +306,7 @@ const queryWithCache = async (
     type = cacheTypes.REDIS,
     gzip = true,
     json = true,
-    bucket = QUERY_BUCKET,
+    bucket = API_CACHE_BUCKET,
   } = {},
 ) => {
   // compute cache key
@@ -342,7 +340,7 @@ const queryWithCache = async (
   }
 
   // run query
-  const queryValue = await runQuery()
+  const queryValue = await queryFn()
 
   // set cache
   try {
@@ -376,7 +374,7 @@ const queryWithCache = async (
  * By defaults only the results' rows are cached and returned
  * @param {Knex.QueryBuilder} knexQuery Knex QueryBuilder object
  * @param {Object} options
- * @param {number} [options.rows=true] Whether or not to limit caching to the results' rows
+ * @param {boolean} [options.rows=true] Whether or not to limit caching to the results' rows
  * @param {number} [options.maxAge=600] Max age (in seconds) of SQL results when pulling from the
  * cache (typically same as ttl)
  * @param {number} [options.ttl=600] TTL (in seconds) of the cached results
@@ -384,11 +382,11 @@ const queryWithCache = async (
  * @param {boolean} [options.gzip=true] Whether or not the value in cache is compressed
  * @returns {Promise<Object>} Query results
  */
-const knexWithCache = async (knexQuery, { rows = true, ...options }) => {
+const knexWithCache = async (knexQuery, { rows = true, ...options } = {}) => {
   const { sql, bindings } = knexQuery.toSQL()
-  const runQuery = () => knexQuery
+  const queryFn = () => knexQuery
     .then(res => (rows && res && !Array.isArray(res) && res.rows ? res.rows : res))
-  return queryWithCache([sql, bindings], runQuery, options)
+  return queryWithCache([sql, bindings], queryFn, options)
 }
 
 /**
@@ -399,7 +397,7 @@ const knexWithCache = async (knexQuery, { rows = true, ...options }) => {
  * @param {Object|Array} bindings Query variable bindings
  * @param {pg.Pool|pg.Client} pool Node-pg pool or client
  * @param {Object} options
- * @param {number} [options.rows=true] Whether or not to limit caching to the results' rows
+ * @param {boolean} [options.rows=true] Whether or not to limit caching to the results' rows
  * @param {number} [options.maxAge=600] Max age (in seconds) of SQL results when pulling from the
  * cache (typically same as ttl)
  * @param {number} [options.ttl=600] TTL (in seconds) of the cached results
@@ -407,55 +405,68 @@ const knexWithCache = async (knexQuery, { rows = true, ...options }) => {
  * @param {boolean} [options.gzip=true] Whether or not the value in cache is compressed
  * @returns {Promise<Object>} Query results
  */
-const pgWithCache = (sql, bindings, pool, { rows = true, ...options }) => {
-  const runQuery = () => pool
+const pgWithCache = (sql, bindings, pool, { rows = true, ...options } = {}) => {
+  const queryFn = () => pool
     .query(sql, bindings)
     .then(res => (rows && res && !Array.isArray(res) && res.rows ? res.rows : res))
-  return queryWithCache([sql, bindings], runQuery, options)
+  return queryWithCache([sql, bindings], queryFn, options)
 }
 
-// Express middleware
-const getResFromS3Cache = async (req, res, next) => {
-  try {
-    // default cache is 10 minutes
-    const { access, body: { query }, query: { cache: maxAge = 600 } } = req
-    if (typeof maxAge !== 'number') {
-      throw apiError('Query parameter "cache" must be of type number', 400)
+/**
+ * Set default options for caching utility
+ * @param {Object} defaultOptions Default options
+ * @param {number} defaultOptions.maxAge Max age of the cache in seconds. 0 means don't pull
+ * from the cache while a negative value (or undefined) means return whatever is in the cache
+ * irrespective of age
+ * @param {number} defaultOptions.maxSize Max size in bytes of the value in cache. 0 means don't
+ * pull from the cache while a negative value (or undefined) means return whatever is in the cache
+ * irrespective of size
+ * @param {number} defaultOptions.ttl Cache TTL in seconds
+ * @param {boolean} defaultOptions.parseFromJson Whether or not the value should be parsed
+ * in the event the value is a JSON string
+ * @param {boolean} defaultOptions.gzip Whether or not the value in cache should be compressed
+ * @param {boolean} defaultOptions.json Whether or not the value should be cached as type JSON. When
+ * an object is passed as value, this parameter is ignored and the content type set to JSON
+ * @param {string} defaultOptions.bucket Cache bucket (when the storage type is S3)
+ * @param {number} defaultOptions.type Storage type
+ * @param {boolean} defaultOptions.rows Whether or not to limit caching to the queryFn's results'
+ * 'rows' object (when not undefined)
+ * @returns {Object} Cache functions
+ */
+const useCacheOptions = defaultOptions =>
+  [
+    getFromRedisCache,
+    putToRedisCache,
+    getFromS3Cache,
+    putToS3Cache,
+    getS3CacheURL,
+    queryWithCache,
+    knexWithCache,
+    pgWithCache,
+  ].reduce((allFn, fn) => {
+    allFn[fn.name] = (...args) => {
+      if (args.length < fn.length || args.length > fn.length + 1) {
+        // missing required args or too many args - let fn handle it
+        return fn(...args)
+      }
+      const options = { ...defaultOptions }
+      // options arg passed
+      if (args.length > fn.length) {
+        Object.assign(options, args.pop())
+      }
+      return fn(...args, options)
     }
-    if (maxAge === -2) {
-      // do not cache
-      return next()
-    }
-
-    // cache key is a blend of the user's access and the query
-    // i.e. users with different access permissions but submitting the same query
-    // will not be sharing the same cache (for now)
-    req.mlCacheKey = getCacheKey([access, query])
-
-    if (maxAge === 0) {
-      // refresh, do not pull from cache
-      return next()
-    }
-
-    const cachedRes = await getFromS3Cache(req.mlCacheKey, { maxAge, parseFromJson: false })
-    if (cachedRes) {
-      // cachedRes is a JSON string
-      return res.status(200).type('application/json').send(cachedRes)
-    }
-
-    next()
-  } catch (err) {
-    next(getSetAPIError(err, 'Failed to retrieve data from cache', 500))
-  }
-}
+    return allFn
+  }, {})
 
 module.exports = {
   putToS3Cache,
   getFromS3Cache,
   getS3CacheURL,
-  getResFromS3Cache,
   queryWithCache,
   knexWithCache,
   pgWithCache,
+  useCacheOptions,
   cacheTypes,
+  API_CACHE_BUCKET,
 }

@@ -4,7 +4,7 @@ const { createHash } = require('crypto')
 
 const { knex } = require('../../../util/db')
 const { useAPIErrorOptions } = require('../../../util/api-error')
-const { knexWithCache } = require('../../cache')
+const { knexWithCache } = require('../../../util/cache')
 const { Expression } = require('../../expressions')
 const impView = require('./imp')
 const bcnView = require('./bcn')

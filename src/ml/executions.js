@@ -5,7 +5,7 @@ const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
 const { insertGeo } = require('./geo')
 const { executeQuery, establishFdwConnections } = require('./engine')
-const { putToS3Cache, getFromS3Cache, getS3CacheURL, queryWithCache } = require('./cache')
+const { putToS3Cache, getFromS3Cache, getS3CacheURL, queryWithCache } = require('../util/cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
 const {
   QL_SCHEMA,

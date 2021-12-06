@@ -9,11 +9,12 @@ const {
 } = require('../../type')
 const { geoTypes } = require('../../geo')
 const { useAPIErrorOptions } = require('../../../util/api-error')
-const { knexWithCache } = require('../../cache')
+const { useCacheOptions } = require('../../../util/cache')
 const { viewTypes, viewCategories } = require('../taxonomies')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
+const { knexWithCache } = useCacheOptions({ ttl: 600 }) // 10 minutes
 
 const options = {
   columns: {
@@ -124,7 +125,7 @@ const getReportLayers = (wl, cu, { layerID, reportID }) => {
     }
   }
   layerQuery.groupByRaw(groupByCols.map((_, i) => i + 1).join(', '))
-  return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
+  return knexWithCache(layerQuery)
 }
 
 const getLayerIDs = (wl, cu, reportID) => {
@@ -138,7 +139,7 @@ const getLayerIDs = (wl, cu, reportID) => {
       layerIDQuery.whereRaw('customer = ANY (?)', [cu])
     }
   }
-  return knexWithCache(layerIDQuery, { ttl: 600 }) // 10 minutes
+  return knexWithCache(layerIDQuery)
 }
 
 // TODO: fetch aoi data using another endpoint
@@ -149,18 +150,15 @@ const hasAOIData = async (wl, layerID, reportID) => {
     whereFilters.push('l.whitelabel = ANY (?)')
     whereValues.push(wl)
   }
-  const [{ exists } = {}] = await knexWithCache(
-    knex.raw(`
-      SELECT EXISTS (SELECT
-        l.layer_id,
-        wi_aoi.aoi_id
-      FROM layer l
-        JOIN report_wi_aoi wi_aoi ON wi_aoi.report_id = l.report_id
-      WHERE ${whereFilters.join(' AND ')}
-      )
-    `, whereValues),
-    { ttl: 600 }, // 10 minutes
-  )
+  const [{ exists } = {}] = await knexWithCache(knex.raw(`
+    SELECT EXISTS (SELECT
+      l.layer_id,
+      wi_aoi.aoi_id
+    FROM layer l
+      JOIN report_wi_aoi wi_aoi ON wi_aoi.report_id = l.report_id
+    WHERE ${whereFilters.join(' AND ')}
+    )
+  `, whereValues))
   return exists
 }
 

@@ -2,84 +2,149 @@ const jwt = require('jsonwebtoken')
 const axios = require('axios')
 const { get } = require('lodash')
 
-const { apiError, getSetAPIError } = require('../util/api-error')
+const { useAPIErrorOptions } = require('../util/api-error')
 const { pool } = require('../util/db')
+const { queryWithCache, pgWithCache } = require('../util/cache')
 
 
+const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'auth' } })
 const { KEY_WARDEN_HOST, KEY_WARDEN_STAGE } = process.env
 const KEY_WARDEN_BASE = `${KEY_WARDEN_HOST}/${KEY_WARDEN_STAGE}`
 
+// sets req.access
+const loadUserAccess = async (req, _, next) => {
+  try {
+    // DEPRECATED `x-firstorder-token`
+    const token = req.get('eq-api-jwt') || req.get('x-firstorder-token')
 
-function jwtMiddleware(req, _, next) {
-  // DEPRECATED `x-firstorder-token`
-  const token = req.get('eq-api-jwt') || req.get('x-firstorder-token')
-
-  // quick validation
-  if (!(req.headers && token && token.length > 0)) {
-    return next(apiError('Invalid JWT', 401))
-  }
-
-  const {
-    email = '',
-    api_access = {},
-    prefix,
-    product: tokenProduct,
-  } = req.authorizerAccess || jwt.decode(token)
-
-  const { write = 0, read = 0 } = api_access
-  let { wl: whitelabel = [], customers = [] } = api_access
-
-  // both are integers
-  const { _wl, _customer, payingwl, payingcu } = req.query
-  const _product = req.get('X-EQ-Product')
-  const wlID = parseInt(_wl)
-  const cuID = parseInt(_customer)
-  // validate _wl and _customer
-  if (wlID && (whitelabel === -1 || whitelabel.includes(wlID))) {
-    whitelabel = [wlID]
-    if (cuID && (customers === -1 || customers.includes(cuID))) {
-      // BEWARE: no guarantee is made that customer belongs to wlID
-      // wl/cu affiliation should always be confirmed via table public.customers
-      customers = [cuID]
+    // quick validation
+    if (!(req.headers && token && token.length > 0)) {
+      throw apiError('Invalid JWT', 401)
     }
-  }
 
-  // payer wl/cu
-  // default is whitelabel[0], customers[0]
-  const payer = {
-    whitelabel: whitelabel === -1 ? -1 : whitelabel[0],
-    // BEWARE: no guarantee is made that customer belongs to paying WL
-    // wl/cu affiliation should always be confirmed via table public.customers
-    customer: customers === -1 ? -1 : customers[0],
-  }
-  const payingWhitelabel = parseInt(payingwl)
-  const payingCustomer = parseInt(payingcu)
-  if (payingWhitelabel && (whitelabel === -1 || whitelabel.includes(payingWhitelabel))) {
-    payer.whitelabel = payingWhitelabel
-    if (payingCustomer && (customers === -1 || customers.includes(payingCustomer))) {
-      payer.customer = payingCustomer
-    }
-  }
+    const {
+      email = '',
+      api_access = {},
+      prefix,
+      product: tokenProduct,
+    } = req.authorizerAccess || jwt.decode(token)
 
-  req.access = { whitelabel, customers, write, read, email, prefix, token, payer }
-
-  const product = _product && ['atom', 'locus'].includes(_product) ? _product : 'locus'
-
-  // if went through lambda authorizer, go to next
-  if (req.authorizerAccess) {
+    // it is the route's responsibility to validate whether or not it accepts product <> locus
+    const _product = req.get('X-EQ-Product')
+    const product = _product && ['atom', 'locus'].includes(_product) ? _product : 'locus'
     if (tokenProduct !== product) {
-      return next(apiError('Invalid JWT', 401))
+      throw apiError('Invalid JWT', 401)
     }
-    return next()
-  }
 
-  const light = prefix === 'mobilesdk'
-  axios({
-    url: `${KEY_WARDEN_BASE}/confirm`,
-    method: 'get',
-    headers: { 'eq-api-jwt': token },
-    params: { product, light },
-  }).then(() => next()).catch(err => next(getSetAPIError(err, 'Failed to authenticate user', 403)))
+    // if bypassed the lambda authorizer (e.g. local), validate token
+    if (!req.authorizerAccess) {
+      // TODO: extract access (api_access) from return payload instead of from above jwt
+      await queryWithCache( // cache access for 5 minutes (same as authorizer)
+        ['user-access', email],
+        () => axios({
+          url: `${KEY_WARDEN_BASE}/confirm`,
+          method: 'get',
+          headers: { 'eq-api-jwt': token },
+          params: { product, light: prefix === 'mobilesdk' },
+        }).then(res => res.data),
+        { ttl: 900, maxAge: 900, gzip: false },
+      )
+    }
+
+    const { write = 0, read = 0 } = api_access
+    const { wl: whitelabel = [], customers = [] } = api_access
+
+    // payer wl/cu
+    // default is whitelabel[0], customers[0]
+    const payer = {
+      whitelabel: whitelabel === -1 ? -1 : whitelabel[0],
+      customer: customers === -1 ? -1 : customers[0],
+    }
+
+    // append access to req
+    req.access = { whitelabel, customers, write, read, email, prefix, token, product, payer }
+    next()
+  } catch (err) {
+    next(getSetAPIError(err, 'Failed to authenticate user', 401))
+  }
+}
+
+// parse string
+// validate int > 0
+// check that in allowed values
+const sanitizeIdParam = (name, value, allowedValues) => {
+  if (!value) {
+    return
+  }
+  const safeValue = parseInt(value)
+  if (Number.isNaN(safeValue) || safeValue <= 0) {
+    throw apiError(`Invalid value for ${name}: ${value}`)
+  }
+  if (allowedValues && allowedValues !== -1 && !allowedValues.includes(safeValue)) {
+    throw apiError('Unauthorized', 403)
+  }
+  return safeValue
+}
+
+// confirm wl/cu affiliation and return agency id
+const getCustomerAgencyID = async (whitelabelID, customerID) => {
+  const [{ agencyID } = {}] = await pgWithCache(
+    `
+      SELECT
+        CASE agencyid
+          WHEN 0 THEN customerid
+          ELSE agencyid
+        END AS "agencyID"
+      FROM public.customers
+      WHERE
+        whitelabelid = $1
+        AND customerid = $2
+        AND isactive
+    `,
+    [whitelabelID, customerID],
+    pool,
+    { maxAge: 86400 }, // 1 day
+  )
+  if (!agencyID) {
+    throw apiError('Invalid whitelabel and/or customer', 403)
+  }
+  return agencyID
+}
+
+// sets whitelabel, customers and payer
+const scopeUserAccess = async (req, _, next) => {
+  try {
+    const { whitelabel, customers } = req.access
+    const { _wl, _customer, payingwl, payingcu } = req.query
+
+    // set whitelabel and customers access
+    const safeWl = sanitizeIdParam('_wl', _wl, whitelabel)
+    if (safeWl) {
+      req.access.whitelabel = [safeWl]
+      const safeCustomer = sanitizeIdParam('_customer', _customer, customers)
+      if (safeCustomer) {
+        // check affiliation
+        const agencyID = await getCustomerAgencyID(safeWl, safeCustomer)
+        req.access.customers = [agencyID]
+      }
+    }
+
+    // set payer
+    const safePayingWl = sanitizeIdParam('payingwl', payingwl, whitelabel)
+    if (safePayingWl) {
+      req.access.payer.whitelabel = safePayingWl
+      const safePayingCustomer = sanitizeIdParam('payingcu', payingcu, customers)
+      if (safePayingCustomer) {
+        // check affiliation
+        const payingAgencyID = await getCustomerAgencyID(safePayingWl, safePayingCustomer)
+        req.access.payer.customer = payingAgencyID
+      }
+    }
+
+    next()
+  } catch (err) {
+    next(getSetAPIError(err, 'Failed to set the customer and/or the payer'))
+  }
 }
 
 const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
@@ -249,7 +314,7 @@ const mapAuth = (pathToID = 'params.id') => async (req, res, next) => {
     return next(apiError('Access to map not allowed', 403))
   } catch (error) {
     console.error(error)
-    return next(apiError(error, 400))
+    next(getSetAPIError(error, 'Failed to access map'))
   }
 }
 
@@ -318,7 +383,8 @@ const includeMobileSDK = validateAccess({ authorizedPrefix: ['mobilesdk', 'dev']
 const excludeMobileSDK = validateAccess({ unAuthorizedPrefix: ['mobilesdk'] })
 
 module.exports = {
-  jwt: jwtMiddleware,
+  loadUserAccess,
+  scopeUserAccess,
   layer: layerAuth,
   internal: internalAuth,
   dataProvider: dataProviderAuth,
