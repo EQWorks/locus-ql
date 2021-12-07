@@ -62,8 +62,8 @@ async function listS3Objects(bucket, prefix) {
   return keys
 }
 
-async function getS3PresignedURL(bucket, key) {
-  const params = { Bucket: bucket, Key: key }
+async function getS3PresignedURL(bucket, key, expires = 900) {
+  const params = { Bucket: bucket, Key: key, Expires: expires }
   return s3.getSignedUrlPromise('getObject', params)
 }
 
