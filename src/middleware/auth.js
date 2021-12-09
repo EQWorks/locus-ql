@@ -164,9 +164,11 @@ const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
       if (cu !== -1) {
         values.push(cu)
         subscribed
-          .push(`(MO.customer = ANY ($${values.length}) OR CU.agencyid = ANY ($${values.length}))`)
+          .push(`(MO.customer = ANY ($${values.length}) \
+          OR CU.agencyid = ANY ($${values.length}))`)
         access
-          .push(`(layer.customer = ANY (${values.length}) OR CU.agencyid = ANY (${values.length}))`)
+          .push(`(layer.customer = ANY ($${values.length}) \
+          OR CU.agencyid = ANY ($${values.length}))`)
       }
     }
 
@@ -179,7 +181,7 @@ const haveLayerAccess = async ({ wl, cu, layerIDs }) => {
           WHERE
             MO.type = 'layer'
             AND ${subscribed.join(' AND ')}
-        ),
+        )
       ` : ''}
       SELECT *
       FROM layer
