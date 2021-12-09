@@ -250,7 +250,7 @@ const layerAuth = (pathToID = 'params.id', pathToSecondaryID = false) => async (
   }
 }
 
-const internalAuth = (req, res, next) => {
+const isInternal = (req, res, next) => {
   const { whitelabel, customers } = req.access
   if (whitelabel === -1 && customers === -1) {
     return next()
@@ -388,7 +388,7 @@ module.exports = {
   loadUserAccess,
   scopeUserAccess,
   layer: layerAuth,
-  internal: internalAuth,
+  isInternal,
   dataProvider: dataProviderAuth,
   isDev,
   isAppReviewer,
