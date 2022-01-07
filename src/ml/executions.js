@@ -196,6 +196,37 @@ const getExecutionResultsParts = async (customerID, executionID, parts, parseFro
 }
 
 /**
+ * Pulls the execution results from storage
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {number} executionID Execution ID
+ * @param {Object} options
+ * @param {{part: number, firstIndex: number, lastIndex: number}[]} [options.resultsParts] List of
+ * the execution's results parts. Required for queries with multi-part results
+ * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an object
+ * @returns {Promise<string|Object[]|undefined>} Query results or undefined if not found
+ * or too large
+ */
+const getAllExecutionResults = (
+  customerID,
+  executionID,
+  { resultsParts, parseFromJson = true },
+) => {
+  // multi-part
+  if (resultsParts) {
+    return resultsParts.length
+      ? getExecutionResultsParts(
+        customerID,
+        executionID,
+        resultsParts.map(({ part }) => part),
+        parseFromJson,
+      )
+      : []
+  }
+  // legacy single part
+  return getExecutionResults(customerID, executionID, { parseFromJson })
+}
+
+/**
  * Returns a temporary URL to the execution results
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
@@ -696,22 +727,11 @@ const respondWithExecution = async (req, res, next) => {
     // TODO: deprecate - retrieve results via results route
     if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
       // multi-part
-      if (resultsParts) {
-        req.mlExecution.results = resultsParts.length
-          ? await getExecutionResultsParts(
-            customerID,
-            executionID,
-            resultsParts.map(({ part }) => part),
-          )
-          : []
-      // legacy single part
-      } else {
-        req.mlExecution.results = await getExecutionResults(
-          customerID,
-          executionID,
-          // { maxSize: 1024 }, // 1MB
-        )
-      }
+      req.mlExecution.results = await getAllExecutionResults(
+        customerID,
+        executionID,
+        { resultsParts },
+      )
     }
     // convert columns from array to object
     req.mlExecution.columns = columns.map(([name, pgType]) => ({
@@ -841,10 +861,10 @@ const listExecutions = async (req, res, next) => {
       && executions.length === 1
       && executions[0].status === STATUS_SUCCEEDED
     ) {
-      executions[0].results = await getExecutionResults(
+      executions[0].results = await getAllExecutionResults(
         executions[0].customerID,
         executions[0].executionID,
-        { maxSize: 1024 }, // 1MB,
+        { resultsParts: executions[0].resultsParts },
       )
     }
     // populate views
