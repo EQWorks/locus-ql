@@ -11,8 +11,8 @@ const parserError = args => new ParserError(args)
  */
 const expressionTypes = {
   SELECT: 'select',
-  SELECT_CTE: 'cte',
-  SELECT_RANGE: 'view_select',
+  SELECT_CTE: 'select_cte',
+  SELECT_RANGE: 'select_range',
   JOIN: 'join',
   VIEW: 'view',
   COLUMN: 'column',
@@ -121,6 +121,80 @@ const escapeIdentifier = (val) => {
   return `"${escaped}"`
 }
 
+const csvBlockChars = {
+  '[': ']', // array
+  '(': ')', // function
+  '{': '}', // object
+}
+
+// splits csv values into array
+const splitCSV = (csv) => {
+  const vals = []
+  let val = ''
+  let quote = ''
+  let quoteEnding = false
+  let block = ''
+  let blockEnd = ''
+  let blockDepth = 0
+  for (const char of csv) {
+    // quote in progress
+    if (quote) {
+      // quote ending or escaped quote char
+      if (char === quote) {
+        quoteEnding = !quoteEnding
+      // end quote
+      } else if (quoteEnding) {
+        quoteEnding = false
+        quote = ''
+      }
+    }
+    // no quote or quote has just ended
+    if (!quote) {
+      // space
+      if (char === '\n' || char === ' ') {
+        continue
+      }
+      // new quote starting
+      if (char === '"' || char === "'") {
+        quote = char
+
+      // block in progress
+      } else if (block) {
+        // nested block
+        if (char === block) {
+          blockDepth += 1
+        } else if (char === blockEnd) {
+          // end block (main or nested)
+          if (!blockDepth) {
+            block = ''
+            blockEnd = ''
+          } else {
+            blockDepth -= 1
+          }
+        }
+
+      // new block starting
+      } else if (char in csvBlockChars) {
+        block = char
+        blockEnd = csvBlockChars[char]
+
+        // end of arg
+      } else if (char === ',') {
+        vals.push(val)
+        val = ''
+        continue
+      }
+    }
+    val += char
+  }
+  // last val
+  if (val) {
+    vals.push(val)
+  }
+
+  return vals
+}
+
 // removes new lines, double/leading/trailing spaces
 // except in literals and identifiers
 const trimSQL = (sql) => {
@@ -177,6 +251,7 @@ module.exports = {
   sanitizeCast,
   escapeLiteral,
   escapeIdentifier,
+  splitCSV,
   trimSQL,
   ParserError,
   parserError,

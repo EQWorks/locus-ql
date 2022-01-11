@@ -16,71 +16,43 @@ const {
   expressionTypes: expTypes,
   isNonArrayObject,
 } = require('./utils')
+const { isShortExpression, parseShortExpression } = require('./short')
 const functions = require('./functions')
 const operators = require('./operators')
 
+
+const columnRefRE = /^\w+.\w+$/
 
 // used for 'for' and 'joins'
 // has side effect -> adds identifier to context
 const parseViewExpression = (exp, context) => {
   if (isString(exp)) {
+    if (isShortExpression(exp, 'view')) {
+      return parseShortExpression(exp)
+    }
     return parseExpression({ type: expTypes.VIEW, view: exp }, context)
   }
   if (isObjectExpression(exp, expTypes.SELECT)) {
-    return parseExpression({ ...exp, type: 'view_select' }, context)
+    return parseExpression({ ...exp, type: expTypes.SELECT_RANGE }, context)
   }
-  if (isObjectExpression(exp, expTypes.VIEW) || isObjectExpression(exp, 'view_select')) {
+  if (isObjectExpression(exp, expTypes.VIEW) || isObjectExpression(exp, expTypes.SELECT_RANGE)) {
     return parseExpression(exp, context)
   }
   throw parserError(`Invalid view identifier/subquery syntax: ${exp}`)
-  // const parsed = parseExpression(
-  //   isString(exp) ? { type: 'view_select', view: exp } : exp,
-  //   context,
-  // )
-  // const { view, as, cast } = parsed
-  // if (isNonNull(cast)) {
-  //   throw parserError(`Illegal cast in view reference: ${cast}`)
-  // }
-  // // alias is required for subqueries
-  // if (isObjectExpression(exp, 'select') && isNull(as)) {
-  //   throw parserError('Missing subquery alias')
-  // }
-  // // register identifier against local context
-  // const ref = as || view
-  // context.refs[ref] = view in context.ctes || view || true
-  // return parsed
 }
 
 // used for 'with'
 // has side effect -> adds identifier to context
 const parseCTEExpression = (exp, context) => {
-  if (isObjectExpression(exp, 'cte')) {
+  if (isObjectExpression(exp, expTypes.SELECT_CTE)) {
     return parseExpression(exp, context)
   }
   if (isObjectExpression(exp, expTypes.SELECT)) {
-    return parseExpression({ ...exp, type: 'cte' }, context)
+    return parseExpression({ ...exp, type: expTypes.SELECT_CTE }, context)
   }
   throw parserError(`Invalid with syntax: ${exp}`)
-  // const parsed = parseExpression(exp, context)
-  // const { as, cast } = parsed
-  // if (isNonNull(cast)) {
-  //   throw parserError(`Illegal with cast: ${cast}`)
-  // }
-  // // alias is required
-  // if (
-  //   isNull(as)
-  //   // alias already in use (in ctes and not inherited from parent context)
-  //   || (
-  //     as in context.ctes
-  //     && context.ctes[as] !== parentContext.ctes[as]
-  //   )
-  // ) {
-  //   throw parserError(`Missing, invalid or already in use with alias: ${as}`)
-  // }
-  // // register cte against local context using object for identity check
-  // context.ctes[as] = {}
-  // return parsed
 }
+
 const parseJoinExpression = (exp, context) => {
   if (isObjectExpression(exp, expTypes.JOIN)) {
     return parseExpression(exp, context)
@@ -151,10 +123,10 @@ class Node {
 
   toQL() {
     const ql = this._toQL()
-    if (this.constructor.castable) {
+    if (this.constructor.castable && this.cast) {
       ql.cast = this.cast
     }
-    if (this.constructor.aliasable) {
+    if (this.constructor.aliasable && this.as) {
       ql.as = this.as
     }
     return ql
@@ -297,20 +269,11 @@ class SelectNode extends Node {
 
   _toSQL() {
     const ctes = this.with.length
-      // ? `WITH ${this.with.map(e => `${escapeIdentifier(e.as)} AS (${e.toSQL()})`).join(', ')}`
       ? `WITH ${this.with.map(e => e.toSQL()).join(', ')}`
       : ''
 
     const distinct = this.distinct ? 'DISTINCT' : ''
     const columns = this.columns.map(e => e.toSQL()).join(', ')
-
-    // let from = ''
-    // if (this.from) {
-    //   from = `FROM (${this.from.toSQL()})`
-    //   if (this.from.as && this.from.as instanceof QLSelect) {
-    //     from += ` AS ${escapeIdentifier(this.from.as)}`
-    //   }
-    // }
 
     const from = this.from ? `FROM ${this.from.toSQL()}` : ''
 
@@ -695,6 +658,48 @@ class CastNode extends Node {
   }
 }
 
+class SQLNode extends Node {
+  constructor(exp, context) {
+    super(exp, context)
+    const { value } = exp
+    if (!isString(value, true)) {
+      throw parserError(`Invalid sql syntax: ${exp}`)
+    }
+    // parse from sql first
+    // INSERT SQL TO QL HERE
+    this.value = parseExpression(value, this._context)
+    if (this.cast && !this.value.constructor.castable) {
+      throw parserError(`Illegal casting: ${this.cast}`)
+    }
+    if (this.as && !this.value.constructor.aliasable) {
+      throw parserError(`Illegal aliasing: ${this.as}`)
+    }
+
+    this.value.as = this.as || this.value.as
+    // collapse if possible
+    if (!this.cast || !this.value.cast) {
+      if (this.cast) {
+        this.value.cast = this.cast
+      }
+      if (this.as) {
+        this.as.value = this.as
+      }
+      return this.value
+    }
+  }
+
+  _toSQL() {
+    return this.value.toSQL()
+  }
+
+  _toQL() {
+    return {
+      type: expTypes.CAST,
+      value: this.value.toQL(),
+    }
+  }
+}
+
 class PrimitiveNode extends Node {
   constructor(exp, context) {
     super(exp, context)
@@ -710,11 +715,11 @@ class PrimitiveNode extends Node {
   }
 
   _toQL() {
-    return { type: expTypes.PRIMITIVE, value: this.value }
-    // if (this.as || this.cast) {
-    //   return { type: expTypes.PRIMITIVE, as: this.as, cast: this.cast }
-    // }
-    // return this.value
+    // return { type: expTypes.PRIMITIVE, value: this.value }
+    if (this.as || this.cast) {
+      return { type: expTypes.PRIMITIVE, value: this.value }
+    }
+    return this.value
   }
 }
 
@@ -821,12 +826,13 @@ const nodes = {
 const objectParsers = {}
 // has side effect
 objectParsers[expTypes.SELECT] = (exp, context) => new SelectNode(exp, context)
-objectParsers.view_select = (exp, context) => new ViewSelectNode(exp, context)
-objectParsers.cte = (exp, context) => new CTESelectNode(exp, context)
+objectParsers[expTypes.SELECT_RANGE] = (exp, context) => new ViewSelectNode(exp, context)
+objectParsers[expTypes.SELECT_CTE] = (exp, context) => new CTESelectNode(exp, context)
 objectParsers[expTypes.JOIN] = (exp, context) => new JoinNode(exp, context)
 objectParsers[expTypes.VIEW] = (exp, context) => new ViewReferenceNode(exp, context)
 objectParsers[expTypes.COLUMN] = (exp, context) => new ColumnReferenceNode(exp, context)
 objectParsers[expTypes.PARAMETER] = (exp, context) => new ParameterReferenceNode(exp, context)
+// objectParsers[expTypes.SQL] = (exp, context) => new SQLNode(exp, context)
 objectParsers[expTypes.CAST] = (exp, context) => new CastNode(exp, context)
 objectParsers[expTypes.PRIMITIVE] = (exp, context) => new PrimitiveNode(exp, context)
 objectParsers[expTypes.CASE] = (exp, context) => new CaseNode(exp, context)
@@ -900,9 +906,13 @@ const parseExpression = (exp, context) => {
         if (exp.toLowerCase() === 'null') {
           return parseExpression(null)
         }
-        if (/^\w+.\w+$/.test(exp)) {
+        if (columnRefRE.test(exp)) {
           const [column, view] = exp.split('.')
           return parseExpression({ type: expTypes.COLUMN, column, view }, context)
+        }
+        if (isShortExpression(exp)) {
+          const objExp = parseShortExpression(exp)
+          return parseExpression(objExp, context)
         }
         return parseExpression({ type: expTypes.PRIMITIVE, value: exp }, context)
       } catch (_) {
