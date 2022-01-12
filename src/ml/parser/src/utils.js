@@ -17,6 +17,7 @@ const expressionTypes = {
   VIEW: 'view',
   COLUMN: 'column',
   PARAMETER: 'parameter',
+  SHORT: 'short',
   CAST: 'cast',
   PRIMITIVE: 'primitive',
   SQL: 'sql',

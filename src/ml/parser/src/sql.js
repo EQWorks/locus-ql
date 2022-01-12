@@ -10,7 +10,6 @@ const {
   parserError,
   extractShortExpressionsFromSQL,
 } = require('./utils')
-const { parseShortExpression } = require('./short')
 
 
 const findApproxLocation = (exp) => {
@@ -118,18 +117,11 @@ astParsers.SelectStmt = (exp, context) => {
       expression: valuesLists,
     })
   }
-  const ctes = cteClause ? cteClause.map(e => parseASTNode(e, context)) : undefined
-  const distinct = distinctClause !== undefined || undefined
-  const columns = targetList.map(e => parseASTNode(e, context))
-  const where = whereClause ? parseASTNode(whereClause, context) : undefined
-  const groupBy = groupClause ? groupClause.map(e => parseASTNode(e, context)) : undefined
-  const having = havingClause ? parseASTNode(havingClause, context) : undefined
-  const orderBy = sortClause ? sortClause.map(e => parseASTNode(e, context)) : undefined
-  // if (limitOption !== 'LIMIT_OPTION_DEFAULT') {
-  const limit = limitCount ? parseASTNode(limitCount, context) : undefined
-  // }
-  const offset = limitOffset ? parseASTNode(limitOffset, context) : undefined
 
+  // WITH
+  const ctes = cteClause ? cteClause.map(e => parseASTNode(e, context)) : undefined
+
+  // FROM AND JOINS
   let from // should be string (view or alias) or object (view and/or alias)
   let joins
   if (fromClause) {
@@ -151,6 +143,44 @@ astParsers.SelectStmt = (exp, context) => {
     }
     joins = joins.length ? joins.reverse() : undefined
   }
+
+  // DISTINCT AND COLUMNS
+  const distinct = distinctClause !== undefined || undefined
+  const columns = targetList.map(e => parseASTNode(e, context))
+
+  // WHERE
+  let where
+  if (whereClause) {
+    const value = parseASTNode(whereClause, context)
+    if (isObjectExpression(value, 'operator') && value.values[0] === 'and') {
+      where = value.values.slice(1)
+    } else {
+      where = [value]
+    }
+  }
+
+  // HAVING
+  let having
+  if (havingClause) {
+    const value = parseASTNode(havingClause, context)
+    if (isObjectExpression(value, 'operator') && value.values[0] === 'and') {
+      having = value.values.slice(1)
+    } else {
+      having = [value]
+    }
+  }
+
+  // GROUP BY AND ORDER BY
+  const groupBy = groupClause ? groupClause.map(e => parseASTNode(e, context)) : undefined
+  const orderBy = sortClause ? sortClause.map(e => parseASTNode(e, context)) : undefined
+
+  // LIMIT
+  // if (limitOption !== 'LIMIT_OPTION_DEFAULT') {
+  const limit = limitCount ? parseASTNode(limitCount, context) : undefined
+  // }
+
+  // OFFSET
+  const offset = limitOffset ? parseASTNode(limitOffset, context) : undefined
 
   return {
     type: expTypes.SELECT,
@@ -388,10 +418,9 @@ const isValidSQLExpression = (sql) => {
 
 const parseSQLExpression = (sql) => {
   const { sql: sqlWithoutShorts, shorts } = extractShortExpressionsFromSQL(sql)
-  const parsedShorts = shorts.map(parseShortExpression)
   const ast = parseSQLToAST(sqlWithoutShorts)
   try {
-    return parseASTNode(ast, { shorts: parsedShorts })
+    return parseASTNode(ast, { shorts })
   } catch (err) {
     if (err instanceof SQLParserError) {
       const excerpt = err.location !== undefined

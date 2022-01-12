@@ -16,13 +16,48 @@ const {
   expressionTypes: expTypes,
   isNonArrayObject,
 } = require('./utils')
-const { isShortExpression, parseShortExpression } = require('./short')
+const { isShortExpression, parseShortExpression, sanitizeShortExpression } = require('./short')
 const { parseSQLExpression } = require('./sql')
 const functions = require('./functions')
 const operators = require('./operators')
 
 
 const columnRefRE = /^\w+.\w+$/
+
+const resolveParserOptions = (options = {}) => {
+  if (!isNonArrayObject(options)) {
+    throw parserError('Parser options must be an object')
+  }
+  // options already vetted
+  if (Object.isFrozen(options) && options._safe) {
+    return options
+  }
+  const safeOptions = {
+    keepShorts: true,
+    parameters: undefined,
+    _safe: true,
+  }
+
+  if (options.keepShorts !== undefined) {
+    if (typeof options.keepShorts !== 'boolean') {
+      throw parserError('Parser "keepShorts" options must be a boolean')
+    }
+    safeOptions.keepShorts = options.keepShorts
+  }
+
+  if (options.parameters !== undefined) {
+    if (!isNonArrayObject(options.parameters)) {
+      throw parserError('Parser "parameters" options must be a map of parameter names to QL')
+    }
+    safeOptions.parameters = Object.entries(options.parameters).reduce((acc, [name, val]) => {
+      acc[name] = parseExpression(val)
+      return acc
+    }, {})
+    // shorts must be substituted for params to be fully replaced
+    safeOptions.keepShorts = false
+  }
+  return Object.freeze(safeOptions)
+}
 
 // used for 'for' and 'joins'
 // has side effect -> adds identifier to context
@@ -64,18 +99,18 @@ const parseJoinExpression = (exp, context) => {
   throw parserError(`Invalid join syntax: ${exp}`)
 }
 
-const applyExpressions = (conditions, context, cb) => {
-  try {
-    // try to parse as expression
-    return cb(parseExpression(conditions, context))
-  } catch (err) {
-    if (!isArray(conditions)) {
-      throw err
-    }
-    // try to parse each array element individually
-    return conditions.forEach(condition => cb(parseExpression(condition, context)))
-  }
-}
+// const applyExpressions = (conditions, context, cb) => {
+//   try {
+//     // try to parse as expression
+//     return cb(parseExpression(conditions, context))
+//   } catch (err) {
+//     if (!isArray(conditions)) {
+//       throw err
+//     }
+//     // try to parse each array element individually
+//     return conditions.forEach(condition => cb(parseExpression(condition, context)))
+//   }
+// }
 
 class Node {
   constructor(exp, context) {
@@ -87,10 +122,14 @@ class Node {
     // as property
     if (this.constructor.aliasable) {
       this.as = sanitizeAlias(exp.as) // basic validation
+    } else if (exp.as !== undefined) {
+      throw parserError(`Illegal aliasing: ${exp.as}`)
     }
     // cast property
     if (this.constructor.castable) {
       this.cast = sanitizeCast(exp.cast) // basic validation
+    } else if (exp.cast !== undefined) {
+      throw parserError(`Illegal casting: ${exp.cast}`)
     }
   }
 
@@ -101,12 +140,26 @@ class Node {
     }, {})
   }
 
+  get parameters() {
+    return new Set(Object.keys(this._context.parameters))
+  }
+
+  get aliasable() {
+    return this._aliasable || this.constructor.aliasable
+  }
+
+  get castable() {
+    return this._castable || this.constructor.castable
+  }
+
   _applyAlias(sql) {
-    return this.as ? `${sql} AS ${escapeIdentifier(this.as)}` : sql
+    // return this.as ? `${sql} AS ${escapeIdentifier(this.as)}` : sql
+    return `${sql} AS ${escapeIdentifier(this.as)}`
   }
 
   _applyCast(sql) {
-    return this.cast ? `CAST(${sql} AS ${this.cast})` : sql
+    // return this.cast ? `CAST(${sql} AS ${this.cast})` : sql
+    return `CAST(${sql} AS ${this.cast})`
   }
 
   // to be implemented by child class
@@ -114,19 +167,20 @@ class Node {
     throw parserError(`_toSQL() must be implemented in element ${this.constructor.name}`)
   }
 
-  toSQL() {
-    if ('sql' in this._memo) {
-      return this._memo.sql
-    }
-    let sql = this._toSQL()
-    if (this.constructor.castable) {
+  toSQL(options) {
+    // if ('sql' in this._memo) {
+    //   return this._memo.sql
+    // }
+    let sql = this._toSQL(resolveParserOptions(options))
+    if (this.castable && this.cast) {
       sql = this._applyCast(sql)
     }
-    if (this.constructor.aliasable) {
+    if (this.aliasable && this.as) {
       sql = this._applyAlias(sql)
     }
-    this._memo.sql = trimSQL(sql)
-    return this._memo.sql
+    // this._memo.sql = trimSQL(sql)
+    // return this._memo.sql
+    return trimSQL(sql)
   }
 
   // to be implemented by child class
@@ -135,18 +189,18 @@ class Node {
   }
 
   // return value is immutable
-  toQL() {
-    if ('ql' in this._memo) {
-      return this._memo.ql
-    }
-    const ql = this._toQL()
-    if (this.constructor.castable && this.cast) {
+  toQL(options) {
+    // if ('ql' in this._memo) {
+    //   return this._memo.ql
+    // }
+    const ql = this._toQL(resolveParserOptions(options))
+    if (this.castable && this.cast) {
       ql.cast = this.cast
     }
-    if (this.constructor.aliasable && this.as) {
+    if (this.aliasable && this.as) {
       ql.as = this.as
     }
-    this._memo.ql = Object.freeze(ql)
+    // this._memo.ql = Object.freeze(ql)
     return ql
   }
 
@@ -208,7 +262,7 @@ class SelectNode extends Node {
     // WITH
     this.with = []
     if (isNonNull(ctes)) {
-      if (!isArray(ctes, { minLength: 1 })) {
+      if (!isArray(ctes)) {
         throw parserError(`Invalid with syntax: ${ctes}`)
       }
       this.with = ctes.map(e => parseCTEExpression(e, this._context))
@@ -224,7 +278,7 @@ class SelectNode extends Node {
     // JOINS
     this.joins = []
     if (isNonNull(joins)) {
-      if (!isArray(joins, { minLength: 1 })) {
+      if (!isArray(joins)) {
         throw parserError(`Invalid join syntax: ${joins}`)
       }
       this.joins = joins.map(e => parseJoinExpression(e, this._context))
@@ -240,34 +294,67 @@ class SelectNode extends Node {
     }
 
     // COLUMNS
-    this.columns = []
-    if (isNull(columns)) {
-      throw parserError('Missing columns object in select expression')
+    // this.columns = []
+    // if (isNull(columns)) {
+    //   throw parserError('Missing columns object in select expression')
+    // }
+    // applyExpressions(columns, this._context, e => this.columns.push(e))
+    if (!isArray(columns, { minLength: 1 })) {
+      throw parserError('Missing columns in select expression')
     }
-    applyExpressions(columns, this._context, e => this.columns.push(e))
+    this.columns = columns.map(e => parseExpression(e, this._context))
 
     // WHERE
+    // this.where = []
+    // if (isNonNull(where)) {
+    //   applyExpressions(where, this._context, e => this.where.push(e))
+    // }
     this.where = []
     if (isNonNull(where)) {
-      applyExpressions(where, this._context, e => this.where.push(e))
+      if (!isArray(where)) {
+        console.log('where', where)
+        throw parserError(`Invalid where syntax: ${where}`)
+      }
+      this.where = where.map(e => parseExpression(e, this._context))
     }
 
     // HAVING
+    // this.having = []
+    // if (isNonNull(having)) {
+    //   applyExpressions(having, this._context, e => this.having.push(e))
+    // }
     this.having = []
     if (isNonNull(having)) {
-      applyExpressions(having, this._context, e => this.having.push(e))
+      if (!isArray(having)) {
+        throw parserError(`Invalid having syntax: ${having}`)
+      }
+      this.having = having.map(e => parseExpression(e, this._context))
     }
 
     // GROUP BY
+    // this.groupBy = []
+    // if (isNonNull(groupBy)) {
+    //   applyExpressions(groupBy, this._context, e => this.groupBy.push(e))
+    // }
     this.groupBy = []
     if (isNonNull(groupBy)) {
-      applyExpressions(groupBy, this._context, e => this.groupBy.push(e))
+      if (!isArray(groupBy)) {
+        throw parserError(`Invalid groupBy syntax: ${groupBy}`)
+      }
+      this.groupBy = groupBy.map(e => parseExpression(e, this._context))
     }
 
     // ORDER BY
+    // this.orderBy = []
+    // if (isNonNull(orderBy)) {
+    //   applyExpressions(orderBy, this._context, e => this.orderBy.push(e))
+    // }
     this.orderBy = []
     if (isNonNull(orderBy)) {
-      applyExpressions(orderBy, this._context, e => this.orderBy.push(e))
+      if (!isArray(orderBy)) {
+        throw parserError(`Invalid orderBy syntax: ${orderBy}`)
+      }
+      this.orderBy = orderBy.map(e => parseExpression(e, this._context))
     }
 
     // LIMIT
@@ -294,34 +381,34 @@ class SelectNode extends Node {
     }
   }
 
-  _toSQL() {
+  _toSQL(options) {
     const ctes = this.with.length
-      ? `WITH ${this.with.map(e => e.toSQL()).join(', ')}`
+      ? `WITH ${this.with.map(e => e.toSQL(options)).join(', ')}`
       : ''
 
     const distinct = this.distinct ? 'DISTINCT' : ''
-    const columns = this.columns.map(e => e.toSQL()).join(', ')
+    const columns = this.columns.map(e => e.toSQL(options)).join(', ')
 
-    const from = this.from ? `FROM ${this.from.toSQL()}` : ''
+    const from = this.from ? `FROM ${this.from.toSQL(options)}` : ''
 
     const joins = this.joins.length
-      ? this.joins.map(e => e.toSQL()).join(', ')
+      ? this.joins.map(e => e.toSQL(options)).join(', ')
       : ''
 
     const where = this.where.length ?
-      `WHERE ${this.where.map(e => e.toSQL()).join(' AND ')}`
+      `WHERE ${this.where.map(e => e.toSQL(options)).join(' AND ')}`
       : ''
 
     const having = this.having.length
-      ? `HAVING ${this.having.map(e => e.toSQL()).join(' AND ')}`
+      ? `HAVING ${this.having.map(e => e.toSQL(options)).join(' AND ')}`
       : ''
 
     const groupBy = this.groupBy.length
-      ? `GROUP BY ${this.groupBy.map(e => e.toSQL()).join(', ')}`
+      ? `GROUP BY ${this.groupBy.map(e => e.toSQL(options)).join(', ')}`
       : ''
 
     const orderBy = this.orderBy.length
-      ? `ORDER BY ${this.orderBy.map(e => e.toSQL()).join(', ')}`
+      ? `ORDER BY ${this.orderBy.map(e => e.toSQL(options)).join(', ')}`
       : ''
 
     const limit = this.limit !== undefined ? `LIMIT ${this.limit}` : ''
@@ -342,18 +429,18 @@ class SelectNode extends Node {
     `
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.SELECT,
-      with: this.with.length ? this.with.map(e => e.toQL()) : undefined,
-      from: this.from ? this.from.toQL() : undefined,
-      joins: this.joins.length ? this.joins.map(e => e.toQL()) : undefined,
+      with: this.with.length ? this.with.map(e => e.toQL(options)) : undefined,
+      from: this.from ? this.from.toQL(options) : undefined,
+      joins: this.joins.length ? this.joins.map(e => e.toQL(options)) : undefined,
       distinct: this.distinct || undefined,
-      columns: this.columns.map(e => e.toQL()),
-      where: this.where.length ? this.where.map(e => e.toQL()) : undefined,
-      having: this.having.length ? this.having.map(e => e.toQL()) : undefined,
-      groupBy: this.groupBy.length ? this.groupBy.map(e => e.toQL()) : undefined,
-      orderBy: this.orderBy.length ? this.orderBy.map(e => e.toQL()) : undefined,
+      columns: this.columns.map(e => e.toQL(options)),
+      where: this.where.length ? this.where.map(e => e.toQL(options)) : undefined,
+      having: this.having.length ? this.having.map(e => e.toQL(options)) : undefined,
+      groupBy: this.groupBy.length ? this.groupBy.map(e => e.toQL(options)) : undefined,
+      orderBy: this.orderBy.length ? this.orderBy.map(e => e.toQL(options)) : undefined,
       limit: this.limit,
       offset: this.offset,
     }
@@ -420,12 +507,12 @@ class JoinNode extends Node {
     return `${this.joinType} JOIN ${this.view.toSQL()} ON ${this.on.toSQL()}`
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       // type: expressionTypes.JOIN,
       joinType: this.joinType,
-      view: this.view.toQL(),
-      on: this.on.toQL(),
+      view: this.view.toQL(options),
+      on: this.on.toQL(options),
     }
   }
 }
@@ -519,11 +606,23 @@ class ParameterReferenceNode extends Node {
     this._context.params[this.name] = true
   }
 
-  _toSQL() {
+  _toSQL(options) {
+    if (options.parameters) {
+      if (!(this.name in options.parameters)) {
+        throw parserError(`Missing parameter value: ${this.name}`)
+      }
+      return this.parameters[this.name].toSQL(options)
+    }
     return `@param('${this.name}')`
   }
 
-  _toQL() {
+  _toQL(options) {
+    if (options.parameters) {
+      if (!(this.name in options.parameters)) {
+        throw parserError(`Missing parameter value: ${this.name}`)
+      }
+      return this.parameters[this.name].toQL(options)
+    }
     return { type: expTypes.PARAMETER, value: this.name }
   }
 }
@@ -537,14 +636,14 @@ class ArrayNode extends Node {
     this.values = exp.values.map(e => parseExpression(e, this._context))
   }
 
-  _toSQL() {
-    return `ARRAY[${this.values.map(e => e.toSQL()).join(', ')}]`
+  _toSQL(options) {
+    return `ARRAY[${this.values.map(e => e.toSQL(options)).join(', ')}]`
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.ARRAY,
-      values: this.values.map(e => e.toQL()),
+      values: this.values.map(e => e.toQL(options)),
     }
   }
 }
@@ -558,14 +657,14 @@ class ListNode extends Node {
     this.values = exp.values.map(e => parseExpression(e, this._context))
   }
 
-  _toSQL() {
-    return `(${this.values.map(e => e.toSQL()).join(', ')})`
+  _toSQL(options) {
+    return `(${this.values.map(e => e.toSQL(options)).join(', ')})`
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.LIST,
-      values: this.values.map(e => e.toQL()),
+      values: this.values.map(e => e.toQL(options)),
     }
   }
 }
@@ -597,8 +696,8 @@ class FunctionNode extends Node {
     this.defaultCast = defaultCast
   }
 
-  _toSQL() {
-    return `${this.name}(${this.args.map(e => e.toSQL()).join(', ')})`
+  _toSQL(options) {
+    return `${this.name}(${this.args.map(e => e.toSQL(options)).join(', ')})`
   }
 
   _applyCast(sql) {
@@ -606,10 +705,10 @@ class FunctionNode extends Node {
     return cast ? `CAST(${sql} AS ${cast})` : sql
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.FUNCTION,
-      values: [this.name, ...this.args.map(e => e.toQL())],
+      values: [this.name, ...this.args.map(e => e.toQL(options))],
     }
   }
 }
@@ -633,21 +732,21 @@ class OperatorNode extends Node {
     this.operands = operands.map(e => parseExpression(e, this._context))
   }
 
-  _toSQL() {
+  _toSQL(options) {
     if (this.name === 'between' || this.name === 'not between') {
       const [oA, oB, oC] = this.operands
-      return `(${oA.toSQL()} ${this.name} ${oB.toSQL()} AND ${oC.toSQL()})`
+      return `(${oA.toSQL(options)} ${this.name} ${oB.toSQL(options)} AND ${oC.toSQL(options)})`
     }
     return `(${this.operands.map((o, i, all) => {
       const op = i > 0 || all.length === 1 ? `${this.name} ` : ''
-      return op + o.toSQL()
+      return op + o.toSQL(options)
     }).join(' ')})`
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.OPERATOR,
-      values: [this.name, ...this.operands.map(e => e.toQL())],
+      values: [this.name, ...this.operands.map(e => e.toQL(options))],
     }
   }
 }
@@ -660,11 +759,11 @@ class CastNode extends Node {
       throw parserError(`Invalid casting syntax: ${exp}`)
     }
     this.value = parseExpression(value, this._context)
-    if (!this.value.constructor.castable) {
+    if (!this.value.castable) {
       throw parserError(`Illegal casting: ${this.cast}`)
     }
-    // collapse if possible
-    if (!this.value.cast && (!this.as || this.value.constructor.aliasable)) {
+    // fold into underlying value if possible
+    if (!this.value.cast && (!this.as || this.value.aliasable)) {
       if (this.as) {
         this.value.as = this.as
       }
@@ -673,14 +772,14 @@ class CastNode extends Node {
     }
   }
 
-  _toSQL() {
-    return this.value.toSQL()
+  _toSQL(options) {
+    return this.value.toSQL(options)
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.CAST,
-      value: this.value.toQL(),
+      value: this.value.toQL(options),
     }
   }
 }
@@ -695,14 +794,15 @@ class SQLNode extends Node {
     // parse from sql first
     const qlValue = parseSQLExpression(value)
     this.value = parseExpression(qlValue, this._context)
-    if (this.cast && !this.value.constructor.castable) {
+    this._aliasable = this.value.aliasable
+    this._castable = this.value.castable
+    if (this.cast && !this.castable) {
       throw parserError(`Illegal casting: ${this.cast}`)
     }
-    if (this.as && !this.value.constructor.aliasable) {
+    if (this.as && !this.aliasable) {
       throw parserError(`Illegal aliasing: ${this.as}`)
     }
-
-    // collapse if possible
+    // fold into underlying value if possible
     if (!this.cast || !this.value.cast) {
       if (this.cast) {
         this.value.cast = this.cast
@@ -714,15 +814,51 @@ class SQLNode extends Node {
     }
   }
 
-  _toSQL() {
-    return this.value.toSQL()
+  _toSQL(options) {
+    return this.value.toSQL(options)
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.CAST,
-      value: this.value.toQL(),
+      value: this.value.toQL(options),
     }
+  }
+}
+
+class ShortNode extends Node {
+  constructor(exp, context) {
+    super(exp, context)
+    const { value } = exp
+    if (!isString(value, true)) {
+      throw parserError(`Invalid short expression syntax: ${JSON.stringify(exp)}`)
+    }
+    // parse from short first
+    const qlValue = parseShortExpression(value)
+    this.value = parseExpression(qlValue, this._context)
+    this.short = sanitizeShortExpression(value)
+    this._aliasable = this.value.aliasable
+    this._castable = this.value.castable
+    if (this.cast && !this.castable) {
+      throw parserError(`Illegal casting: ${this.cast}`)
+    }
+    if (this.as && !this.aliasable) {
+      throw parserError(`Illegal aliasing: ${this.as}`)
+    }
+  }
+
+  _toSQL(options) {
+    return options.keepShorts ? this.short : this.value.toSQL(options)
+  }
+
+  _toQL(options) {
+    if (options.keepShorts) {
+      if (!this.as && !this.cast) {
+        return this.short
+      }
+      return { type: expTypes.SHORT, value: this.sort }
+    }
+    return this.value.toQL(options)
   }
 }
 
@@ -768,20 +904,22 @@ class CaseNode extends Node {
     })
   }
 
-  _toSQL() {
+  _toSQL(options) {
     return `
       CASE
-        ${this.cases.map(([cond, res]) => `WHEN ${cond.toSQL()} THEN ${res.toSQL()}`).join('\n')}
-        ${this.defaultRes ? `ELSE ${this.defaultRes.toSQL()}` : ''}
+        ${this.case
+    .map(([cond, res]) => `WHEN ${cond.toSQL(options)} THEN ${res.toSQL(options)}`)
+    .join('\n')}
+        ${this.defaultRes ? `ELSE ${this.defaultRes.toSQL(options)}` : ''}
       END
     `
   }
 
-  _toQL() {
-    const cases = this.cases.map(c => c.map(e => e.toQL()))
+  _toQL(options) {
+    const cases = this.cases.map(c => c.map(e => e.toQL(options)))
     return {
       type: expTypes.CASE,
-      values: this.defaultRes ? [this.defaultRes.toQL(), ...cases] : cases,
+      values: this.defaultRes ? [this.defaultRes.toQL(options), ...cases] : cases,
     }
   }
 }
@@ -812,16 +950,16 @@ class SortNode extends Node {
     this.value = parseExpression(value, this._context)
   }
 
-  _toSQL() {
+  _toSQL(options) {
     const direction = this.direction ? ` ${this.direction}` : ''
     const nulls = this.nulls ? ` NULLS ${this.nulls}` : ''
-    return this.value.toSQL() + direction + nulls
+    return this.value.toSQL(options) + direction + nulls
   }
 
-  _toQL() {
+  _toQL(options) {
     return {
       type: expTypes.SORT,
-      value: this.value.toQL(),
+      value: this.value.toQL(options),
       direction: this.direction,
       nulls: this.nulls,
     }
@@ -859,6 +997,7 @@ objectParsers[expTypes.JOIN] = (exp, context) => new JoinNode(exp, context)
 objectParsers[expTypes.VIEW] = (exp, context) => new ViewReferenceNode(exp, context)
 objectParsers[expTypes.COLUMN] = (exp, context) => new ColumnReferenceNode(exp, context)
 objectParsers[expTypes.PARAMETER] = (exp, context) => new ParameterReferenceNode(exp, context)
+objectParsers[expTypes.SHORT] = (exp, context) => new ShortNode(exp, context)
 objectParsers[expTypes.SQL] = (exp, context) => new SQLNode(exp, context)
 objectParsers[expTypes.CAST] = (exp, context) => new CastNode(exp, context)
 objectParsers[expTypes.PRIMITIVE] = (exp, context) => new PrimitiveNode(exp, context)
@@ -929,22 +1068,22 @@ const parseArrayExpression = (exp, context) => {
 const parseExpression = (exp, context) => {
   switch (typeof exp) {
     case 'string':
-      try {
-        if (exp.toLowerCase() === 'null') {
-          return parseExpression(null)
-        }
-        if (columnRefRE.test(exp)) {
+      if (exp.toLowerCase() === 'null') {
+        return parseExpression(null)
+      }
+      if (isShortExpression(exp)) {
+        return parseExpression({ type: expTypes.SHORT, value: exp }, context)
+      }
+      // try column
+      if (columnRefRE.test(exp)) {
+        try {
           const [column, view] = exp.split('.')
           return parseExpression({ type: expTypes.COLUMN, column, view }, context)
+        } catch (_) {
+          return parseExpression({ type: expTypes.PRIMITIVE, value: exp }, context)
         }
-        if (isShortExpression(exp)) {
-          const objExp = parseShortExpression(exp)
-          return parseExpression(objExp, context)
-        }
-        return parseExpression({ type: expTypes.PRIMITIVE, value: exp }, context)
-      } catch (_) {
-        return parseExpression({ type: expTypes.PRIMITIVE, value: exp }, context)
       }
+      return parseExpression({ type: expTypes.PRIMITIVE, value: exp }, context)
 
     case 'boolean':
     case 'number':

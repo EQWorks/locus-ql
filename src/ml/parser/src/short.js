@@ -1,5 +1,6 @@
 const {
   parserError,
+  ParserError,
   expressionTypes,
   isNonArrayObject,
   isArray,
@@ -172,44 +173,95 @@ const sortArguments = (name, args) => args.reduce((acc, arg, i) => {
 
 // string value
 const parseShortArgument = (arg) => {
-  const normalized = arg.toLowerCase()
-  // boolean
-  if (normalized === 'true' || normalized === 'false') {
-    return Boolean(normalized)
+  try {
+    const normalized = arg.toLowerCase()
+    // boolean
+    if (normalized === 'true' || normalized === 'false') {
+      return Boolean(normalized)
+    }
+    // NULL
+    if (normalized === 'null') {
+      return null
+    }
+    // string
+    if ((arg[0] === "'" || arg[0] === '"') && arg[arg.length - 1] === arg[0]) {
+      return arg.slice(1, -1)
+    }
+    // array block
+    if (arg[0] === '[' && arg[arg.length - 1] === ']') {
+      return splitCSV(arg.slice(1, -1)).map(parseShortArgument)
+    }
+    // object block
+    if (arg[0] === '{' && arg[arg.length - 1] === '}') {
+      return JSON.parse(arg)
+    }
+    // short form
+    if (isShortExpression(arg)) {
+      // eslint-disable-next-line no-use-before-define
+      return parseShortExpression(arg)
+    }
+    // named arg
+    if (namedArgRE.test(arg)) {
+      const split = arg.indexOf('=')
+      const name = arg.slice(0, split).toLowerCase()
+      const value = parseShortArgument(arg.slice(split + 1))
+      return { [name]: value }
+    }
+    // number
+    if (numberRE.test(arg)) {
+      return Number(arg)
+    }
+    throw parserError(`Invalid short argument: ${arg}`)
+  } catch (err) {
+    if (err instanceof ParserError) {
+      throw err
+    }
+    throw parserError(`Invalid short argument: ${arg}`)
   }
-  // NULL
-  if (normalized === 'null') {
-    return null
+}
+
+const sanitizeShortArgument = (arg) => {
+  try {
+    const normalized = arg.toLowerCase()
+    // boolean and NULL
+    if (normalized === 'true' || normalized === 'false' || normalized === 'null') {
+      return normalized
+    }
+    // string
+    if ((arg[0] === "'" || arg[0] === '"') && arg[arg.length - 1] === arg[0]) {
+      return `'${arg.slice(1, -1)}'`
+    }
+    // array block
+    if (arg[0] === '[' && arg[arg.length - 1] === ']') {
+      return `[${splitCSV(arg.slice(1, -1)).map(sanitizeShortArgument).join(',')}]`
+    }
+    // object block
+    if (arg[0] === '{' && arg[arg.length - 1] === '}') {
+      return JSON.stringify(JSON.parse(arg))
+    }
+    // short form
+    if (isShortExpression(arg)) {
+      // eslint-disable-next-line no-use-before-define
+      return sanitizeShortExpression(arg)
+    }
+    // named arg
+    if (namedArgRE.test(arg)) {
+      const split = arg.indexOf('=')
+      const name = arg.slice(0, split).toLowerCase()
+      const value = sanitizeShortArgument(arg.slice(split + 1))
+      return `${name}=${value}`
+    }
+    // number
+    if (numberRE.test(arg)) {
+      return String(Number(arg))
+    }
+    throw parserError(`Invalid short argument: ${arg}`)
+  } catch (err) {
+    if (err instanceof ParserError) {
+      throw err
+    }
+    throw parserError(`Invalid short argument: ${arg}`)
   }
-  // string
-  if ((arg[0] === "'" || arg[0] === '"') && arg[arg.length - 1] === arg[0]) {
-    return arg.slice(1, -1)
-  }
-  // array block
-  if (arg[0] === '[' && arg[arg.length - 1] === ']') {
-    return splitCSV(arg.slice(1, -1)).map(parseShortArgument)
-  }
-  // object block
-  if (arg[0] === '{' && arg[arg.length - 1] === '}') {
-    return JSON.parse(arg)
-  }
-  // short form
-  if (isShortExpression(arg)) {
-    // eslint-disable-next-line no-use-before-define
-    return parseShortExpression(arg)
-  }
-  // named arg
-  if (namedArgRE.test(arg)) {
-    const split = arg.indexOf('=')
-    const name = arg.slice(0, split).toLowerCase()
-    const value = parseShortArgument(arg.slice(split + 1))
-    return { [name]: value }
-  }
-  // number
-  if (numberRE.test(arg)) {
-    return Number(arg)
-  }
-  throw parserError(`Invalid short value: ${arg}`)
 }
 
 // checks that syntax is compliant with short expression
@@ -231,6 +283,17 @@ const isValidShortExpression = (exp) => {
   }
 }
 
+// normalizes syntax - does not check arg validity re: parser
+const sanitizeShortExpression = (exp) => {
+  const split = exp.indexOf('(')
+  const name = exp.slice(1, split).toLowerCase()
+  if (!(name in shortExpressions)) {
+    throw parserError(`Invalid short expression: ${name}`)
+  }
+  const parsedArgs = splitCSV(exp.slice(split + 1, -1)).map(sanitizeShortArgument)
+  return `@${name}(${parsedArgs.join(',')})`
+}
+
 const parseShortExpression = (exp) => {
   const split = exp.indexOf('(')
   const name = exp.slice(1, split).toLowerCase()
@@ -248,5 +311,7 @@ module.exports = {
   isShortExpression,
   isValidShortExpression,
   parseShortExpression,
-  parseShortValue: parseShortArgument,
+  parseShortArgument,
+  sanitizeShortExpression,
+  sanitizeShortArgument,
 }
