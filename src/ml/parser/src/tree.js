@@ -17,6 +17,7 @@ const {
   isNonArrayObject,
 } = require('./utils')
 const { isShortExpression, parseShortExpression } = require('./short')
+const { parseSQLExpression } = require('./sql')
 const functions = require('./functions')
 const operators = require('./operators')
 
@@ -82,6 +83,7 @@ class Node {
       throw parserError(`Expression must be an object: ${exp}`)
     }
     this._context = context || { views: {}, ctes: {}, refs: {}, params: {} }
+    this._memo = {}
     // as property
     if (this.constructor.aliasable) {
       this.as = sanitizeAlias(exp.as) // basic validation
@@ -90,6 +92,13 @@ class Node {
     if (this.constructor.castable) {
       this.cast = sanitizeCast(exp.cast) // basic validation
     }
+  }
+
+  get viewColumns() {
+    return Object.entries(this._context.views).reduce((acc, [view, columns]) => {
+      acc[view] = new Set(Object.keys(columns))
+      return acc
+    }, {})
   }
 
   _applyAlias(sql) {
@@ -106,6 +115,9 @@ class Node {
   }
 
   toSQL() {
+    if ('sql' in this._memo) {
+      return this._memo.sql
+    }
     let sql = this._toSQL()
     if (this.constructor.castable) {
       sql = this._applyCast(sql)
@@ -113,7 +125,8 @@ class Node {
     if (this.constructor.aliasable) {
       sql = this._applyAlias(sql)
     }
-    return trimSQL(sql)
+    this._memo.sql = trimSQL(sql)
+    return this._memo.sql
   }
 
   // to be implemented by child class
@@ -121,7 +134,11 @@ class Node {
     throw parserError(`_toQL() must be implemented in element ${this.constructor.name}`)
   }
 
+  // return value is immutable
   toQL() {
+    if ('ql' in this._memo) {
+      return this._memo.ql
+    }
     const ql = this._toQL()
     if (this.constructor.castable && this.cast) {
       ql.cast = this.cast
@@ -129,15 +146,25 @@ class Node {
     if (this.constructor.aliasable && this.as) {
       ql.as = this.as
     }
+    this._memo.ql = Object.freeze(ql)
     return ql
   }
 
+  // return value is immutable
   to(name, ...args) {
     // eslint-disable-next-line no-prototype-builtins
     if (!Object.hasOwnProperty('_parsers') || !(name in this.constructor._parsers)) {
       throw parserError(`Parser "${name}" not registered on node type: ${this.constructor.name}`)
     }
-    return this.constructor._parsers(this, ...args)
+    const memo = `parser:${name}`
+    if (memo in this._memo) {
+      return this._memo[memo]
+    }
+    this._memo[memo] = this.constructor._parsers(this, ...args)
+    if (typeof this._memo[memo] === 'object') {
+      this._memo[memo] = Object.freeze(this._memo[memo])
+    }
+    return this._memo[memo]
   }
 
   static registerParser(name, parser) {
@@ -666,8 +693,8 @@ class SQLNode extends Node {
       throw parserError(`Invalid sql syntax: ${exp}`)
     }
     // parse from sql first
-    // INSERT SQL TO QL HERE
-    this.value = parseExpression(value, this._context)
+    const qlValue = parseSQLExpression(value)
+    this.value = parseExpression(qlValue, this._context)
     if (this.cast && !this.value.constructor.castable) {
       throw parserError(`Illegal casting: ${this.cast}`)
     }
@@ -675,14 +702,13 @@ class SQLNode extends Node {
       throw parserError(`Illegal aliasing: ${this.as}`)
     }
 
-    this.value.as = this.as || this.value.as
     // collapse if possible
     if (!this.cast || !this.value.cast) {
       if (this.cast) {
         this.value.cast = this.cast
       }
       if (this.as) {
-        this.as.value = this.as
+        this.value.as = this.as
       }
       return this.value
     }
@@ -812,6 +838,7 @@ const nodes = {
   ViewReferenceNode,
   ColumnReferenceNode,
   ParameterReferenceNode,
+  SQLNode,
   CastNode,
   PrimitiveNode,
   CaseNode,
@@ -832,7 +859,7 @@ objectParsers[expTypes.JOIN] = (exp, context) => new JoinNode(exp, context)
 objectParsers[expTypes.VIEW] = (exp, context) => new ViewReferenceNode(exp, context)
 objectParsers[expTypes.COLUMN] = (exp, context) => new ColumnReferenceNode(exp, context)
 objectParsers[expTypes.PARAMETER] = (exp, context) => new ParameterReferenceNode(exp, context)
-// objectParsers[expTypes.SQL] = (exp, context) => new SQLNode(exp, context)
+objectParsers[expTypes.SQL] = (exp, context) => new SQLNode(exp, context)
 objectParsers[expTypes.CAST] = (exp, context) => new CastNode(exp, context)
 objectParsers[expTypes.PRIMITIVE] = (exp, context) => new PrimitiveNode(exp, context)
 objectParsers[expTypes.CASE] = (exp, context) => new CaseNode(exp, context)

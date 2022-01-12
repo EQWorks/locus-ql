@@ -65,7 +65,7 @@ const isNonArrayObject = val => typeof val === 'object' && val !== null && !isAr
 const isInt = (val, minVal) => Number.isInteger(val) && (!minVal || val >= minVal)
 
 const isObjectExpression = (val, type) => {
-  if (typeof val !== 'object' || val === null) {
+  if (!isNonArrayObject(val)) {
     return false
   }
   const safeType = sanitizeString(val.type, true)
@@ -139,50 +139,59 @@ const splitCSV = (csv) => {
   for (const char of csv) {
     // quote in progress
     if (quote) {
-      // quote ending or escaped quote char
-      if (char === quote) {
-        quoteEnding = !quoteEnding
-      // end quote
-      } else if (quoteEnding) {
-        quoteEnding = false
-        quote = ''
-      }
-    }
-    // no quote or quote has just ended
-    if (!quote) {
-      // space
-      if (char === '\n' || char === ' ') {
+      // quote continues
+      if (!quoteEnding || char === quote) {
+        if (char === quote) {
+          quoteEnding = !quoteEnding
+        }
+        val += char
         continue
       }
-      // new quote starting
-      if (char === '"' || char === "'") {
-        quote = char
+      // quote ends, need to deal with char
+      quote = ''
+      quoteEnding = false
+    }
 
-      // block in progress
-      } else if (block) {
-        // nested block
-        if (char === block) {
-          blockDepth += 1
-        } else if (char === blockEnd) {
-          // end block (main or nested)
-          if (!blockDepth) {
-            block = ''
-            blockEnd = ''
-          } else {
-            blockDepth -= 1
-          }
-        }
+    // no quote or quote has just ended
+    // space
+    if (char === '\n' || char === ' ') {
+      continue
+    }
 
-      // new block starting
-      } else if (char in csvBlockChars) {
-        block = char
-        blockEnd = csvBlockChars[char]
+    // new quote starting
+    if (char === '"' || char === "'") {
+      quote = char
+      val += char
+      continue
+    }
 
-        // end of arg
-      } else if (char === ',') {
+    if (!block) {
+      // end of val
+      if (char === ',') {
         vals.push(val)
         val = ''
         continue
+      }
+      // new block starting
+      if (char in csvBlockChars) {
+        block = char
+        blockEnd = csvBlockChars[char]
+      }
+      val += char
+      continue
+    }
+
+    // block in progress
+    // nested block
+    if (char === block) {
+      blockDepth += 1
+    } else if (char === blockEnd) {
+      // end block (main or nested)
+      if (!blockDepth) {
+        block = ''
+        blockEnd = ''
+      } else {
+        blockDepth -= 1
       }
     }
     val += char
@@ -238,6 +247,127 @@ const trimSQL = (sql) => {
   return trimmed
 }
 
+// identify shorts and replace by $<index>
+// identify user supplied params and throw error
+// remove spaces and new lines
+const extractShortExpressionsFromSQL = (sql) => {
+  const shorts = []
+  let sqlWithoutShorts = ''
+  let quote = ''
+  let quoteEnding = false
+  let shortName = ''
+  let shortArgs = ''
+  let shortDepth = 0
+  for (const char of sql) {
+    // quote in progress
+    if (quote) {
+      // quote continues
+      if (!quoteEnding || char === quote) {
+        if (char === quote) {
+          quoteEnding = !quoteEnding
+        }
+        // quote within short
+        if (shortArgs) {
+          shortArgs += char
+          continue
+        }
+        sqlWithoutShorts += char
+        continue
+      }
+      // quote ends, need to deal with char
+      quote = ''
+      quoteEnding = false
+    }
+
+    // no quote or quote has just ended
+    // new quote starting
+    if (char === '"' || char === "'") {
+      quote = char
+      // quote within short
+      if (shortName) {
+        // quote is in short args
+        if (shortDepth) {
+          shortArgs += char
+          continue
+        }
+        // still working on short name = invalid short
+        sqlWithoutShorts += shortName
+        shortName = ''
+      }
+      sqlWithoutShorts += char
+      continue
+    }
+
+    if (!shortName) {
+      if (char === '$') {
+        throw parserError('$ parameter syntax not supported')
+      }
+      // nothing short related
+      if (char !== '@') {
+        sqlWithoutShorts += char
+        continue
+      }
+      // new short starting
+      shortName = '@'
+      continue
+    }
+
+    // short in progress
+    // set name
+    if (!shortDepth) {
+      // done with the name, starting args
+      if (char === '(' && shortName.length > 1) {
+        // validate name ?
+        shortDepth += 1
+        shortArgs += char
+        continue
+      }
+      // invalid name
+      const charCode = char.charCodeAt(0)
+      if (!(
+        (charCode >= 48 && charCode <= 57) // 0-9
+        || (charCode >= 65 && charCode <= 90) // A-Z
+        || (charCode >= 97 && charCode <= 122) // a-z
+        || char === '_' // _
+      )) {
+        sqlWithoutShorts += shortName + char
+        shortName = ''
+        continue
+      }
+      shortName += char
+      continue
+    }
+    // working on args
+    // space
+    if (char === '\n' || char === ' ') {
+      continue
+    }
+    shortArgs += char
+
+    // new block starting
+    if (char === '(') {
+      shortDepth += 1
+      continue
+    }
+
+    // block ending
+    if (char === ')') {
+      shortDepth -= 1
+      // end of short
+      if (!shortDepth) {
+        shorts.push(shortName + shortArgs)
+        shortName = ''
+        shortArgs = ''
+        // replace value with $ shorts.length
+        sqlWithoutShorts += `$${shorts.length}`
+      }
+    }
+  }
+  // add residual
+  sqlWithoutShorts += shortName + shortArgs
+  return { sql: sqlWithoutShorts, shorts }
+}
+
 module.exports = {
   isNull,
   isNonNull,
@@ -253,6 +383,7 @@ module.exports = {
   escapeIdentifier,
   splitCSV,
   trimSQL,
+  extractShortExpressionsFromSQL,
   ParserError,
   parserError,
   expressionTypes,

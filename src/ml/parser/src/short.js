@@ -118,6 +118,9 @@ const resolveArguments = (name, args, kwargs, template) => {
     args.forEach((a, i) => { resolved[template[i]] = a })
   }
   Object.entries(kwargs).forEach(([key, value]) => {
+    if (!template.includes(key)) {
+      throw parserError(`@${name} received unexpected argument: ${key}`)
+    }
     if (key in resolved) {
       throw parserError(`@${name} received multiple values for argument: ${key}`)
     }
@@ -139,45 +142,64 @@ const sortArguments = (name, args) => args.reduce((acc, arg, i) => {
 }, { args: [], kwargs: {} })
 
 // string value
-const parseShortValue = (val) => {
-  const lowerStr = val.toLowerCase()
+const parseShortArgument = (arg) => {
+  const normalized = arg.toLowerCase()
   // boolean
-  if (lowerStr === 'true' || lowerStr === 'false') {
-    return Boolean(lowerStr)
+  if (normalized === 'true' || normalized === 'false') {
+    return Boolean(normalized)
   }
   // NULL
-  if (lowerStr === 'null') {
+  if (normalized === 'null') {
     return null
   }
   // string
-  if ((val[0] === "'" || val[0] === '"') && val[val.length - 1] === val[0]) {
-    return val.slice(1, -1)
+  if ((arg[0] === "'" || arg[0] === '"') && arg[arg.length - 1] === arg[0]) {
+    return arg.slice(1, -1)
   }
   // array block
-  if (val[0] === '[' && val[val.length - 1] === ']') {
-    return splitCSV(val.slice(1, -1)).map(parseShortValue)
+  if (arg[0] === '[' && arg[arg.length - 1] === ']') {
+    return splitCSV(arg.slice(1, -1)).map(parseShortArgument)
   }
   // object block
-  if (val[0] === '{' && val[val.length - 1] === '}') {
-    return JSON.parse(val)
+  if (arg[0] === '{' && arg[arg.length - 1] === '}') {
+    return JSON.parse(arg)
   }
   // short form
-  if (isShortExpression(val)) {
+  if (isShortExpression(arg)) {
     // eslint-disable-next-line no-use-before-define
-    return parseShortExpression(val)
+    return parseShortExpression(arg)
   }
   // named arg
-  if (namedArgRE.test(val)) {
-    const split = val.indexOf('=')
-    const name = val.slice(0, split)
-    const value = parseShortValue(val.slice(split + 1))
+  if (namedArgRE.test(arg)) {
+    const split = arg.indexOf('=')
+    const name = arg.slice(0, split).toLowerCase()
+    const value = parseShortArgument(arg.slice(split + 1))
     return { [name]: value }
   }
   // number
-  if (numberRE.test(val)) {
-    return Number(val)
+  if (numberRE.test(arg)) {
+    return Number(arg)
   }
-  throw parserError(`Invalid short value: ${val}`)
+  throw parserError(`Invalid short value: ${arg}`)
+}
+
+// checks that syntax is compliant with short expression
+// does not invoke parser (i.e. does not confirm arg types are correct)
+const isValidShortExpression = (exp) => {
+  try {
+    const split = exp.indexOf('(')
+    const name = exp.slice(1, split).toLowerCase()
+    if (!(name in shortExpressions)) {
+      return false
+    }
+    const parsedArgs = splitCSV(exp.slice(split + 1, -1)).map(parseShortArgument)
+    const { args, kwargs } = sortArguments(name, parsedArgs)
+    const { template } = shortExpressions[name]
+    resolveArguments(name, args, kwargs, template)
+    return true
+  } catch (_) {
+    return false
+  }
 }
 
 const parseShortExpression = (exp) => {
@@ -186,7 +208,7 @@ const parseShortExpression = (exp) => {
   if (!(name in shortExpressions)) {
     throw parserError(`Invalid short expression: ${name}`)
   }
-  const parsedArgs = splitCSV(exp.slice(split + 1, -1)).map(parseShortValue)
+  const parsedArgs = splitCSV(exp.slice(split + 1, -1)).map(parseShortArgument)
   const { args, kwargs } = sortArguments(name, parsedArgs)
   const { parser, template } = shortExpressions[name]
   const resolvedArgs = resolveArguments(name, args, kwargs, template)
@@ -195,6 +217,7 @@ const parseShortExpression = (exp) => {
 
 module.exports = {
   isShortExpression,
+  isValidShortExpression,
   parseShortExpression,
-  parseShortValue,
+  parseShortValue: parseShortArgument,
 }
