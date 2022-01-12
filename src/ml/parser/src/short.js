@@ -3,6 +3,7 @@ const {
   expressionTypes,
   isNonArrayObject,
   isArray,
+  isString,
   splitCSV,
 } = require('./utils')
 
@@ -26,7 +27,7 @@ const shortExpressions = {
     parser: ({ name, args = [], as, cast }) => {
       // if (!isString(name, true) || !isArray(args)) {
       if (!isArray(args)) {
-        throw parserError('Invalid arguments supplied to in @fn')
+        throw parserError('Invalid arguments supplied to @fn')
       }
       return { type: expressionTypes.FUNCTION, values: [name, ...args], as, cast }
     },
@@ -35,7 +36,7 @@ const shortExpressions = {
     template: ['values', 'as', 'cast'],
     parser: ({ values = [], as, cast }) => {
       if (!isArray(values)) {
-        throw parserError('Invalid arguments supplied to in @array')
+        throw parserError('Invalid arguments supplied to @array')
       }
       return { type: expressionTypes.ARRAY, values, as, cast }
     },
@@ -44,7 +45,7 @@ const shortExpressions = {
     template: ['values', 'as', 'cast'],
     parser: ({ values = [], as, cast }) => {
       if (!isArray(values)) {
-        throw parserError('Invalid arguments supplied to in @list')
+        throw parserError('Invalid arguments supplied to @list')
       }
       return { type: expressionTypes.LIST, values, as, cast }
     },
@@ -58,14 +59,42 @@ const shortExpressions = {
     parser: ({ value, cast, as }) => ({ type: expressionTypes.PRIMITIVE, value, as, cast }),
   },
   date: {
-    template: ['value', 'as'],
-    parser: ({ value, as }) => ({ type: expressionTypes.CAST, value, as, cast: 'date' }),
+    template: ['year', 'month', 'day', 'as'],
+    parser: ({ year, month, day, as }) => {
+      if (![year, month, day].every(Number.isInteger)) {
+        throw parserError('Invalid arguments supplied to @date')
+      }
+      const value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      if (Number.isNaN(Date.parse(value))) {
+        throw parserError('Invalid arguments supplied to @date')
+      }
+      return { type: expressionTypes.CAST, value, as, cast: 'date' }
+    },
+  },
+  datetime: {
+    template: ['year', 'month', 'day', 'hour', 'minute', 'second', 'tz', 'as'],
+    parser: ({
+      year, month, day,
+      hour = 0, minute = 0, second = 0,
+      tz = 'America/Toronto', as,
+    }) => {
+      if (![year, month, day, hour, minute, second].every(Number.isInteger) || !isString(tz)) {
+        throw parserError('Invalid arguments supplied to @datetime')
+      }
+      const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      // eslint-disable-next-line max-len
+      const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+      if (Number.isNaN(Date.parse(`${date}T${time}Z`))) {
+        throw parserError('Invalid arguments supplied to @datetime')
+      }
+      return { type: expressionTypes.CAST, value: `${date} ${time} ${tz}`, as, cast: 'timestamptz' }
+    },
   },
   operator: {
     template: ['operator', 'operands', 'cast', 'as'],
     parser: ({ operator, operands = [], as, cast }) => {
       if (!isArray(operands)) {
-        throw parserError('Invalid operands supplied to in @operator')
+        throw parserError('Invalid operands supplied to @operator')
       }
       return { type: expressionTypes.OPERATOR, values: [operator, ...operands], as, cast }
     },
@@ -74,7 +103,7 @@ const shortExpressions = {
     template: ['operands', 'cast', 'as'],
     parser: ({ operands = [], as, cast }) => {
       if (!isArray(operands)) {
-        throw parserError('Invalid operands supplied to in @and')
+        throw parserError('Invalid operands supplied to @and')
       }
       return { type: expressionTypes.OPERATOR, values: ['and', ...operands], as, cast }
     },
@@ -83,7 +112,7 @@ const shortExpressions = {
     template: ['operands', 'cast', 'as'],
     parser: ({ operands = [], as, cast }) => {
       if (!isArray(operands)) {
-        throw parserError('Invalid operands supplied to in @or')
+        throw parserError('Invalid operands supplied to @or')
       }
       return { type: expressionTypes.OPERATOR, values: ['or', ...operands], as, cast }
     },

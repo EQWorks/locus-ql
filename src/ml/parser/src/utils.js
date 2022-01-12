@@ -62,7 +62,7 @@ const isArray = (val, { minLength, maxLength, length } = {}) => {
 const isNonArrayObject = val => typeof val === 'object' && val !== null && !isArray(val)
 // const isBool = (val) => typeof val === 'boolean'
 // const isNumber = (val, minVal) => typeof val === 'number' && (!minVal || val >= minVal)
-const isInt = (val, minVal) => Number.isInteger(val) && (!minVal || val >= minVal)
+const isInt = (val, minVal) => Number.isInteger(val) && (minVal === undefined || val >= minVal)
 
 const isObjectExpression = (val, type) => {
   if (!isNonArrayObject(val)) {
