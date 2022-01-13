@@ -3,16 +3,18 @@ const { parseShortExpression } = require('./short')
 const { parseSQLExpression } = require('./sql')
 
 
-const parseQLToTree = parseExpression
+const parseQLToTree = (ql, options) => (
+  options ? parseExpression(ql, { options }) : parseExpression(ql)
+)
 
-const parseSQLToTree = (sql) => {
+const parseSQLToTree = (sql, options) => {
   const ql = parseSQLExpression(sql)
-  return parseExpression(ql)
+  return parseQLToTree(ql, options)
 }
 
-const parseShortToTree = (short) => {
+const parseShortToTree = (short, options) => {
   const ql = parseShortExpression(short)
-  return parseExpression(ql)
+  return parseQLToTree(ql, options)
 }
 
 module.exports = {

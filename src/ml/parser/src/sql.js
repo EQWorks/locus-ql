@@ -296,7 +296,7 @@ astParsers.ParamRef = ({ number, location }, context) => {
   if (number > context.shorts.length) {
     throw sqlParserError({ message: 'Invalid parameter reference or short expression', location })
   }
-  return context.shorts[number - 1]
+  return { type: expTypes.SHORT, value: context.shorts[number - 1] }
 }
 
 astParsers.ListType = ({ items }, context) =>
