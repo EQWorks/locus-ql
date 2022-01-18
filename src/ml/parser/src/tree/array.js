@@ -40,5 +40,6 @@ class ArrayNode extends BaseNode {
     }
   }
 }
+ArrayNode.castable = false
 
 module.exports = ArrayNode

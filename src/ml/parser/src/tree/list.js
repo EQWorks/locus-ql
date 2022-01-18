@@ -40,5 +40,6 @@ class ListNode extends BaseNode {
     }
   }
 }
+ListNode.castable = false
 
 module.exports = ListNode

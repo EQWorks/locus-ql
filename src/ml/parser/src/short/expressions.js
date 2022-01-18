@@ -1,7 +1,7 @@
 const { parserError, expressionTypes, isArray, isString } = require('../utils')
 
 
-module.exports = {
+const shortExpressions = {
   param: {
     template: ['name', 'as', 'cast'],
     parser: ({ name, as, cast }) => ({ type: expressionTypes.PARAMETER, value: name, as, cast }),
@@ -84,6 +84,37 @@ module.exports = {
       return { type: expressionTypes.CAST, value: `${date} ${time} ${tz}`, as, cast: 'timestamptz' }
     },
   },
+  timedelta: {
+    template: ['millisecond', 'second', 'minute', 'hour', 'day', 'week', 'month', 'year', 'as'],
+    parser: ({ millisecond, second, minute, hour, day, week, month, year, as }) => {
+      const intervals = [millisecond, second, minute, hour, day, week, month, year]
+        .reduce((acc, v, i) => {
+          if (v === undefined || v === 0) {
+            return acc
+          }
+          if (!Number.isInteger(v) || v < 0) {
+            throw parserError('Invalid arguments supplied to @timedelta')
+          }
+          acc.push({
+            type: expressionTypes.PRIMITIVE,
+            value: `${v} ${shortExpressions.timedelta.template[i]}`,
+            cast: 'interval',
+          })
+          return acc
+        }, ['+'])
+      if (intervals.length === 1) {
+        return { type: expressionTypes.PRIMITIVE, value: '0 millisecond', cast: 'interval', as }
+      }
+      if (intervals.length === 2) {
+        return { ...intervals[1], as }
+      }
+      return {
+        type: expressionTypes.OPERATOR,
+        values: intervals,
+        as,
+      }
+    },
+  },
   operator: {
     template: ['operator', 'operands', 'cast', 'as'],
     parser: ({ operator, operands = [], as, cast }) => {
@@ -116,3 +147,5 @@ module.exports = {
     parser: ({ sql, cast, as }) => ({ type: expressionTypes.SQL, value: sql, as, cast }),
   },
 }
+
+module.exports = shortExpressions

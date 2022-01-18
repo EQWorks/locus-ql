@@ -4,6 +4,7 @@ const sqlParser = require('pgsql-parser')
 
 const {
   // isArray,
+  isString,
   isNonArrayObject,
   isObjectExpression,
   expressionTypes: expTypes,
@@ -262,12 +263,42 @@ astParsers.CoalesceExpr = ({ args }, context) => ({
   values: ['coalesce', ...args.map(e => parseASTNode(e, context))],
 })
 
-astParsers.TypeCast = ({ arg, typeName }, context) => {
+astParsers.TypeCast = (exp, context) => {
+  const { arg, typeName } = exp
   const value = parseASTNode(arg, context)
-  const cast = parseASTNode(typeName.names.slice(-1)[0], context)
-  // special case of boolean
-  if (['t', 'f'].includes(value) && cast === 'bool') {
+  const cast = parseASTNode(typeName.names.slice(-1)[0], context).toLowerCase()
+  // boolean
+  if (cast === 'bool' && ['t', 'f'].includes(value)) {
     return value === 't'
+  }
+  // interval - 'int quantity unit(s)'
+  if (cast === 'interval' && isString(value)) {
+    const safeValue = value.toLowerCase()
+    if (!/^(\d+\s(millisecond|second|minute|hour|day|week|month|year)s?(\s(?!$)|$))+/
+      .test(safeValue)) {
+      throw sqlParserError({ message: 'interval syntax not supported', expression: exp })
+    }
+    const intervals = safeValue.split(' ').reduce((acc, v, i) => {
+      if (i % 2) {
+        // unit
+        acc[acc.length - 1].value += ` ${v[v.length - 1] === 's' ? v.slice(0, -1) : v}`
+      } else {
+        // quantity
+        acc.push({
+          type: expTypes.PRIMITIVE,
+          value: v,
+          cast,
+        })
+      }
+      return acc
+    }, ['+'])
+    if (intervals.length === 2) {
+      return intervals[1]
+    }
+    return {
+      type: expTypes.OPERATOR,
+      values: intervals,
+    }
   }
   if (!isObjectExpression(value)) {
     return { type: expTypes.PRIMITIVE, value, cast }
