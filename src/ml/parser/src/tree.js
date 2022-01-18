@@ -24,51 +24,6 @@ const operators = require('./operators')
 
 const columnRefRE = /^\w+.\w+$/
 
-const resolveParserOptions = (options = {}) => {
-  if (!isNonArrayObject(options)) {
-    throw parserError('Parser options must be an object')
-  }
-  // options already vetted
-  if (Object.isFrozen(options) && options._safe) {
-    return options
-  }
-  const safeOptions = {
-    keepShorts: true,
-    keepShortsWhenNoParameters: false,
-    keepParamRefs: false,
-    // parameters: undefined,
-    _safe: true,
-  }
-
-  if (options.keepShorts !== undefined) {
-    if (typeof options.keepShorts !== 'boolean') {
-      throw parserError('Parser "keepShorts" options must be a boolean')
-    }
-    safeOptions.keepShorts = options.keepShorts
-  }
-
-  if (options.keepShortsWhenNoParameters !== undefined) {
-    if (typeof options.keepShortsWhenNoParameters !== 'boolean') {
-      throw parserError('Parser "keepShortsWhenNoParameters" options must be a boolean')
-    }
-    safeOptions.keepShortsWhenNoParameters = options.keepShortsWhenNoParameters
-  }
-
-  // if (options.parameters !== undefined) {
-  //   if (!isNonArrayObject(options.parameters)) {
-  //     throw parserError('Parser "parameters" options must be a map of parameter names to QL')
-  //   }
-  //   safeOptions.parameters = Object.entries(options.parameters).reduce((acc, [name, val]) => {
-  //     acc[name] = parseExpression(val)
-  //     return acc
-  //   }, {})
-  //   // shorts must be substituted for params to be fully replaced
-  //   safeOptions.keepShorts = false
-  // }
-  console.log('options', safeOptions)
-  return Object.freeze(safeOptions)
-}
-
 const addToViewColumns = (viewColumns = {}, columnOrColumns) => {
   const columns = isString(columnOrColumns) ? { [columnOrColumns]: true } : columnOrColumns
   if (!('*' in viewColumns || '*' in columns)) {
@@ -117,19 +72,6 @@ const parseJoinExpression = (exp, context) => {
   throw parserError(`Invalid join syntax: ${JSON.stringify(exp)}`)
 }
 
-// const applyExpressions = (conditions, context, cb) => {
-//   try {
-//     // try to parse as expression
-//     return cb(parseExpression(conditions, context))
-//   } catch (err) {
-//     if (!isArray(conditions)) {
-//       throw err
-//     }
-//     // try to parse each array element individually
-//     return conditions.forEach(condition => cb(parseExpression(condition, context)))
-//   }
-// }
-
 /* context
  - refs: scoped to nearest parent SELECT node (or current node is SELECT)
  - ctes: scoped to nearest parent SELECT (inherits from higher scopes)
@@ -138,9 +80,14 @@ const parseJoinExpression = (exp, context) => {
  - options: global
 */
 
-const defaultOptions = {
+const nodeOptions = {
+  parameters: undefined,
+  _safe: true,
+}
+
+const parserOptions = {
   keepShorts: true,
-  keepShortsWhenNoParameters: false,
+  keepParamRefs: false,
   parameters: undefined,
   _safe: true,
 }
@@ -155,7 +102,7 @@ class Node {
 
     this._parentContext = context || {}
     if (!context || !context.options || !context.options._safe) {
-      this._parentContext.options = { ...defaultOptions, ...((context && context.options) || {}) }
+      this._parentContext.options = { ...nodeOptions, ...((context && context.options) || {}) }
     }
     this._context = {
       ...this._parentContext,
@@ -167,23 +114,17 @@ class Node {
     // as property
     if (this.constructor.aliasable) {
       this.as = sanitizeAlias(exp.as) // basic validation
+      this._aliasIsUpdatable = true
     } else if (exp.as !== undefined) {
       throw parserError(`Illegal aliasing: ${exp.as}`)
     }
     // cast property
     if (this.constructor.castable) {
       this.cast = sanitizeCast(exp.cast) // basic validation
+      this._castIsUpdatable = true
     } else if (exp.cast !== undefined) {
       throw parserError(`Illegal casting: ${exp.cast}`)
     }
-  }
-
-  get aliasable() {
-    return this._aliasable !== undefined ? this._aliasable : this.constructor.aliasable
-  }
-
-  get castable() {
-    return this._castable !== undefined ? this._castable : this.constructor.castable
   }
 
   get viewColumns() {
@@ -197,12 +138,64 @@ class Node {
     return new Set(Object.keys(this._context.params))
   }
 
+  hasParameterValues() {
+    return this._context.options.parameters && this.parameters.size > 0
+  }
+
   isRoot() {
     return Object.keys(this._parentContext).every(k => k !== 'options')
   }
 
   hasSelectAncestor() {
     return 'refs' in this._parentContext && 'ctes' in this._parentContext
+  }
+
+  get aliasIsUpdatable() {
+    return this.constructor.aliasable && this._aliasIsUpdatable
+  }
+
+  get castIsUpdatable() {
+    return this.constructor.castable && this._castIsUpdatable
+  }
+
+  _validateCastAndAliasLayer(cast, as) {
+    if (!cast && !as) {
+      return
+    }
+    if (this.as || this._as) {
+      throw parserError(`Invalid alias: ${this.as || this._as}`)
+    }
+    if (cast) {
+      if (!this.castIsUpdatable) {
+        throw parserError(`Illegal casting: ${cast}`)
+      }
+      return
+    }
+    if (!this.aliasIsUpdatable) {
+      throw parserError(`Illegal aliasing: ${as}`)
+    }
+  }
+
+  _populateCastAndAliasProxies(value) {
+    if (this.cast) {
+      return
+    }
+    if (!this.as) {
+      this._as = value.as || value._as
+      this._aliasIsUpdatable = value.aliasIsUpdatable
+    }
+    this._cast = value.cast || value._cast
+    this._castIsUpdatable = value.castIsUpdatable
+  }
+
+  _applyCastAndAliasLayer(cast, as) {
+    this._validateCastAndAliasLayer(cast, as)
+    if (this.cast && cast) {
+      return false
+    }
+    this.cast = cast || this.cast
+    this.as = cast ? as : as || this.as
+    return true
   }
 
   // writes to parent context
@@ -213,7 +206,6 @@ class Node {
       if (!(key in parentContext && key in context)) {
         return
       }
-
       if (key === 'views') {
         Object.entries(context.views).forEach(([view, cols]) => {
           parentContext.views[view] = addToViewColumns(parentContext.views[view], cols)
@@ -222,19 +214,11 @@ class Node {
         // extends parent context with child values, overrides parent when conflicting keys
         Object.assign(parentContext[key], context[key])
       }
-      // // eslint-disable-next-line no-loop-func
-      // Object.entries(context[key]).forEach(([k, v]) => {
-      //   if (key === 'views') {
-      //     parentContext.views[k] = addToViewColumns(parentContext.views[k], v)
-      //     return
-      //   }
-      //   parentContext[key][k] = v
-      // })
       context = parentContext
     }
   }
 
-  registerRef(name, view) {
+  _registerRef(name, view) {
     if (!this.hasSelectAncestor()) {
       // expression evaluated in isolation
       return
@@ -246,7 +230,7 @@ class Node {
     this._parentContext.refs[name] = view in this._parentContext.ctes || view || true
   }
 
-  registerCTE(name) {
+  _registerCTE(name) {
     if (!this.hasSelectAncestor()) {
       // expression evaluated in isolation
       return
@@ -271,12 +255,12 @@ class Node {
     this._parentContext.ctes[name] = {}
   }
 
-  registerParam(name) {
+  _registerParam(name) {
     this._context.params[name] = true
     this._propagateContext('params', -1)
   }
 
-  registerViewColumn(view, column) {
+  _registerViewColumn(view, column) {
     if (!this.hasSelectAncestor()) {
       // expression evaluated in isolation
       this._context.views[view] = addToViewColumns(this._context.views[view], column)
@@ -289,39 +273,32 @@ class Node {
     this._propagateContext('views', -1)
   }
 
-  // hasRef(name) {
-  //   return name in this._context.refs
-  // }
-
-  // hasCTE(name) {
-  //   return name in this._context.ctes
-  // }
-
-  _applyAlias(sql) {
-    // return this.as ? `${sql} AS ${escapeIdentifier(this.as)}` : sql
+  _applyAliasToSQL(sql) {
     return `${sql} AS ${escapeIdentifier(this.as)}`
   }
 
-  _applyCast(sql) {
-    // return this.cast ? `CAST(${sql} AS ${this.cast})` : sql
+  _applyCastToSQL(sql) {
     return `CAST(${sql} AS ${this.cast})`
   }
 
   // to be implemented by child class
   _toSQL() {
-    throw parserError(`_toSQL() must be implemented in element ${this.constructor.name}`)
+    throw parserError(`_toSQL() must be implemented in node ${this.constructor.name}`)
   }
 
   toSQL(options) {
     // if ('sql' in this._memo) {
     //   return this._memo.sql
     // }
-    let sql = this._toSQL(resolveParserOptions(options))
-    if (this.castable && this.cast) {
-      sql = this._applyCast(sql)
+    const safeOptions = !options || !options._safe
+      ? { ...parserOptions, ...(options || {}) }
+      : options
+    let sql = this._toSQL(safeOptions)
+    if (this.constructor.castable && this.cast) {
+      sql = this._applyCastToSQL(sql)
     }
-    if (this.aliasable && this.as) {
-      sql = this._applyAlias(sql)
+    if (this.constructor.aliasable && this.as) {
+      sql = this._applyAliasToSQL(sql)
     }
     // this._memo.sql = trimSQL(sql)
     // return this._memo.sql
@@ -330,7 +307,7 @@ class Node {
 
   // to be implemented by child class
   _toQL() {
-    throw parserError(`_toQL() must be implemented in element ${this.constructor.name}`)
+    throw parserError(`_toQL() must be implemented in node ${this.constructor.name}`)
   }
 
   // return value is immutable
@@ -338,15 +315,42 @@ class Node {
     // if ('ql' in this._memo) {
     //   return this._memo.ql
     // }
-    const ql = this._toQL(resolveParserOptions(options))
-    if (this.castable && this.cast) {
+    const safeOptions = !options || !options._safe
+      ? { ...parserOptions, ...(options || {}) }
+      : options
+    const ql = this._toQL(safeOptions)
+    if (this.constructor.castable && this.cast) {
       ql.cast = this.cast
     }
-    if (this.aliasable && this.as) {
+    if (this.constructor.aliasable && this.as) {
       ql.as = this.as
     }
     // this._memo.ql = Object.freeze(ql)
     return ql
+  }
+
+  // to be implemented by child class
+  _toShort() {
+    throw parserError(`Node ${this.constructor.name} is not parsable into a short expression`)
+  }
+
+  toShort(options) {
+    const safeOptions = !options || !options._safe
+      ? { ...parserOptions, ...(options || {}) }
+      : options
+    const short = this._toShort(safeOptions)
+    if (isString(short)) {
+      return short
+    }
+    const { name, args } = short
+    const namedArgs = Object.entries(args).reduce((acc, [k, v]) => {
+      if (v !== undefined) {
+        // json stringify any value other than short
+        acc.push(`${k}=${isString(v) && isShortExpression(v) ? v : JSON.stringify(v)}`)
+      }
+      return acc
+    }, [])
+    return `@${name}(${namedArgs.join(',')})`
   }
 
   // return value is immutable
@@ -393,12 +397,8 @@ class SelectNode extends Node {
       orderBy,
       limit,
       offset,
-      as,
-      cast,
     } = exp
 
-    // const parentContext = this._context
-    // local context
     this._context = {
       ...this._context,
       ctes: { ...(this._context.ctes || {}) }, // shallow copy to prevent from adding to parent
@@ -440,21 +440,12 @@ class SelectNode extends Node {
     }
 
     // COLUMNS
-    // this.columns = []
-    // if (isNull(columns)) {
-    //   throw parserError('Missing columns object in select expression')
-    // }
-    // applyExpressions(columns, this._context, e => this.columns.push(e))
     if (!isArray(columns, { minLength: 1 })) {
       throw parserError('Missing columns in select expression')
     }
     this.columns = columns.map(e => parseExpression(e, this._context))
 
     // WHERE
-    // this.where = []
-    // if (isNonNull(where)) {
-    //   applyExpressions(where, this._context, e => this.where.push(e))
-    // }
     this.where = []
     if (isNonNull(where)) {
       if (!isArray(where)) {
@@ -465,10 +456,6 @@ class SelectNode extends Node {
     }
 
     // HAVING
-    // this.having = []
-    // if (isNonNull(having)) {
-    //   applyExpressions(having, this._context, e => this.having.push(e))
-    // }
     this.having = []
     if (isNonNull(having)) {
       if (!isArray(having)) {
@@ -478,10 +465,6 @@ class SelectNode extends Node {
     }
 
     // GROUP BY
-    // this.groupBy = []
-    // if (isNonNull(groupBy)) {
-    //   applyExpressions(groupBy, this._context, e => this.groupBy.push(e))
-    // }
     this.groupBy = []
     if (isNonNull(groupBy)) {
       if (!isArray(groupBy)) {
@@ -491,10 +474,6 @@ class SelectNode extends Node {
     }
 
     // ORDER BY
-    // this.orderBy = []
-    // if (isNonNull(orderBy)) {
-    //   applyExpressions(orderBy, this._context, e => this.orderBy.push(e))
-    // }
     this.orderBy = []
     if (isNonNull(orderBy)) {
       if (!isArray(orderBy)) {
@@ -522,24 +501,15 @@ class SelectNode extends Node {
     }
 
     // no casting/aliasing for top-level select
-    if (!this._parentContext) {
-      this._aliasable = false
-      this._castable = false
-    }
-
-    // ALIAS - no collision with cte/subquery in scope allowed (even if inherited from parent)
-    if (isNonNull(as)) {
-      if (!this.aliasable) {
-        throw parserError(`Illegal aliasing: ${as}`)
+    if (!this.hasSelectAncestor()) {
+      if (this.cast) {
+        throw parserError(`Illegal casting: ${this.cast}`)
       }
-      // if (as in this._parentContext.refs || as in this._parentContext.ctes) {
-      //   throw parserError(`Alias already in use: ${as}`)
-      // }
-    }
-
-    // CAST
-    if (isNonNull(cast) && !this.castable) {
-      throw parserError(`Illegal casting: ${cast}`)
+      if (this.as) {
+        throw parserError(`Illegal aliasing: ${this.cast}`)
+      }
+      this._castIsUpdatable = false
+      this._aliasIsUpdatable = false
     }
   }
 
@@ -609,7 +579,7 @@ class SelectNode extends Node {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  _applyAlias(sql) {
+  _applyAliasToSQL(sql) {
     // parent/child class is responsible for implementing the alias syntax
     return sql
   }
@@ -625,17 +595,16 @@ class CTESelectNode extends SelectNode {
       throw parserError(`Missing with alias: ${as}`)
     }
     // register cte against parent context
-    // this._parentContext.ctes[as] = true
-    this.registerCTE(as)
+    this._registerCTE(as)
   }
 
-  _applyAlias(sql) {
+  _applyAliasToSQL(sql) {
     return `${escapeIdentifier(this.as)} AS (${sql})`
   }
 }
 CTESelectNode.castable = false
 
-class ViewSelectNode extends SelectNode {
+class RangeSelectNode extends SelectNode {
   constructor(exp, context) {
     // const parentContext = context
     super(exp, context)
@@ -645,15 +614,15 @@ class ViewSelectNode extends SelectNode {
       throw parserError(`Missing subquery alias: ${as}`)
     }
     // register identifier against parent context
-    // this._parentContext.refs[as] = true
-    this.registerRef(as)
+    this._registerRef(as)
+    this._aliasIsUpdatable = false
   }
 
-  _applyAlias(sql) {
+  _applyAliasToSQL(sql) {
     return `(${sql}) AS ${escapeIdentifier(this.as)}`
   }
 }
-ViewSelectNode.castable = false
+RangeSelectNode.castable = false
 
 class JoinNode extends Node {
   constructor(exp, context) {
@@ -665,6 +634,9 @@ class JoinNode extends Node {
     this.joinType = joinType
     this.view = parseViewExpression(view, this._context)
     this.on = parseExpression(on, this._context)
+    if (this.on.as || this.on._as) {
+      throw parserError(`Invalid alias in join condition: ${this.on.as || this.on._as}`)
+    }
   }
 
   _toSQL() {
@@ -673,7 +645,7 @@ class JoinNode extends Node {
 
   _toQL(options) {
     return {
-      // type: expressionTypes.JOIN,
+      type: expTypes.JOIN,
       joinType: this.joinType,
       view: this.view.toQL(options),
       on: this.on.toQL(options),
@@ -691,16 +663,11 @@ class ViewReferenceNode extends Node {
     if (!isString(view, true)) {
       throw parserError(`Invalid view reference expression: ${view}`)
     }
-    // const ref = as || view
-    // // check that identifier not already in use by any subquery/cte in scope
-    // if (ref in this._context.refs || ref in this._context.ctes) {
-    //   throw parserError(`View identifier already in use: ${view}`)
-    // }
-    // this.view = view
-    // // register identifier against context
-    // this._context.refs[ref] = view in this._context.ctes || view
     this.view = view
-    this.registerRef(as || view, view)
+    this._registerRef(as || view, view)
+    if (as) {
+      this._aliasIsUpdatable = false
+    }
   }
 
   _toSQL() {
@@ -711,6 +678,13 @@ class ViewReferenceNode extends Node {
     return {
       type: expTypes.VIEW,
       view: this.view,
+    }
+  }
+
+  _toShort() {
+    return {
+      name: 'view',
+      args: { name: this.view, as: this.as },
     }
   }
 }
@@ -740,13 +714,7 @@ class ColumnReferenceNode extends Node {
     this.column = column
     this.view = isNull(view) ? Object.keys(this._context.refs)[0] : (view || undefined)
     // register view + column in context
-    this.registerViewColumn(this.view, this.column)
-    // // register view + column in global context
-    // const viewRef = this._context.refs[this.view]
-    // if (viewRef !== true) {
-    //   this._context.views[viewRef] = addToViewColumns(this._context.views[viewRef], column)
-    //   this._propagateContext({ keys: ['views'], depth: -1 })
-    // }
+    this._registerViewColumn(this.view, this.column)
   }
 
   _toSQL() {
@@ -756,6 +724,13 @@ class ColumnReferenceNode extends Node {
 
   _toQL() {
     return { type: expTypes.COLUMN, column: this.column, view: this.view }
+  }
+
+  _toShort() {
+    return {
+      name: 'column',
+      args: { column: this.column, view: this.view, as: this.as, cast: this.cast },
+    }
   }
 }
 
@@ -767,7 +742,7 @@ class ParameterReferenceNode extends Node {
       throw parserError(`Invalid parameter: ${value}`)
     }
     this.name = value.toLowerCase()
-    this.registerParam(this.name)
+    this._registerParam(this.name)
     if (!context.options.parameters) {
       this.value = undefined
       return
@@ -776,42 +751,32 @@ class ParameterReferenceNode extends Node {
       throw parserError(`Missing parameter value: ${this.name}`)
     }
     this.value = parseExpression(context.options.parameters[this.name], this._context)
-    this._aliasable = this.value.aliasable
-    this._castable = this.value.castable
-    if (this.cast && !this.castable) {
-      throw parserError(`Illegal casting: ${this.cast}`)
-    }
-    if (this.as && !this.aliasable) {
-      throw parserError(`Illegal aliasing: ${this.as}`)
-    }
-    // this._context.params[this.name] = true
-    // this._propagateContext({ keys: ['params'], depth: -1 })
+    this.value._validateCastAndAliasLayer(this.cast, this.as)
+    this._populateCastAndAliasProxies(this.value)
   }
 
   _toSQL(options) {
-    // if (options.parameters) {
-    //   if (!(this.name in options.parameters)) {
-    //     throw parserError(`Missing parameter value: ${this.name}`)
-    //   }
-    //   return options.parameters[this.name].toSQL(options)
-    // }
-    if (this.value !== undefined) {
+    if (!options.keepParamRefs && this.value !== undefined) {
       return this.value.toSQL()
     }
     return `@param('${this.name}')`
   }
 
   _toQL(options) {
-    // if (options.parameters) {
-    //   if (!(this.name in options.parameters)) {
-    //     throw parserError(`Missing parameter value: ${this.name}`)
-    //   }
-    //   return this.parameters[this.name].toQL(options)
-    // }
-    if (this.value !== undefined) {
+    if (!options.keepParamRefs && this.value !== undefined) {
       return this.value.toQL()
     }
     return { type: expTypes.PARAMETER, value: this.name }
+  }
+
+  _toShort(options) {
+    if (!options.keepParamRefs && this.value !== undefined) {
+      return this.value.toShort(options)
+    }
+    return {
+      name: 'param',
+      args: { name: this.name, as: this.as, cast: this.cast },
+    }
   }
 }
 
@@ -821,7 +786,13 @@ class ArrayNode extends Node {
     if (!isArray(exp.values)) {
       throw parserError(`Invalid array syntax: ${JSON.stringify(exp)}`)
     }
-    this.values = exp.values.map(e => parseExpression(e, this._context))
+    this.values = exp.values.map((e) => {
+      const value = parseExpression(e, this._context)
+      if (value.as || value._as) {
+        throw parserError(`Invalid alias in array expression: ${value.as || value._as}`)
+      }
+      return value
+    })
   }
 
   _toSQL(options) {
@@ -834,6 +805,13 @@ class ArrayNode extends Node {
       values: this.values.map(e => e.toQL(options)),
     }
   }
+
+  _toShort(options) {
+    return {
+      name: 'array',
+      args: { values: this.values.map(e => e.toShort(options)), as: this.as, cast: this.cast },
+    }
+  }
 }
 
 class ListNode extends Node {
@@ -842,7 +820,13 @@ class ListNode extends Node {
     if (!isArray(exp.values)) {
       throw parserError(`Invalid list syntax: ${JSON.stringify(exp)}`)
     }
-    this.values = exp.values.map(e => parseExpression(e, this._context))
+    this.values = exp.values.map((e) => {
+      const value = parseExpression(e, this._context)
+      if (value.as || value._as) {
+        throw parserError(`Invalid alias in list expression: ${value.as || value._as}`)
+      }
+      return value
+    })
   }
 
   _toSQL(options) {
@@ -853,6 +837,13 @@ class ListNode extends Node {
     return {
       type: expTypes.LIST,
       values: this.values.map(e => e.toQL(options)),
+    }
+  }
+
+  _toShort(options) {
+    return {
+      name: 'list',
+      args: { values: this.values.map(e => e.toShort(options)), as: this.as, cast: this.cast },
     }
   }
 }
@@ -870,7 +861,13 @@ class FunctionNode extends Node {
       throw parserError(`Invalid function: ${name}`)
     }
     const { argsLength, minArgsLength, maxArgsLength, defaultCast } = fn
-    this.args = (args || []).map(e => parseExpression(e, this._context))
+    this.args = (args || []).map((e) => {
+      const arg = parseExpression(e, this._context)
+      if (arg.as || arg._as) {
+        throw parserError(`Invalid alias in function arguments: ${arg.as || arg._as}`)
+      }
+      return arg
+    })
     if (
       argsLength !== undefined
         ? this.args.length !== argsLength
@@ -888,7 +885,7 @@ class FunctionNode extends Node {
     return `${this.name}(${this.args.map(e => e.toSQL(options)).join(', ')})`
   }
 
-  _applyCast(sql) {
+  _applyCastToSQL(sql) {
     const cast = this.cast || this.defaultCast
     return cast ? `CAST(${sql} AS ${cast})` : sql
   }
@@ -897,6 +894,18 @@ class FunctionNode extends Node {
     return {
       type: expTypes.FUNCTION,
       values: [this.name, ...this.args.map(e => e.toQL(options))],
+    }
+  }
+
+  _toShort(options) {
+    return {
+      name: 'function',
+      args: {
+        name: this.name,
+        args: this.args.map(e => e.toShort(options)),
+        as: this.as,
+        cast: this.cast,
+      },
     }
   }
 }
@@ -917,7 +926,13 @@ class OperatorNode extends Node {
     if ((this.name === 'between' || this.name === 'not between') && operands.length !== 3) {
       throw parserError(`Invalid number of operands for operator: ${this.name}`)
     }
-    this.operands = operands.map(e => parseExpression(e, this._context))
+    this.operands = operands.map((e) => {
+      const operand = parseExpression(e, this._context)
+      if (operand.as || operand._as) {
+        throw parserError(`Invalid alias in operand: ${operand.as || operand._as}`)
+      }
+      return operand
+    })
   }
 
   _toSQL(options) {
@@ -937,6 +952,18 @@ class OperatorNode extends Node {
       values: [this.name, ...this.operands.map(e => e.toQL(options))],
     }
   }
+
+  _toShort(options) {
+    return {
+      name: 'operator',
+      args: {
+        operator: this.name,
+        operands: this.operands.map(e => e.toShort(options)),
+        as: this.as,
+        cast: this.cast,
+      },
+    }
+  }
 }
 
 class CastNode extends Node {
@@ -947,19 +974,10 @@ class CastNode extends Node {
       throw parserError(`Invalid casting syntax: ${JSON.stringify(exp)}`)
     }
     this.value = parseExpression(value, this._context)
-    if (!this.value.castable) {
-      throw parserError(`Illegal casting: ${this.cast}`)
-    }
     // fold into underlying value if possible
-    if (this.value.cast || (this.as && !this.value.aliasable)) {
-      return
+    if (this.value._applyCastAndAliasLayer(this.cast, this.as)) {
+      return this.value
     }
-    if (this.as) {
-      this.value.as = this.as
-    }
-    this.value.cast = this.cast
-    this.value._parentContext = this._parentContext
-    return this.value
   }
 
   _toSQL(options) {
@@ -970,6 +988,17 @@ class CastNode extends Node {
     return {
       type: expTypes.CAST,
       value: this.value.toQL(options),
+    }
+  }
+
+  _toShort(options) {
+    return {
+      name: 'cast',
+      args: {
+        value: this.value.toShort(options),
+        as: this.as,
+        cast: this.cast,
+      },
     }
   }
 }
@@ -984,26 +1013,11 @@ class SQLNode extends Node {
     // parse from sql first
     const qlValue = parseSQLExpression(value)
     this.value = parseExpression(qlValue, this._context)
-    this._aliasable = this.value.aliasable
-    this._castable = this.value.castable
-    if (this.cast && !this.castable) {
-      throw parserError(`Illegal casting: ${this.cast}`)
-    }
-    if (this.as && !this.aliasable) {
-      throw parserError(`Illegal aliasing: ${this.as}`)
-    }
     // fold into underlying value if possible
-    if (this.cast) {
-      if (this.value.cast) {
-        return
-      }
-      this.value.cast = this.cast
+    if (this.value._applyCastAndAliasLayer(this.cast, this.as)) {
+      return this.value
     }
-    if (this.as) {
-      this.value.as = this.as
-    }
-    this.value._parentContext = this._parentContext
-    return this.value
+    this._populateCastAndAliasProxies(this.value)
   }
 
   _toSQL(options) {
@@ -1016,6 +1030,17 @@ class SQLNode extends Node {
       value: this.value.toQL(options),
     }
   }
+
+  _toShort(options) {
+    return {
+      name: 'sql',
+      args: {
+        sql: this.value.toSQL(options),
+        as: this.as,
+        cast: this.cast,
+      },
+    }
+  }
 }
 
 class ShortNode extends Node {
@@ -1025,36 +1050,38 @@ class ShortNode extends Node {
     if (!isString(value, true)) {
       throw parserError(`Invalid short expression syntax: ${JSON.stringify(exp)}`)
     }
-    // parse from short first
+    // parse from short first - returns object expression
     const qlValue = parseShortExpression(value)
     this.value = parseExpression(qlValue, this._context)
     this.short = sanitizeShortExpression(value)
-    this._aliasable = this.value.aliasable
-    this._castable = this.value.castable
-    if (this.cast && !this.castable) {
-      throw parserError(`Illegal casting: ${this.cast}`)
-    }
-    if (this.as && !this.aliasable) {
-      throw parserError(`Illegal aliasing: ${this.as}`)
-    }
+    this.value._validateCastAndAliasLayer(this.cast, this.as)
+    this._populateCastAndAliasProxies(this.value)
   }
 
   _toSQL(options) {
-    // return options.keepShorts || (options.keepShortsWhenNoParameters && !this.parameters.size)
-    return options.keepShorts
-      ? this.short
-      : this.value.toSQL(options)
+    return (!options.keepParamRefs && this.hasParameterValues()) || !options.keepShorts
+      ? this.value.toSQL(options)
+      : this.short
   }
 
   _toQL(options) {
-    // if (options.keepShorts || (options.keepShortsWhenNoParameters && !this.parameters.size)) {
-    if (!options.keepShorts) {
+    if ((!options.keepParamRefs && this.hasParameterValues()) || !options.keepShorts) {
       return this.value.toQL(options)
     }
     if (!this.as && !this.cast) {
       return this.short
     }
-    return { type: expTypes.SHORT, value: this.sort }
+    return { type: expTypes.SHORT, value: this.short }
+  }
+
+  _toShort(options) {
+    if (!options.keepParamRefs && this.hasParameterValues()) {
+      if (this.as || this.cast) {
+        throw parserError('Cannot push cast and alias values into short expression')
+      }
+      return this.value.toShort(options)
+    }
+    return this.short
   }
 }
 
@@ -1073,11 +1100,21 @@ class PrimitiveNode extends Node {
   }
 
   _toQL() {
-    // return { type: expTypes.PRIMITIVE, value: this.value }
     if (this.as || this.cast) {
       return { type: expTypes.PRIMITIVE, value: this.value }
     }
     return this.value
+  }
+
+  _toShort(options) {
+    return {
+      name: 'primitive',
+      args: {
+        value: this.value.toShort(options),
+        as: this.as,
+        cast: this.cast,
+      },
+    }
   }
 }
 
@@ -1089,14 +1126,25 @@ class CaseNode extends Node {
     }
     const cases = [...exp.values]
     // first item is either the default result or a cond/res pair
-    this.defaultRes = !isArray(cases[0])
-      ? parseExpression(cases.shift(), this._context)
-      : undefined
+    let defaultRes
+    if (!isArray(cases[0])) {
+      defaultRes = parseExpression(cases.shift(), this._context)
+      if (defaultRes.as || defaultRes._as) {
+        throw parserError(`Invalid alias in case expression: ${defaultRes.as || defaultRes._as}`)
+      }
+    }
+    this.defaultRes = defaultRes
     this.cases = cases.map(([cond, res]) => {
       if (isNull(cond) || res === undefined) {
         throw parserError(`Invalid case syntax: ${JSON.stringify(exp)}`)
       }
-      return [cond, res].map(e => parseExpression(e, this._context))
+      return [cond, res].map((e) => {
+        const value = parseExpression(e, this._context)
+        if (value.as || value._as) {
+          throw parserError(`Invalid alias in case expression: ${value.as || value._as}`)
+        }
+        return value
+      })
     })
   }
 
@@ -1144,6 +1192,9 @@ class SortNode extends Node {
       this.nulls = safeNulls
     }
     this.value = parseExpression(value, this._context)
+    if (this.value.as || this.value._as) {
+      throw parserError(`Invalid alias in sorting expression: ${this.value.as || this.value._as}`)
+    }
   }
 
   _toSQL(options) {
@@ -1166,7 +1217,7 @@ SortNode.castable = false
 
 const nodes = {
   SelectNode,
-  ViewSelectNode,
+  RangeSelectNode,
   CTESelectNode,
   JoinNode,
   ViewReferenceNode,
@@ -1187,7 +1238,7 @@ const nodes = {
 const objectParsers = {}
 // has side effect
 objectParsers[expTypes.SELECT] = (exp, context) => new SelectNode(exp, context)
-objectParsers[expTypes.SELECT_RANGE] = (exp, context) => new ViewSelectNode(exp, context)
+objectParsers[expTypes.SELECT_RANGE] = (exp, context) => new RangeSelectNode(exp, context)
 objectParsers[expTypes.SELECT_CTE] = (exp, context) => new CTESelectNode(exp, context)
 objectParsers[expTypes.JOIN] = (exp, context) => new JoinNode(exp, context)
 objectParsers[expTypes.VIEW] = (exp, context) => new ViewReferenceNode(exp, context)
