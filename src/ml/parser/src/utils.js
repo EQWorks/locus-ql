@@ -248,6 +248,9 @@ const trimSQL = (sql) => {
   return trimmed
 }
 
+// add leading + trailing brackets, as needed
+const wrapSQL = sql => (sql[0] === '(' && sql[sql.length - 1] === ')' ? sql : `(${sql})`)
+
 // identify shorts and replace by $<index>
 // identify user supplied params and throw error
 // remove spaces and new lines
@@ -384,6 +387,7 @@ module.exports = {
   escapeIdentifier,
   splitCSV,
   trimSQL,
+  wrapSQL,
   extractShortExpressionsFromSQL,
   ParserError,
   parserError,
