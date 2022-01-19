@@ -38,23 +38,33 @@ module.exports = {
 
   round: {
     // category: CAT_NUMERIC,
-    argsLength: 1,
+    minArgsLength: 1,
+    maxArgsLength: 2,
   },
 
   // time/date functions
   // field can be year, month, day, hour etc
+  date: {
+    argsLength: 1,
+    // category: CAT_NUMERIC,
+  },
   date_part: { // date_part(field, timestamp)
-    value: 'date_part',
+    argsLength: 2,
     // category: CAT_NUMERIC,
   },
   date_trunc: { // date_trunc(field, timestamp)
-    value: 'date_trunc',
+    argsLength: 2,
     // category: CAT_DATE,
   },
 
   // JSON functions
-  json_extract_path: { // json_extract_path(field, key)
-    value: 'json_extract_path',
+  json_extract_path: { // json_extract_path(field, keys)
     // category: CAT_JSON,
+    minArgsLength: 2,
+  },
+
+  // Geo functions
+  geo_intersect: { // geo_intersect(idA, typeA, idB, typeB)
+    argsLength: 4,
   },
 }

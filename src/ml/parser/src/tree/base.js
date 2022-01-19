@@ -299,24 +299,26 @@ class BaseNode {
 
   // return value is immutable
   to(name, ...args) {
-    // eslint-disable-next-line no-prototype-builtins
-    if (!Object.hasOwnProperty('_parsers') || !(name in this.constructor._parsers)) {
+    if (
+      !Object.prototype.hasOwnProperty.call(this.constructor, '_parsers')
+      || !(name in this.constructor._parsers)
+    ) {
       throw parserError(`Parser "${name}" not registered on node type: ${this.constructor.name}`)
     }
-    const memo = `parser:${name}`
-    if (memo in this._memo) {
-      return this._memo[memo]
-    }
-    this._memo[memo] = this.constructor._parsers(this, ...args)
-    if (typeof this._memo[memo] === 'object') {
-      this._memo[memo] = Object.freeze(this._memo[memo])
-    }
-    return this._memo[memo]
+    // const memo = `parser:${name}`
+    // if (memo in this._memo) {
+    //   return this._memo[memo]
+    // }
+    // this._memo[memo] = this.constructor._parsers[name](this, ...args)
+    // if (typeof this._memo[memo] === 'object') {
+    //   this._memo[memo] = Object.freeze(this._memo[memo])
+    // }
+    // return this._memo[memo]
+    return this.constructor._parsers[name](this, ...args)
   }
 
   static registerParser(name, parser) {
-    // eslint-disable-next-line no-prototype-builtins
-    if (!this.hasOwnProperty('_parsers')) {
+    if (!Object.prototype.hasOwnProperty.call(this, '_parsers')) {
       // _parsers cannot be inherited
       this._parsers = {}
     }
