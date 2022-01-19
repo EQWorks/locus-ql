@@ -24,9 +24,19 @@ shortExpressions.function = {
   parser: ({ name, args = [], as, cast }) => {
     // if (!isString(name, true) || !isArray(args)) {
     if (!isArray(args)) {
-      throw parserError('Invalid arguments supplied to @fn')
+      throw parserError('Invalid arguments supplied to @function')
     }
     return { type: expressionTypes.FUNCTION, values: [name, ...args], as, cast }
+  },
+}
+
+shortExpressions.geo = {
+  template: ['name', 'args', 'as', 'cast'],
+  parser: ({ name, args = [], as, cast }) => {
+    if (!isArray(args)) {
+      throw parserError('Invalid arguments supplied to @geo')
+    }
+    return { type: expressionTypes.GEOMETRY, values: [name, ...args], as, cast }
   },
 }
 

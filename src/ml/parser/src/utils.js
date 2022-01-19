@@ -25,6 +25,7 @@ const expressionTypes = {
   ARRAY: 'array',
   LIST: 'list',
   FUNCTION: 'function',
+  GEOMETRY: 'geometry',
   SORT: 'sort',
   OPERATOR: 'operator',
   AND: 'and',

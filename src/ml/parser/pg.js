@@ -6,6 +6,7 @@ const {
     CastNode,
     ColumnReferenceNode,
     FunctionNode,
+    GeometryNode,
     JoinNode,
     ListNode,
     OperatorNode,
@@ -79,6 +80,12 @@ FunctionNode.registerParser('pg', withOptions((node, options) => {
     name = functions[node.name].pg
   }
   return `${name}(${node.args.map(e => e.to('pg', options)).join(', ')})`
+}))
+
+GeometryNode.registerParser('pg', withOptions((node, options) => {
+  return `
+    'geo:${node.name}:' || ${node.args.map(e => wrapSQL(e.to('pg', options))).join(" || ':' || ")}
+  `
 }))
 
 JoinNode.registerParser('pg', withOptions(node =>

@@ -5,6 +5,7 @@ const CaseNode = require('./case')
 const CastNode = require('./cast')
 const ColumnReferenceNode = require('./column')
 const FunctionNode = require('./function')
+const GeometryNode = require('./geometry')
 const JoinNode = require('./join')
 const ListNode = require('./list')
 const OperatorNode = require('./operator')
@@ -23,6 +24,7 @@ const nodes = {
   CastNode,
   ColumnReferenceNode,
   FunctionNode,
+  GeometryNode,
   JoinNode,
   ListNode,
   OperatorNode,
@@ -52,6 +54,7 @@ objectParsers[expTypes.CASE] = (exp, context) => new CaseNode(exp, context)
 objectParsers[expTypes.ARRAY] = (exp, context) => new ArrayNode(exp, context)
 objectParsers[expTypes.LIST] = (exp, context) => new ListNode(exp, context)
 objectParsers[expTypes.FUNCTION] = (exp, context) => new FunctionNode(exp, context)
+objectParsers[expTypes.GEOMETRY] = (exp, context) => new GeometryNode(exp, context)
 objectParsers[expTypes.SORT] = (exp, context) => new SortNode(exp, context)
 objectParsers[expTypes.OPERATOR] = (exp, context) => new OperatorNode(exp, context)
 objectParsers[expTypes.AND] = (exp, context) => {

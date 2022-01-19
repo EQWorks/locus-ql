@@ -16,14 +16,14 @@ class FunctionNode extends BaseNode {
     if (!fn) {
       throw parserError(`Invalid function: ${name}`)
     }
-    const { argsLength, minArgsLength, maxArgsLength, defaultCast } = fn
     this.args = (args || []).map((e) => {
       const arg = parseExpression(e, this._context)
       if (arg.as || arg._as) {
-        throw parserError(`Invalid alias in function arguments: ${arg.as || arg._as}`)
+        throw parserError(`Invalid alias in function argument: ${arg.as || arg._as}`)
       }
       return arg
     })
+    const { argsLength, minArgsLength, maxArgsLength, defaultCast } = fn
     if (
       argsLength !== undefined
         ? this.args.length !== argsLength
