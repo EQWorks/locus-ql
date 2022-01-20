@@ -82,11 +82,8 @@ FunctionNode.registerParser('pg', withOptions((node, options) => {
   return `${name}(${node.args.map(e => e.to('pg', options)).join(', ')})`
 }))
 
-GeometryNode.registerParser('pg', withOptions((node, options) => {
-  return `
-    'geo:${node.name}:' || ${node.args.map(e => wrapSQL(e.to('pg', options))).join(" || ':' || ")}
-  `
-}))
+GeometryNode.registerParser('pg', withOptions((node, options) =>
+  `'geo:${node.type}:' || ${node.args.map(e => wrapSQL(e.to('pg', options))).join(" || ':' || ")}`))
 
 JoinNode.registerParser('pg', withOptions(node =>
   `${node.joinType} JOIN ${node.view.to('pg')} ON ${wrapSQL(node.on.to('pg'))}`))

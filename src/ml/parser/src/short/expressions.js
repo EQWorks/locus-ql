@@ -71,9 +71,14 @@ shortExpressions.ct = {
 }
 
 shortExpressions.point = {
-  template: ['long', 'lat', 'as', 'cast'],
-  parser: ({ long, lat, as, cast }) =>
-    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.POINT, long, lat], as, cast }),
+  template: ['long', 'lat', 'radius', 'as', 'cast'],
+  parser: ({ long, lat, radius, as, cast }) => {
+    const values = [geometryTypes.POINT, long, lat]
+    if (radius) {
+      values.push(radius)
+    }
+    return { type: expressionTypes.GEOMETRY, values, as, cast }
+  },
 }
 
 shortExpressions.array = {

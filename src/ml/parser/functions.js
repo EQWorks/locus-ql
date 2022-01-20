@@ -1,7 +1,10 @@
-const { useAPIErrorOptions } = require('../../util/api-error')
+const {
+  geoIntersectsParser,
+  geoIntersectionAreaParser,
+  geoIntersectionAreaRatioParser,
+  geoAreaParser,
+} = require('./geo')
 
-
-const { apiError } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
 
 const functions = {}
 
@@ -12,42 +15,24 @@ functions.json_extract_path = {
   },
 }
 
-const geoIntersectParser = engine => (node, options) => {
-  const [idA, typeA, idB, typeB] = node.args.map(e => e.to(engine, options))
-  const safeTypeA = typeA.toLowerCase()
-  const safeTypeB = typeB.toLowerCase()
-  if (
-    [safeTypeA, safeTypeB].some(t =>
-      !['postalcode', 'fsa', 'ct', 'da'].includes(t.slice(1, -1)))
-    || [safeTypeA, safeTypeB].every(t => ['ct', 'da'].includes(t.slice(1, -1)))
-  ) {
-    throw apiError('Intersection not supported', 500)
-  }
-  if (safeTypeA === safeTypeB) {
-    return `${idA} = ${idB}`
-  }
-  let prefixA = 'source'
-  let prefixB = 'query'
-  if (safeTypeA === "'postalcode'" || safeTypeA === "'fsa'") {
-    prefixA = 'query'
-    prefixB = 'source'
-  }
-  return `
-    EXISTS(
-      SELECT *
-      FROM canada_geo.intersection
-      WHERE
-        ${prefixA}_geo_type = ${safeTypeA}
-        AND ${prefixA}_geo_id = ${idA}
-        AND ${prefixB}_geo_type = ${safeTypeB}
-        AND ${prefixB}_geo_id = ${idB}
-    )
-  `
+functions.geo_intersects = {
+  pg: geoIntersectsParser('pg'),
+  trino: geoIntersectsParser('trino'),
 }
 
-functions.geo_intersect = {
-  pg: geoIntersectParser('pg'),
-  trino: geoIntersectParser('trino'),
+functions.geo_intersection_area = {
+  pg: geoIntersectionAreaParser('pg'),
+  trino: geoIntersectionAreaParser('trino'),
+}
+
+functions.geo_intersection_area_ratio = {
+  pg: geoIntersectionAreaRatioParser('pg'),
+  trino: geoIntersectionAreaRatioParser('trino'),
+}
+
+functions.geo_area = {
+  pg: geoAreaParser('pg'),
+  trino: geoAreaParser('trino'),
 }
 
 module.exports = functions

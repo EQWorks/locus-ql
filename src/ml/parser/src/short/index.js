@@ -37,17 +37,21 @@ const resolveArguments = (name, args, kwargs, template) => {
   return resolved
 }
 
-const sortArguments = (name, args) => args.reduce((acc, arg, i) => {
-  if (isNonArrayObject(arg)) {
-    Object.assign(acc.kwargs, arg)
+const sortArguments = (name, args) => {
+  const sorted = args.reduce((acc, arg, i) => {
+    if (isNonArrayObject(arg) && arg._isNamedArg) {
+      Object.assign(acc.kwargs, arg)
+      return acc
+    }
+    if (i !== acc.args.length) {
+      throw parserError(`Positional arguments must be placed ahead of named arguments in @${name}`)
+    }
+    acc.args.push(arg)
     return acc
-  }
-  if (i !== acc.args.length) {
-    throw parserError(`Positional arguments must be placed ahead of named arguments in @${name}`)
-  }
-  acc.args.push(arg)
-  return acc
-}, { args: [], kwargs: {} })
+  }, { args: [], kwargs: {} })
+  delete sorted.kwargs._isNamedArg
+  return sorted
+}
 
 // string value
 const parseShortArgument = (arg) => {
@@ -83,7 +87,7 @@ const parseShortArgument = (arg) => {
       const split = arg.indexOf('=')
       const name = arg.slice(0, split).toLowerCase()
       const value = parseShortArgument(arg.slice(split + 1))
-      return { [name]: value }
+      return { [name]: value, _isNamedArg: true }
     }
     // number
     if (numberRE.test(arg)) {

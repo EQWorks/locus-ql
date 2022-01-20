@@ -23,9 +23,16 @@ class GeometryNode extends BaseNode {
       }
       return arg
     })
-    const { argsLength } = geometry
-    if (argsLength !== undefined && this.args.length !== argsLength) {
-      throw parserError(`Too few or too many arguments in geometry: ${this.name}`)
+    const { argsLength, minArgsLength, maxArgsLength } = geometry
+    if (
+      argsLength !== undefined
+        ? this.args.length !== argsLength
+        : (
+          (minArgsLength && this.args.length < minArgsLength)
+          || (maxArgsLength !== undefined && this.args.length > maxArgsLength)
+        )
+    ) {
+      throw parserError(`Too few or too many arguments in geometry: ${this.type}`)
     }
   }
 

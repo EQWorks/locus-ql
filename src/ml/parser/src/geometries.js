@@ -29,7 +29,7 @@ const geometries = {
   [geometryTypes.CA_PROVINCE]: { argsLength: 1 },
   [geometryTypes.CA_CITY]: { argsLength: 1 },
   [geometryTypes.POI]: { argsLength: 1 },
-  [geometryTypes.POINT]: { argsLength: 2 },
+  [geometryTypes.POINT]: { minArgsLength: 2, maxArgsLength: 3 },
   [geometryTypes.GGID]: { argsLength: 1 },
 }
 

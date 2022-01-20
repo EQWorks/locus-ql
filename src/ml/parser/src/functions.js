@@ -64,7 +64,16 @@ module.exports = {
   },
 
   // Geo functions
-  geo_intersect: { // geo_intersect(idA, typeA, idB, typeB)
-    argsLength: 4,
+  geo_intersects: { // geo_intersect(geoA, geoB)
+    argsLength: 2,
+  },
+  geo_intersection_area: { // geo_intersection_area(geoA, geoB)
+    argsLength: 2,
+  },
+  geo_intersection_area_ratio: { // geo_intersection_area(geoA, geoB)
+    argsLength: 2,
+  },
+  geo_area: { // geo_area(geoA)
+    argsLength: 1,
   },
 }
