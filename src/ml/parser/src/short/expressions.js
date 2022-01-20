@@ -1,3 +1,4 @@
+const { geometryTypes } = require('../geometries')
 const { parserError, expressionTypes, isArray, isString } = require('../utils')
 
 
@@ -22,7 +23,6 @@ shortExpressions.column = {
 shortExpressions.function = {
   template: ['name', 'args', 'as', 'cast'],
   parser: ({ name, args = [], as, cast }) => {
-    // if (!isString(name, true) || !isArray(args)) {
     if (!isArray(args)) {
       throw parserError('Invalid arguments supplied to @function')
     }
@@ -38,6 +38,42 @@ shortExpressions.geo = {
     }
     return { type: expressionTypes.GEOMETRY, values: [name, ...args], as, cast }
   },
+}
+
+shortExpressions.ggid = {
+  template: ['id', 'as', 'cast'],
+  parser: ({ id, as, cast }) =>
+    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.GGID, id], as, cast }),
+}
+
+shortExpressions.fsa = {
+  template: ['fsa', 'as', 'cast'],
+  parser: ({ fsa, as, cast }) =>
+    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_FSA, fsa], as, cast }),
+}
+
+shortExpressions.postalcode = {
+  template: ['pc', 'as', 'cast'],
+  parser: ({ pc, as, cast }) =>
+    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_POSTALCODE, pc], as, cast }),
+}
+
+shortExpressions.da = {
+  template: ['da', 'as', 'cast'],
+  parser: ({ da, as, cast }) =>
+    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_DA, da], as, cast }),
+}
+
+shortExpressions.ct = {
+  template: ['ct', 'as', 'cast'],
+  parser: ({ ct, as, cast }) =>
+    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_CT, ct], as, cast }),
+}
+
+shortExpressions.point = {
+  template: ['long', 'lat', 'as', 'cast'],
+  parser: ({ long, lat, as, cast }) =>
+    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.POINT, long, lat], as, cast }),
 }
 
 shortExpressions.array = {
