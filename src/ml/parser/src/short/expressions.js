@@ -74,7 +74,7 @@ shortExpressions.point = {
   template: ['long', 'lat', 'radius', 'as', 'cast'],
   parser: ({ long, lat, radius, as, cast }) => {
     const values = [geometryTypes.POINT, long, lat]
-    if (radius) {
+    if (radius !== undefined) {
       values.push(radius)
     }
     return { type: expressionTypes.GEOMETRY, values, as, cast }

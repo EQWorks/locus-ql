@@ -5,6 +5,8 @@ const { geometryTypes: geoTypes, geometryTypeValues } = require('./src/geometrie
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
 
+const DEFAULT_POINT_RADIUS = 500 // 500 metres
+
 const geoTypeTables = {
   [geoTypes.CA_FSA]: {
     schema: 'canada_geo',
@@ -74,6 +76,20 @@ const geoTypeTables = {
   },
 }
 
+const getGeoMeta = (geo, { engine = 'pg' } = {}) => (geo.type === geoTypes.GGID
+  ? `
+    SELECT
+      type,
+      local_id AS id
+    FROM ${engine === 'trino' ? 'locus_place.' : ''}config.ggid_map
+    WHERE ggid = ${geo.id}
+  `
+  : `
+    SELECT
+      '${geo.type.replace('ca-', '')}' AS type,
+      ${geo.id || 'NULL'} AS id
+  `)
+
 // geo with table
 const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {}) => {
   const type = geoTypeTables[geo.type]
@@ -92,7 +108,7 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {})
       ? `
         ST_Buffer(
           ST_Point(${type.longColumn}, ${type.latColumn}),
-          ${type.radiusColumn ? `${type.radiusColumn}` : '500'}
+          ${type.radiusColumn !== undefined ? type.radiusColumn : DEFAULT_POINT_RADIUS}
         )
       `
       // pg
@@ -103,7 +119,7 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {})
               ST_SetSRID(ST_Point(${type.longColumn}, ${type.latColumn}), 4326),
               3347
             ),
-            ${type.radiusColumn ? `${type.radiusColumn}` : '500'}
+            ${type.radiusColumn !== undefined ? type.radiusColumn : DEFAULT_POINT_RADIUS}
           ),
           4326
         )
@@ -125,16 +141,16 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {})
   `
 }
 
-const getPointGeometry = (geo, { engine } = {}) => {
+const getPointGeometry = (geo, { engine = 'pg' } = {}) => {
   if (geo.type !== geoTypes.POINT) {
     return
   }
-  return engine === 'trino'
+  const geometry = engine === 'trino'
     // trino
     ? `
       ST_Buffer(
-        ST_Point(CAST(${geo.long} AS double precision), CAST(${geo.lat} AS double precision)),
-        ${geo.radius ? `${geo.radius}` : '500'}
+        ST_Point(CAST(${geo.long} AS double), CAST(${geo.lat} AS double)),
+        ${geo.radius !== undefined ? geo.radius : DEFAULT_POINT_RADIUS}
       )
     `
     // pg
@@ -148,11 +164,12 @@ const getPointGeometry = (geo, { engine } = {}) => {
             ),
             3347
           ),
-          ${geo.radius ? `${geo.radius}` : '500'}
+          ${geo.radius !== undefined ? geo.radius : DEFAULT_POINT_RADIUS}
         ),
         4326
       )
     `
+  return `SELECT ${geometry} AS geometry`
 }
 
 const getGGIDGeometry = (geo, { engine = 'pg' } = {}) => {
@@ -178,6 +195,19 @@ const getGGIDGeometry = (geo, { engine = 'pg' } = {}) => {
     FROM ${engine === 'trino' ? 'locus_place.' : ''}config.ggid_map g
     WHERE g.ggid = ${geo.id}
   `
+}
+
+const getGeometry = (geo, options) => {
+  if (geo.type in geoTypeTables) {
+    return getKnownGeometry(geo, options)
+  }
+  if (geo.type === geoTypes.POINT) {
+    return getPointGeometry(geo, options)
+  }
+  if (geo.type === geoTypes.GGID) {
+    return getGGIDGeometry(geo, options)
+  }
+  throw apiError('Invalid geometry')
 }
 
 const getKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
@@ -213,26 +243,7 @@ const getKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
   `
 }
 
-const getGeometry = (geo, options) => {
-  if (geo.type in geoTypeTables) {
-    return getKnownGeometry(geo, options)
-  }
-  if (geo.type === geoTypes.POINT) {
-    return getPointGeometry(geo, options)
-  }
-  if (geo.type === geoTypes.GGID) {
-    return getGGIDGeometry(geo, options)
-  }
-  throw apiError('Invalid geometry')
-}
-
-const getIntersectionGeometry = (geoA, geoB, options) => {
-  // use pre-computed if available
-  const preComputed = getKnownIntersectionGeometry(geoA, geoB)
-  if (preComputed) {
-    return preComputed
-  }
-  // get individual geometries
+const getCalculatedIntersectionGeometry = (geoA, geoB, options) => {
   const [geomA, geomB] = [geoA, geoB].map(geo => getGeometry(geo, options))
   return `
     SELECT
@@ -243,6 +254,105 @@ const getIntersectionGeometry = (geoA, geoB, options) => {
     WHERE NOT ST_IsEmpty(i.geometry)
   `
 }
+
+// one of the geo's has type GGID
+const getGGIDKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
+  // no need to try if one of the types not in getTables
+  const typesWithKnownIntersections = [
+    geoTypes.CA_FSA,
+    geoTypes.CA_POSTALCODE,
+    geoTypes.CA_CT,
+    geoTypes.CA_DA,
+    geoTypes.GGID,
+  ]
+  if (
+    (geoA.type !== geoTypes.GGID || !typesWithKnownIntersections.includes(geoB.type))
+    && (geoB.type !== geoTypes.GGID || !typesWithKnownIntersections.includes(geoA.type))
+  ) {
+    return
+  }
+  const geoAMeta = getGeoMeta(geoA, { engine })
+  const geoBMeta = getGeoMeta(geoB, { engine })
+  const geometry = engine === 'trino'
+    ? 'ST_GeomFromBinary(intersect_geometry)'
+    : 'intersect_geometry'
+
+  return `
+    WITH geo_a AS (${geoAMeta}),
+    geo_b AS (${geoBMeta})
+    SELECT
+      CASE
+        WHEN (SELECT type FROM geo_a) = (SELECT type FROM geo_b) THEN (
+          SELECT
+            (${getGeometry(geoA, { engine })})
+          WHERE (SELECT id FROM geo_a) = (SELECT id FROM geo_b)
+        )
+        WHEN
+          (SELECT type FROM geo_a) IN ('fsa', 'postalcode')
+          AND (SELECT type FROM geo_b) IN ('fsa', 'ct', 'da')
+        THEN (
+          SELECT
+            ${geometry}
+          FROM ${engine === 'trino' ? 'locus_place.' : ''}canada_geo.intersection
+          WHERE
+            query_geo_type = (SELECT type FROM geo_a)
+            AND query_geo_id = (SELECT id FROM geo_a)
+            AND source_geo_type = (SELECT type FROM geo_b)
+            AND source_geo_id = (SELECT id FROM geo_b)
+        )
+        WHEN
+          (SELECT type FROM geo_b) IN ('fsa', 'postalcode')
+          AND (SELECT type FROM geo_a) IN ('fsa', 'ct', 'da')
+        THEN (
+          SELECT
+            ${geometry}
+          FROM ${engine === 'trino' ? 'locus_place.' : ''}canada_geo.intersection
+          WHERE
+            query_geo_type = (SELECT type FROM geo_b)
+            AND query_geo_id = (SELECT id FROM geo_b)
+            AND source_geo_type = (SELECT type FROM geo_a)
+            AND source_geo_id = (SELECT id FROM geo_a)
+        )
+        ELSE (${getCalculatedIntersectionGeometry(geoA, geoB, { engine })})
+        END AS geometry
+  `
+}
+
+const getSameTypeIntersectionGeometry = (geoA, geoB, options) => {
+  if (geoA.type !== geoB.type) {
+    return
+  }
+  return geoA.type in geoTypeTables || geoA.type === geoTypes.GGID
+    ? `
+      SELECT
+        (${getGeometry(geoA, options)})
+      WHERE ${geoA.id} = ${geoB.id}
+    `
+    : `
+      SELECT
+        i.geometry
+      FROM (
+        SELECT
+          CASE
+            WHEN
+              ${geoA.radius !== undefined ? geoA.radius : DEFAULT_POINT_RADIUS}
+              <= ${geoB.radius !== undefined ? geoB.radius : DEFAULT_POINT_RADIUS}
+            THEN (${getGeometry(geoA, options)})
+            ELSE (${getGeometry(geoB, options)})
+          END AS geometry
+        WHERE
+          ${geoA.long} = ${geoB.long}
+          AND ${geoA.lat} = ${geoB.lat}
+      ) AS i
+      WHERE NOT ST_IsEmpty(i.geometry)
+    `
+}
+
+const getIntersectionGeometry = (geoA, geoB, options) =>
+  getSameTypeIntersectionGeometry(geoA, geoB, options) // same geo type
+  || getKnownIntersectionGeometry(geoA, geoB, options) // ggid + types in intersection tbl
+  || getGGIDKnownIntersectionGeometry(geoA, geoB, options) // types in intersection tbl
+  || getCalculatedIntersectionGeometry(geoA, geoB, options) // compute on demand
 
 // sql: "'geo:<type>:' || (arg)[ || ':' || (arg)]"
 const extractGeoSQLValues = (sql) => {
@@ -343,7 +453,7 @@ const parseGeoSQL = (sql) => {
     return { type, id: args[0] }
   }
   // point
-  if (args.length !== 2) {
+  if (args.length !== 2 && args.length !== 3) {
     throw apiError('Invalid point geometry', 400)
   }
   return { type, long: args[0], lat: args[1], radius: args[2] }
