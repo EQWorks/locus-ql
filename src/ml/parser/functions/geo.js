@@ -463,14 +463,14 @@ const geoIntersectsParser = engine => (node, options) => {
   const { whitelabelID, customerID } = options
   const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const geometry = getIntersectionGeometry(geoA, geoB, { whitelabelID, customerID, engine })
-  return `EXISTS (${geometry})`
+  return `SELECT EXISTS (${geometry}) AS geo_intersects`
 }
 
 const geoIntersectionAreaParser = engine => (node, options) => {
   const { whitelabelID, customerID } = options
   const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const geometry = getIntersectionGeometry(geoA, geoB, { whitelabelID, customerID, engine })
-  return `ST_Area((${geometry}))`
+  return `SELECT ST_Area((${geometry})) AS geo_intersection_area`
 }
 
 const geoIntersectionAreaRatioParser = engine => (node, options) => {
@@ -478,14 +478,14 @@ const geoIntersectionAreaRatioParser = engine => (node, options) => {
   const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const numerator = getIntersectionGeometry(geoA, geoB, { whitelabelID, customerID, engine })
   const denominator = getGeometry(geoB, { whitelabelID, customerID, engine })
-  return `ST_Area((${numerator})) / ST_Area((${denominator}))`
+  return `SELECT ST_Area((${numerator})) / ST_Area((${denominator})) AS geo_intersection_area_ratio`
 }
 
 const geoAreaParser = engine => (node, options) => {
   const { whitelabelID, customerID } = options
   const [geo] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const geometry = getGeometry(geo, { whitelabelID, customerID, engine })
-  return `ST_Area((${geometry}))`
+  return `SELECT ST_Area((${geometry})) AS geo_area`
 }
 
 module.exports = {

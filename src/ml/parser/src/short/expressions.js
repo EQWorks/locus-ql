@@ -70,6 +70,12 @@ shortExpressions.ct = {
     ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_CT, ct], as, cast }),
 }
 
+shortExpressions.poi = {
+  template: ['poi', 'as', 'cast'],
+  parser: ({ poi, as, cast }) =>
+    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.POI, poi], as, cast }),
+}
+
 shortExpressions.point = {
   template: ['long', 'lat', 'radius', 'as', 'cast'],
   parser: ({ long, lat, radius, as, cast }) => {
