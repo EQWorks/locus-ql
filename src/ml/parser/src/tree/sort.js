@@ -1,4 +1,4 @@
-const { isNonNull, sanitizeString, parserError, wrapSQL, expressionTypes } = require('../utils')
+const { isNonNull, sanitizeString, parserError, expressionTypes } = require('../utils')
 const { parseExpression } = require('./expression')
 const BaseNode = require('./base')
 
@@ -35,7 +35,7 @@ class SortNode extends BaseNode {
   _toSQL(options) {
     const direction = this.direction ? ` ${this.direction}` : ''
     const nulls = this.nulls ? ` NULLS ${this.nulls}` : ''
-    return wrapSQL(this.value.toSQL(options)) + direction + nulls
+    return this.value.toSQL(options) + direction + nulls
   }
 
   _toQL(options) {

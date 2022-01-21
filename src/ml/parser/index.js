@@ -12,7 +12,7 @@ const parseQueryToTree = (query, { type = 'ql', keepShorts = true, parameters } 
   }
   const options = { keepShorts, parameters }
   const tree = type === 'ql' ? parseQLToTree(query, options) : parseSQLToTree(query, options)
-  if (!(tree instanceof SelectNode)) {
+  if (!(tree instanceof SelectNode) || tree.as || tree.cast) {
     throw apiError('Query must be of type select', 400)
   }
   return tree

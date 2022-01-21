@@ -76,4 +76,7 @@ module.exports = {
   geo_area: { // geo_area(geoA)
     argsLength: 1,
   },
+  geo_distance: { // geo_distance(geoA, geoB)
+    argsLength: 2,
+  },
 }

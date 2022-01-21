@@ -1,4 +1,4 @@
-const { isNull, isArray, parserError, wrapSQL, expressionTypes } = require('../utils')
+const { isNull, isArray, parserError, expressionTypes } = require('../utils')
 const { parseExpression } = require('./expression')
 const BaseNode = require('./base')
 
@@ -38,9 +38,9 @@ class CaseNode extends BaseNode {
       CASE
         ${this.case
     .map(([cond, res]) =>
-      `WHEN ${wrapSQL(cond.toSQL(options))} THEN ${wrapSQL(res.toSQL(options))}`)
+      `WHEN ${cond.toSQL(options)} THEN ${res.toSQL(options)}`)
     .join('\n')}
-        ${this.defaultRes ? `ELSE ${wrapSQL(this.defaultRes.toSQL(options))}` : ''}
+        ${this.defaultRes ? `ELSE ${this.defaultRes.toSQL(options)}` : ''}
       END
     `
   }

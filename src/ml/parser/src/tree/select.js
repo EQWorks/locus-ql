@@ -8,7 +8,6 @@ const {
   escapeIdentifier,
   parserError,
   expressionTypes,
-  wrapSQL,
 } = require('../utils')
 const {
   parseExpression,
@@ -160,18 +159,6 @@ class SelectNode extends BaseNode {
       }
       this.offset = offset
     }
-
-    // no casting/aliasing for top-level select
-    if (!this.hasSelectAncestor()) {
-      if (this.cast) {
-        throw parserError(`Illegal casting: ${this.cast}`)
-      }
-      if (this.as) {
-        throw parserError(`Illegal aliasing: ${this.cast}`)
-      }
-      this._castIsUpdatable = false
-      this._aliasIsUpdatable = false
-    }
   }
 
   _toSQL(options) {
@@ -180,9 +167,7 @@ class SelectNode extends BaseNode {
       : ''
 
     const distinct = this.distinct ? 'DISTINCT' : ''
-    const columns = this.columns
-      .map(e => (e.as ? e.toSQL(options) : wrapSQL(e.toSQL(options))))
-      .join(', ')
+    const columns = this.columns.map(e => e.toSQL(options)).join(', ')
 
     const from = this.from ? `FROM ${this.from.toSQL(options)}` : ''
 
@@ -191,11 +176,11 @@ class SelectNode extends BaseNode {
       : ''
 
     const where = this.where.length ?
-      `WHERE ${this.where.map(e => wrapSQL(e.toSQL(options))).join(' AND ')}`
+      `WHERE ${this.where.map(e => e.toSQL(options)).join(' AND ')}`
       : ''
 
     const having = this.having.length
-      ? `HAVING ${this.having.map(e => wrapSQL(e.toSQL(options))).join(' AND ')}`
+      ? `HAVING ${this.having.map(e => e.toSQL(options)).join(' AND ')}`
       : ''
 
     const groupBy = this.groupBy.length
@@ -209,7 +194,7 @@ class SelectNode extends BaseNode {
     const limit = this.limit !== undefined ? `LIMIT ${this.limit}` : ''
     const offset = this.offset !== undefined ? `OFFSET ${this.offset}` : ''
 
-    return `
+    const sql = `
       ${ctes}
       SELECT ${distinct}
         ${columns}
@@ -222,6 +207,8 @@ class SelectNode extends BaseNode {
       ${limit}
       ${offset}
     `
+
+    return this.isRoot() && !this.as && !this.cast ? sql : `(${sql})`
   }
 
   _toQL(options) {
@@ -240,12 +227,6 @@ class SelectNode extends BaseNode {
       offset: this.offset,
     }
   }
-
-  // eslint-disable-next-line class-methods-use-this
-  _applyAliasToSQL(sql) {
-    // parent/child class is responsible for implementing the alias syntax
-    return sql
-  }
 }
 
 class CTESelectNode extends SelectNode {
@@ -259,10 +240,11 @@ class CTESelectNode extends SelectNode {
     }
     // register cte against parent context
     this._registerCTE(as)
+    this._aliasIsUpdatable = false
   }
 
   _applyAliasToSQL(sql) {
-    return `${escapeIdentifier(this.as)} AS (${sql})`
+    return `${escapeIdentifier(this.as)} AS ${sql}`
   }
 }
 CTESelectNode.castable = false
@@ -279,10 +261,6 @@ class RangeSelectNode extends SelectNode {
     // register identifier against parent context
     this._registerRef(as)
     this._aliasIsUpdatable = false
-  }
-
-  _applyAliasToSQL(sql) {
-    return `(${sql}) AS ${escapeIdentifier(this.as)}`
   }
 }
 RangeSelectNode.castable = false

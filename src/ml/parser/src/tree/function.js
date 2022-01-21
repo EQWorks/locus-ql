@@ -1,4 +1,4 @@
-const { isArray, sanitizeString, parserError, wrapSQL, expressionTypes } = require('../utils')
+const { isArray, sanitizeString, parserError, expressionTypes } = require('../utils')
 const functions = require('../functions')
 const { parseExpression } = require('./expression')
 const BaseNode = require('./base')
@@ -43,7 +43,7 @@ class FunctionNode extends BaseNode {
 
   _applyCastToSQL(sql) {
     const cast = this.cast || this.defaultCast
-    return cast ? `CAST(${wrapSQL(sql)} AS ${cast})` : sql
+    return cast ? `CAST(${sql} AS ${cast})` : sql
   }
 
   _toQL(options) {

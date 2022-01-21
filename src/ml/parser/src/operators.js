@@ -10,6 +10,8 @@ module.exports = {
   '<': {},
   '<=': {},
   '=': {},
+  '!=': {},
+  '<>': {},
   in: {},
   'not in': {},
   like: {},
@@ -21,11 +23,15 @@ module.exports = {
   between: {},
   'not between': {},
 
+  // string operators
+  '||': {},
+
   // arithmatic operators
   '+': {},
   '-': {},
   '*': {},
   '/': {},
+  '%': {},
 
   // JSON operators
   // 'json array element at': { value: '->' },

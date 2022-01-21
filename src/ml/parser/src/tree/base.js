@@ -6,7 +6,6 @@ const {
   sanitizeCast,
   escapeIdentifier,
   trimSQL,
-  wrapSQL,
   parserError,
 } = require('../utils')
 const { isShortExpression } = require('../short')
@@ -87,7 +86,8 @@ class BaseNode {
   }
 
   isRoot() {
-    return Object.keys(this._parentContext).every(k => k !== 'options')
+    // parent context only contains 'options' when root node
+    return Object.keys(this._parentContext).length === 1
   }
 
   hasSelectAncestor() {
@@ -218,11 +218,11 @@ class BaseNode {
   }
 
   _applyAliasToSQL(sql) {
-    return `${wrapSQL(sql)} AS ${escapeIdentifier(this.as)}`
+    return `${sql} AS ${escapeIdentifier(this.as)}`
   }
 
   _applyCastToSQL(sql) {
-    return `CAST(${wrapSQL(sql)} AS ${this.cast})`
+    return `CAST(${sql} AS ${this.cast})`
   }
 
   // to be implemented by child class

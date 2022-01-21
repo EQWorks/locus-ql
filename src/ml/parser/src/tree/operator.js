@@ -30,14 +30,17 @@ class OperatorNode extends BaseNode {
   }
 
   _toSQL(options) {
+    let sql
     if (this.name === 'between' || this.name === 'not between') {
       const [oA, oB, oC] = this.operands
-      return `${oA.toSQL(options)} ${this.name} ${oB.toSQL(options)} AND ${oC.toSQL(options)}`
+      sql = `${oA.toSQL(options)} ${this.name} ${oB.toSQL(options)} AND ${oC.toSQL(options)}`
+    } else {
+      sql = this.operands.map((o, i, all) => {
+        const op = i > 0 || all.length === 1 ? `${this.name} ` : ''
+        return op + o.toSQL(options)
+      }).join(' ')
     }
-    return this.operands.map((o, i, all) => {
-      const op = i > 0 || all.length === 1 ? `${this.name} ` : ''
-      return op + o.toSQL(options)
-    }).join(' ')
+    return this.isRoot() && !this.as && !this.cast ? sql : `(${sql})`
   }
 
   _toQL(options) {

@@ -14,7 +14,7 @@ class GeometryNode extends BaseNode {
     this.type = sanitizeString(type)
     const geometry = geometries[this.type]
     if (!geometry) {
-      throw parserError(`Invalid function: ${type}`)
+      throw parserError(`Invalid geometry type: ${type}`)
     }
     this.args = args.map((e) => {
       const arg = parseExpression(e, this._context)

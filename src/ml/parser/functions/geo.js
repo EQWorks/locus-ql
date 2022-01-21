@@ -77,18 +77,18 @@ const geoTypeTables = {
 }
 
 const getGeoMeta = (geo, { engine = 'pg' } = {}) => (geo.type === geoTypes.GGID
-  ? `
+  ? `(
     SELECT
       type,
       local_id AS id
     FROM ${engine === 'trino' ? 'locus_place.' : ''}config.ggid_map
     WHERE ggid = ${geo.id}
-  `
-  : `
+  )`
+  : `(
     SELECT
       '${geo.type.replace('ca-', '')}' AS type,
       ${geo.id || 'NULL'} AS id
-  `)
+  )`)
 
 // geo with table
 const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {}) => {
@@ -122,7 +122,7 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {})
   if (!geometries.length) {
     throw apiError('Geometry is not retrievable')
   }
-  return `
+  return `(
     SELECT
       COALESCE(${geometries.join(', ')}) AS geometry
     FROM ${engine === 'trino' ? 'locus_place.' : ''}${type.schema}.${type.table}
@@ -132,7 +132,7 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {})
     ? `AND ${type.whitelabelColumn} = ${whitelabelID}`
     : ''}
       ${customerID && type.customerColumn ? `AND ${type.customerColumn} = ${customerID}` : ''}
-  `
+  )`
 }
 
 const getPointGeometry = (geo, { engine = 'pg' } = {}) => {
@@ -157,7 +157,7 @@ const getPointGeometry = (geo, { engine = 'pg' } = {}) => {
         ${geo.radius !== undefined ? geo.radius : DEFAULT_POINT_RADIUS}
       )
     `
-  return `SELECT ${geometry} AS geometry`
+  return `(SELECT ${geometry} AS geometry)`
 }
 
 const getGGIDGeometry = (geo, { engine = 'pg' } = {}) => {
@@ -167,18 +167,14 @@ const getGGIDGeometry = (geo, { engine = 'pg' } = {}) => {
   return `
     SELECT
       CASE g.type
-        WHEN 'fsa' THEN (
+        WHEN 'fsa' THEN
           ${getKnownGeometry({ type: geoTypes.CA_FSA, id: 'g.local_id' }, { engine })}
-        )
-        WHEN 'postalcode' THEN (
+        WHEN 'postalcode' THEN
           ${getKnownGeometry({ type: geoTypes.CA_POSTALCODE, id: 'g.local_id' }, { engine })}
-        )
-        WHEN 'ct' THEN (
+        WHEN 'ct' THEN
           ${getKnownGeometry({ type: geoTypes.CA_CT, id: 'g.local_id' }, { engine })}
-        )
-        WHEN 'da' THEN (
+        WHEN 'da' THEN
           ${getKnownGeometry({ type: geoTypes.CA_DA, id: 'g.local_id' }, { engine })}
-        )
       END AS geometry
     FROM ${engine === 'trino' ? 'locus_place.' : ''}config.ggid_map g
     WHERE g.ggid = ${geo.id}
@@ -219,7 +215,7 @@ const getKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
   const geometry = engine === 'trino'
     ? 'ST_GeomFromBinary(intersect_geometry)'
     : 'intersect_geometry'
-  return `
+  return `(
     SELECT
       ${geometry} AS geometry
     FROM ${engine === 'trino' ? 'locus_place.' : ''}canada_geo.intersection
@@ -228,19 +224,19 @@ const getKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
       AND query_geo_id = ${query.id}
       AND source_geo_type = '${source.type}'
       AND source_geo_id = ${source.id}
-  `
+  )`
 }
 
 const getCalculatedIntersectionGeometry = (geoA, geoB, options) => {
   const [geomA, geomB] = [geoA, geoB].map(geo => getGeometry(geo, options))
-  return `
+  return `(
     SELECT
       i.geometry
     FROM (
-      SELECT ST_Intersection((${geomA}), (${geomB})) AS geometry
+      SELECT ST_Intersection(${geomA}, ${geomB}) AS geometry
     ) AS i
     WHERE NOT ST_IsEmpty(i.geometry)
-  `
+  )`
 }
 
 // one of the geo's has type GGID
@@ -265,14 +261,14 @@ const getGGIDKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) =>
     ? 'ST_GeomFromBinary(intersect_geometry)'
     : 'intersect_geometry'
 
-  return `
-    WITH geo_a AS (${geoAMeta}),
-    geo_b AS (${geoBMeta})
+  return `(
+    WITH geo_a AS ${geoAMeta},
+    geo_b AS ${geoBMeta}
     SELECT
       CASE
         WHEN (SELECT type FROM geo_a) = (SELECT type FROM geo_b) THEN (
           SELECT
-            (${getGeometry(geoA, { engine })})
+            ${getGeometry(geoA, { engine })}
           WHERE (SELECT id FROM geo_a) = (SELECT id FROM geo_b)
         )
         WHEN
@@ -303,7 +299,7 @@ const getGGIDKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) =>
         )
         ELSE (${getCalculatedIntersectionGeometry(geoA, geoB, { engine })})
         END AS geometry
-  `
+  )`
 }
 
 const getSameTypeIntersectionGeometry = (geoA, geoB, options) => {
@@ -311,12 +307,12 @@ const getSameTypeIntersectionGeometry = (geoA, geoB, options) => {
     return
   }
   return geoA.type in geoTypeTables || geoA.type === geoTypes.GGID
-    ? `
+    ? `(
       SELECT
-        (${getGeometry(geoA, options)})
+        ${getGeometry(geoA, options)}
       WHERE ${geoA.id} = ${geoB.id}
-    `
-    : `
+    )`
+    : `(
       SELECT
         i.geometry
       FROM (
@@ -325,15 +321,15 @@ const getSameTypeIntersectionGeometry = (geoA, geoB, options) => {
             WHEN
               ${geoA.radius !== undefined ? geoA.radius : DEFAULT_POINT_RADIUS}
               <= ${geoB.radius !== undefined ? geoB.radius : DEFAULT_POINT_RADIUS}
-            THEN (${getGeometry(geoA, options)})
-            ELSE (${getGeometry(geoB, options)})
+            THEN ${getGeometry(geoA, options)}
+            ELSE ${getGeometry(geoB, options)}
           END AS geometry
         WHERE
           ${geoA.long} = ${geoB.long}
           AND ${geoA.lat} = ${geoB.lat}
       ) AS i
       WHERE NOT ST_IsEmpty(i.geometry)
-    `
+    )`
 }
 
 const getIntersectionGeometry = (geoA, geoB, options) =>
@@ -451,14 +447,14 @@ const geoIntersectsParser = engine => (node, options) => {
   const { whitelabelID, customerID } = options
   const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const geometry = getIntersectionGeometry(geoA, geoB, { whitelabelID, customerID, engine })
-  return `SELECT EXISTS (${geometry}) AS geo_intersects`
+  return `(SELECT EXISTS ${geometry} AS geo_intersects)`
 }
 
 const geoIntersectionAreaParser = engine => (node, options) => {
   const { whitelabelID, customerID } = options
   const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const geometry = getIntersectionGeometry(geoA, geoB, { whitelabelID, customerID, engine })
-  return `SELECT ST_Area((${geometry})) AS geo_intersection_area`
+  return `(SELECT ST_Area(${geometry}) AS geo_intersection_area)`
 }
 
 const geoIntersectionAreaRatioParser = engine => (node, options) => {
@@ -466,14 +462,22 @@ const geoIntersectionAreaRatioParser = engine => (node, options) => {
   const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const numerator = getIntersectionGeometry(geoA, geoB, { whitelabelID, customerID, engine })
   const denominator = getGeometry(geoB, { whitelabelID, customerID, engine })
-  return `SELECT ST_Area((${numerator})) / ST_Area((${denominator})) AS geo_intersection_area_ratio`
+  return `(SELECT ST_Area(${numerator}) / ST_Area(${denominator}) AS geo_intersection_area_ratio)`
 }
 
 const geoAreaParser = engine => (node, options) => {
   const { whitelabelID, customerID } = options
   const [geo] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
   const geometry = getGeometry(geo, { whitelabelID, customerID, engine })
-  return `SELECT ST_Area((${geometry})) AS geo_area`
+  return `(SELECT ST_Area(${geometry}) AS geo_area)`
+}
+
+const geoDistanceParser = engine => (node, options) => {
+  const { whitelabelID, customerID } = options
+  const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
+  const geometryA = getGeometry(geoA, { whitelabelID, customerID, engine })
+  const geometryB = getGeometry(geoB, { whitelabelID, customerID, engine })
+  return `(SELECT ST_Distance(${geometryA}, ${geometryB}) AS geo_distance)`
 }
 
 module.exports = {
@@ -481,4 +485,5 @@ module.exports = {
   geoIntersectionAreaParser,
   geoIntersectionAreaRatioParser,
   geoAreaParser,
+  geoDistanceParser,
 }

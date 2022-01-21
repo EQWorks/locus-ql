@@ -26,14 +26,14 @@ class ParameterReferenceNode extends BaseNode {
 
   _toSQL(options) {
     if (!options.keepParamRefs && this.value !== undefined) {
-      return this.value.toSQL()
+      return this.value.toSQL(options)
     }
     return `@param('${this.name}')`
   }
 
   _toQL(options) {
     if (!options.keepParamRefs && this.value !== undefined) {
-      return this.value.toQL()
+      return this.value.toQL(options)
     }
     return {
       type: expressionTypes.PARAMETER,

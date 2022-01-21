@@ -1,4 +1,4 @@
-const { sanitizeString, parserError, wrapSQL, expressionTypes } = require('../utils')
+const { sanitizeString, parserError, expressionTypes } = require('../utils')
 const { parseExpression, parseViewExpression } = require('./expression')
 const BaseNode = require('./base')
 
@@ -18,8 +18,8 @@ class JoinNode extends BaseNode {
     }
   }
 
-  _toSQL() {
-    return `${this.joinType} JOIN ${this.view.toSQL()} ON ${wrapSQL(this.on.toSQL())}`
+  _toSQL(options) {
+    return `${this.joinType} JOIN ${this.view.toSQL(options)} ON ${this.on.toSQL(options)}`
   }
 
   _toQL(options) {

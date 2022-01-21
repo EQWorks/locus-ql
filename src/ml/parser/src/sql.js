@@ -11,14 +11,11 @@ const {
   parserError,
   extractShortExpressionsFromSQL,
 } = require('./utils')
-const { geometryTypeValues } = require('./geometries')
 
 
 const intervalLiteralRE =
   /^\s*(\d+\s+(millisecond|second|minute|hour|day|week|month|year)(\s+(?!$)|\s*$))+/
-const geometryLiteralRE = new RegExp(`^\\s*(${
-  Object.keys(geometryTypeValues).join('|')
-})\\s+\\(([-.a-z0-9]+(\\s+(?!\\))|\\s*\\)))+\\s*$`)
+const geometryLiteralRE = /^\s*[-a-z]+\s+[(]([-.a-z0-9]+(\s+(?![)])|\s*[)]))+\s*$/
 
 const findApproxLocation = (exp) => {
   // look for location in current exp (ast node)

@@ -3,6 +3,7 @@ const {
   geoIntersectionAreaParser,
   geoIntersectionAreaRatioParser,
   geoAreaParser,
+  geoDistanceParser,
 } = require('./geo')
 
 
@@ -33,6 +34,11 @@ functions.geo_intersection_area_ratio = {
 functions.geo_area = {
   pg: geoAreaParser('pg'),
   trino: geoAreaParser('trino'),
+}
+
+functions.geo_distance = {
+  pg: geoDistanceParser('pg'),
+  trino: geoDistanceParser('trino'),
 }
 
 module.exports = functions
