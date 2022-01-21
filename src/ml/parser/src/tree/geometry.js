@@ -37,7 +37,7 @@ class GeometryNode extends BaseNode {
   }
 
   _toSQL(options) {
-    return `@geo('${this.type}', [${this.args.map(e => e.toSQL(options)).join(', ')}])`
+    return `geometry('${this.type}', ${this.args.map(e => e.toSQL(options)).join(', ')})`
   }
 
   _toQL(options) {

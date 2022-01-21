@@ -11,7 +11,14 @@ const {
   parserError,
   extractShortExpressionsFromSQL,
 } = require('./utils')
+const { geometryTypeValues } = require('./geometries')
 
+
+const intervalLiteralRE =
+  /^\s*(\d+\s+(millisecond|second|minute|hour|day|week|month|year)(\s+(?!$)|\s*$))+/
+const geometryLiteralRE = new RegExp(`^\\s*(${
+  Object.keys(geometryTypeValues).join('|')
+})\\s+\\(([-.a-z0-9]+(\\s+(?!\\))|\\s*\\)))+\\s*$`)
 
 const findApproxLocation = (exp) => {
   // look for location in current exp (ast node)
@@ -255,6 +262,12 @@ astParsers.FuncCall = ({ funcname, args, over, location }, context) => {
   }
   const name = parseASTNode(funcname[0], context).toLowerCase()
   const parsedArgs = args ? args.map(e => parseASTNode(e, context)) : []
+  if (name === 'geometry') {
+    return {
+      type: expTypes.GEOMETRY,
+      values: parsedArgs,
+    }
+  }
   return { type: expTypes.FUNCTION, values: [name, ...parsedArgs] }
 }
 
@@ -274,11 +287,10 @@ astParsers.TypeCast = (exp, context) => {
   // interval - 'int quantity unit(s)'
   if (cast === 'interval' && isString(value)) {
     const safeValue = value.toLowerCase()
-    if (!/^(\d+\s(millisecond|second|minute|hour|day|week|month|year)s?(\s(?!$)|$))+/
-      .test(safeValue)) {
-      throw sqlParserError({ message: 'interval syntax not supported', expression: exp })
+    if (!intervalLiteralRE.test(safeValue)) {
+      throw sqlParserError({ message: 'Interval syntax not supported', expression: exp })
     }
-    const intervals = safeValue.split(' ').reduce((acc, v, i) => {
+    const intervals = safeValue.split(' ').filter(v => v !== '').reduce((acc, v, i) => {
       if (i % 2) {
         // unit
         acc[acc.length - 1].value += ` ${v[v.length - 1] === 's' ? v.slice(0, -1) : v}`
@@ -298,6 +310,18 @@ astParsers.TypeCast = (exp, context) => {
     return {
       type: expTypes.OPERATOR,
       values: intervals,
+    }
+  }
+  // geometry - '<type> (arg arg arg)'
+  if (cast === 'geometry' && isString(value)) {
+    const safeValue = value.toLowerCase()
+    if (!geometryLiteralRE.test(safeValue)) {
+      throw sqlParserError({ message: 'Geometry syntax not supported', expression: exp })
+    }
+    const [type, args] = safeValue.split('(')
+    return {
+      type: expTypes.GEOMETRY,
+      values: [type.trim(), ...args.split(')')[0].toUpperCase().split(' ').filter(v => v !== '')],
     }
   }
   if (!isObjectExpression(value)) {

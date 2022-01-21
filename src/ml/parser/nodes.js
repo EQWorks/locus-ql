@@ -61,7 +61,7 @@ const functionParser = engine => withOptions((node, options) => {
 })
 
 const geometryParser = engine => withOptions((node, options) => {
-  const args = node.args.map(e => wrapSQL(e.to(engine, options))).join(" || ':' || ")
+  const args = node.args.map(e => `UPPER(${wrapSQL(e.to(engine, options))})`).join(" || ':' || ")
   return `'geo:${node.type}:' || ${args}`
 })
 
