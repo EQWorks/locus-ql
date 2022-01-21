@@ -113,15 +113,9 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {})
       `
       // pg
       : `
-        ST_Transform(
-          ST_Buffer(
-            ST_Transform(
-              ST_SetSRID(ST_Point(${type.longColumn}, ${type.latColumn}), 4326),
-              3347
-            ),
-            ${type.radiusColumn !== undefined ? type.radiusColumn : DEFAULT_POINT_RADIUS}
-          ),
-          4326
+        ST_Buffer(
+          ST_SetSRID(ST_Point(${type.longColumn}, ${type.latColumn}), 4326),
+          ${type.radiusColumn !== undefined ? type.radiusColumn : DEFAULT_POINT_RADIUS}
         )
       `)
   }
@@ -155,18 +149,12 @@ const getPointGeometry = (geo, { engine = 'pg' } = {}) => {
     `
     // pg
     : `
-      ST_Transform(
-        ST_Buffer(
-          ST_Transform(
-            ST_SetSRID(
-              ST_Point(CAST(${geo.long} AS double precision), CAST(${geo.lat} AS double precision)),
-              4326
-            ),
-            3347
-          ),
-          ${geo.radius !== undefined ? geo.radius : DEFAULT_POINT_RADIUS}
+      ST_Buffer(
+        ST_SetSRID(
+          ST_Point(CAST(${geo.long} AS double precision), CAST(${geo.lat} AS double precision)),
+          4326
         ),
-        4326
+        ${geo.radius !== undefined ? geo.radius : DEFAULT_POINT_RADIUS}
       )
     `
   return `SELECT ${geometry} AS geometry`
