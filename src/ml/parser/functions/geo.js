@@ -1,6 +1,6 @@
 /* eslint-disable no-continue */
-const { useAPIErrorOptions } = require('../../util/api-error')
-const { geometryTypes: geoTypes, geometryTypeValues } = require('./src/geometries')
+const { useAPIErrorOptions } = require('../../../util/api-error')
+const { geometryTypes: geoTypes, geometryTypeValues } = require('../src/geometries')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
