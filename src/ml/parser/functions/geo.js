@@ -450,6 +450,11 @@ const parseGeoSQL = (sql) => {
   return { type, long: args[0], lat: args[1], radius: args[2] }
 }
 
+const geoParser = engine => (node, options) => {
+  const args = node.args.map(e => `UPPER(${e.to(engine, options)})`).join(" || ':' || ")
+  return `'geo:${node.type}:' || ${args}`
+}
+
 const geoIntersectsParser = engine => (node, options) => {
   const { whitelabelID, customerID } = options
   const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))
@@ -488,6 +493,7 @@ const geoDistanceParser = engine => (node, options) => {
 }
 
 module.exports = {
+  geoParser,
   geoIntersectsParser,
   geoIntersectionAreaParser,
   geoIntersectionAreaRatioParser,

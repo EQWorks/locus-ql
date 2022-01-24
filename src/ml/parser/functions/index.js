@@ -1,4 +1,5 @@
 const {
+  geoParser,
   geoIntersectsParser,
   geoIntersectionAreaParser,
   geoIntersectionAreaRatioParser,
@@ -15,6 +16,13 @@ functions.json_extract_path = {
     return `json_extract(${json}, '$.${path.join('.')}')`
   },
 }
+
+functions.geometry = {
+  pg: geoParser('pg'),
+  trino: geoParser('trino'),
+}
+
+functions.geo = functions.geometry
 
 functions.geo_intersects = {
   pg: geoIntersectsParser('pg'),

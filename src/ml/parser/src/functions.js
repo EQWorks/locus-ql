@@ -1,8 +1,13 @@
-module.exports = {
+const { parserError } = require('./utils')
+const { geometries } = require('./geometries')
+
+
+const functions = {
   any: { argsLength: 1 },
   all: { argsLength: 1 },
   nullif: { argsLength: 2 },
   coalesce: { minArgsLength: 1 },
+
   // aggregation functions
   sum: {
     // category: CAT_NUMERIC,
@@ -62,21 +67,46 @@ module.exports = {
     // category: CAT_JSON,
     minArgsLength: 2,
   },
+}
 
-  // Geo functions
-  geo_intersects: { // geo_intersect(geoA, geoB)
-    argsLength: 2,
-  },
-  geo_intersection_area: { // geo_intersection_area(geoA, geoB)
-    argsLength: 2,
-  },
-  geo_intersection_area_ratio: { // geo_intersection_area(geoA, geoB)
-    argsLength: 2,
-  },
-  geo_area: { // geo_area(geoA)
-    argsLength: 1,
-  },
-  geo_distance: { // geo_distance(geoA, geoB)
-    argsLength: 2,
+// Geo functions
+functions.geometry = {
+  validate: (node) => {
+    const [type, ...args] = node.args
+    const geometry = geometries[type]
+    if (!geometry) {
+      throw parserError(`Invalid geometry type: ${type}`)
+    }
+    const { argsLength, minArgsLength, maxArgsLength } = geometry
+    if (
+      argsLength !== undefined
+        ? args.length !== argsLength
+        : (
+          (minArgsLength && args.length < minArgsLength)
+          || (maxArgsLength !== undefined && args.length > maxArgsLength)
+        )
+    ) {
+      throw parserError(`Too few or too many arguments in geometry: ${type}`)
+    }
   },
 }
+
+functions.geo = functions.geometry
+
+functions.geo_intersects = { // geo_intersect(geoA, geoB)
+  argsLength: 2,
+}
+functions.geo_intersection_area = { // geo_intersection_area(geoA, geoB)
+  argsLength: 2,
+}
+functions.geo_intersection_area_ratio = { // geo_intersection_area(geoA, geoB)
+  argsLength: 2,
+}
+functions.geo_area = { // geo_area(geoA)
+  argsLength: 1,
+}
+functions.geo_distance = { // geo_distance(geoA, geoB)
+  argsLength: 2,
+}
+
+module.exports = functions

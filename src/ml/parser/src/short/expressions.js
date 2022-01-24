@@ -36,54 +36,63 @@ shortExpressions.geo = {
     if (!isArray(args)) {
       throw parserError('Invalid arguments supplied to @geo')
     }
-    return { type: expressionTypes.GEOMETRY, values: [name, ...args], as, cast }
+    return { type: expressionTypes.FUNCTION, values: ['geometry', name, ...args], as, cast }
   },
 }
 
 shortExpressions.ggid = {
   template: ['id', 'as', 'cast'],
   parser: ({ id, as, cast }) =>
-    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.GGID, id], as, cast }),
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.GGID, id], as, cast }),
 }
 
 shortExpressions.fsa = {
   template: ['fsa', 'as', 'cast'],
   parser: ({ fsa, as, cast }) =>
-    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_FSA, fsa], as, cast }),
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_FSA, fsa], as, cast }),
 }
 
 shortExpressions.postalcode = {
   template: ['pc', 'as', 'cast'],
-  parser: ({ pc, as, cast }) =>
-    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_POSTALCODE, pc], as, cast }),
+  parser: ({ pc, as, cast }) => ({
+    type: expressionTypes.FUNCTION,
+    values: ['geometry', geometryTypes.CA_POSTALCODE, pc],
+    as,
+    cast,
+  }),
 }
 
 shortExpressions.da = {
   template: ['da', 'as', 'cast'],
   parser: ({ da, as, cast }) =>
-    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_DA, da], as, cast }),
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_DA, da], as, cast }),
 }
 
 shortExpressions.ct = {
   template: ['ct', 'as', 'cast'],
   parser: ({ ct, as, cast }) =>
-    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.CA_CT, ct], as, cast }),
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_CT, ct], as, cast }),
 }
 
 shortExpressions.poi = {
-  template: ['poi', 'as', 'cast'],
-  parser: ({ poi, as, cast }) =>
-    ({ type: expressionTypes.GEOMETRY, values: [geometryTypes.POI, poi], as, cast }),
+  template: ['poi', 'radius', 'as', 'cast'],
+  parser: ({ poi, radius, as, cast }) => {
+    const values = ['geometry', geometryTypes.POI, poi]
+    if (radius !== undefined) {
+      values.push(radius)
+    }
+    return { type: expressionTypes.FUNCTION, values, as, cast }
+  },
 }
 
 shortExpressions.point = {
   template: ['long', 'lat', 'radius', 'as', 'cast'],
   parser: ({ long, lat, radius, as, cast }) => {
-    const values = [geometryTypes.POINT, long, lat]
+    const values = ['geometry', geometryTypes.POINT, long, lat]
     if (radius !== undefined) {
       values.push(radius)
     }
-    return { type: expressionTypes.GEOMETRY, values, as, cast }
+    return { type: expressionTypes.FUNCTION, values, as, cast }
   },
 }
 

@@ -23,7 +23,7 @@ class FunctionNode extends BaseNode {
       }
       return arg
     })
-    const { argsLength, minArgsLength, maxArgsLength, defaultCast } = fn
+    const { argsLength, minArgsLength, maxArgsLength, defaultCast, validate } = fn
     if (
       argsLength !== undefined
         ? this.args.length !== argsLength
@@ -35,6 +35,9 @@ class FunctionNode extends BaseNode {
       throw parserError(`Too few or too many arguments in function: ${this.name}`)
     }
     this.defaultCast = defaultCast
+    if (validate) {
+      validate(this)
+    }
   }
 
   _toSQL(options) {

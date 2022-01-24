@@ -259,12 +259,6 @@ astParsers.FuncCall = ({ funcname, args, over, location }, context) => {
   }
   const name = parseASTNode(funcname[0], context).toLowerCase()
   const parsedArgs = args ? args.map(e => parseASTNode(e, context)) : []
-  if (name === 'geometry') {
-    return {
-      type: expTypes.GEOMETRY,
-      values: parsedArgs,
-    }
-  }
   return { type: expTypes.FUNCTION, values: [name, ...parsedArgs] }
 }
 
@@ -317,8 +311,12 @@ astParsers.TypeCast = (exp, context) => {
     }
     const [type, args] = safeValue.split('(')
     return {
-      type: expTypes.GEOMETRY,
-      values: [type.trim(), ...args.split(')')[0].toUpperCase().split(' ').filter(v => v !== '')],
+      type: expTypes.FUNCTION,
+      values: [
+        'geometry',
+        type.trim(),
+        ...args.split(')')[0].toUpperCase().split(' ').filter(v => v !== ''),
+      ],
     }
   }
   if (!isObjectExpression(value)) {
