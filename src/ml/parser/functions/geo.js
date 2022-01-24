@@ -100,22 +100,33 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {})
   if (type.geometryColumn) {
     geometries.push(engine === 'trino'
       ? `ST_GeomFromBinary(${type.geometryColumn})`
-      : `ST_MakeValid(${type.geometryColumn})`)
+      : `ST_Transform(ST_MakeValid(${type.geometryColumn}), 3347)`)
   }
   if (type.longColumn && type.latColumn) {
+    let radius
+    if (geo.radius !== undefined) {
+      radius = geo.radius
+    } else if (type.radiusColumn) {
+      radius = type.radiusColumn
+    } else {
+      radius = DEFAULT_POINT_RADIUS
+    }
     geometries.push(engine === 'trino'
       // trino
       ? `
         ST_Buffer(
           ST_Point(${type.longColumn}, ${type.latColumn}),
-          ${type.radiusColumn !== undefined ? type.radiusColumn : DEFAULT_POINT_RADIUS}
+          ${radius}
         )
       `
       // pg
       : `
-        ST_Buffer(
-          ST_SetSRID(ST_Point(${type.longColumn}, ${type.latColumn}), 4326),
-          ${type.radiusColumn !== undefined ? type.radiusColumn : DEFAULT_POINT_RADIUS}
+        ST_Transform(
+          ST_Buffer(
+            ST_SetSRID(ST_Point(${type.longColumn}, ${type.latColumn}), 4326),
+            ${radius}
+          ),
+          3347
         )
       `)
   }
@@ -149,12 +160,15 @@ const getPointGeometry = (geo, { engine = 'pg' } = {}) => {
     `
     // pg
     : `
-      ST_Buffer(
-        ST_SetSRID(
-          ST_Point(CAST(${geo.long} AS double precision), CAST(${geo.lat} AS double precision)),
-          4326
+      ST_Transform(
+        ST_Buffer(
+          ST_SetSRID(
+            ST_Point(CAST(${geo.long} AS double precision), CAST(${geo.lat} AS double precision)),
+            4326
+          ),
+          ${geo.radius !== undefined ? geo.radius : DEFAULT_POINT_RADIUS}
         ),
-        ${geo.radius !== undefined ? geo.radius : DEFAULT_POINT_RADIUS}
+        3347
       )
     `
   return `(SELECT ${geometry} AS geometry)`
@@ -214,7 +228,7 @@ const getKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
   }
   const geometry = engine === 'trino'
     ? 'ST_GeomFromBinary(intersect_geometry)'
-    : 'intersect_geometry'
+    : 'ST_Transform(intersect_geometry, 3347)'
   return `(
     SELECT
       ${geometry} AS geometry
@@ -241,17 +255,10 @@ const getCalculatedIntersectionGeometry = (geoA, geoB, options) => {
 
 // one of the geo's has type GGID
 const getGGIDKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
-  // no need to try if one of the types not in getTables
-  const typesWithKnownIntersections = [
-    geoTypes.CA_FSA,
-    geoTypes.CA_POSTALCODE,
-    geoTypes.CA_CT,
-    geoTypes.CA_DA,
-    geoTypes.GGID,
-  ]
+  // no need to try if one of the types not in geo tables
   if (
-    (geoA.type !== geoTypes.GGID || !typesWithKnownIntersections.includes(geoB.type))
-    && (geoB.type !== geoTypes.GGID || !typesWithKnownIntersections.includes(geoA.type))
+    (geoA.type !== geoTypes.GGID || !(geoB.intersectionQueryType || geoB.intersectionSourceType))
+    && (geoB.type !== geoTypes.GGID || !(geoA.intersectionQueryType || geoA.intersectionSourceType))
   ) {
     return
   }
@@ -259,7 +266,7 @@ const getGGIDKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) =>
   const geoBMeta = getGeoMeta(geoB, { engine })
   const geometry = engine === 'trino'
     ? 'ST_GeomFromBinary(intersect_geometry)'
-    : 'intersect_geometry'
+    : 'ST_Transform(intersect_geometry, 3347)'
 
   return `(
     WITH geo_a AS ${geoAMeta},
