@@ -451,8 +451,9 @@ const parseGeoSQL = (sql) => {
 }
 
 const geoParser = engine => (node, options) => {
-  const args = node.args.map(e => `UPPER(${e.to(engine, options)})`).join(" || ':' || ")
-  return `'geo:${node.type}:' || ${args}`
+  const [type, ...args] = node.args
+  const parsedArgs = args.map(e => `UPPER(${e.to(engine, options)})`).join(" || ':' || ")
+  return `'geo:${type.value}:' || ${parsedArgs}`
 }
 
 const geoIntersectsParser = engine => (node, options) => {

@@ -12,9 +12,7 @@ class ViewReferenceNode extends BaseNode {
     }
     this.view = view
     this._registerRef(as || view, view)
-    if (as) {
-      this._aliasIsUpdatable = false
-    }
+    this._aliasIsUpdatable = false
   }
 
   _toSQL() {

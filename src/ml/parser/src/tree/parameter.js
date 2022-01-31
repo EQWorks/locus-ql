@@ -12,27 +12,35 @@ class ParameterReferenceNode extends BaseNode {
     }
     this.name = value.toLowerCase()
     this._registerParam(this.name)
-    if (!context.options.parameters) {
+    if (!this._context.options.parameters || !(this.name in this._context.options.parameters)) {
+      if (this._context.options.paramsMustHaveValues) {
+        throw parserError(`Missing parameter value: ${this.name}`)
+      }
       this.value = undefined
       return
     }
-    if (!(this.name in context.options.parameters)) {
-      throw parserError(`Missing parameter value: ${this.name}`)
-    }
-    this.value = parseExpression(context.options.parameters[this.name], this._context)
+    this.value = parseExpression(this._context.options.parameters[this.name], this._context)
     this.value._validateCastAndAliasLayer(this.cast, this.as)
     this._populateCastAndAliasProxies(this.value)
   }
 
   _toSQL(options) {
-    if (!options.keepParamRefs && this.value !== undefined) {
+    // substitute with param value
+    if (!options.keepParamRefs) {
+      if (this.value === undefined) {
+        throw parserError(`Missing parameter value: ${this.name}`)
+      }
       return this.value.toSQL(options)
     }
     return `@param('${this.name}')`
   }
 
   _toQL(options) {
-    if (!options.keepParamRefs && this.value !== undefined) {
+    // substitute with param value
+    if (!options.keepParamRefs) {
+      if (this.value === undefined) {
+        throw parserError(`Missing parameter value: ${this.name}`)
+      }
       return this.value.toQL(options)
     }
     return {
@@ -42,7 +50,11 @@ class ParameterReferenceNode extends BaseNode {
   }
 
   _toShort(options) {
-    if (!options.keepParamRefs && this.value !== undefined) {
+    // substitute with param value
+    if (!options.keepParamRefs) {
+      if (this.value === undefined) {
+        throw parserError(`Missing parameter value: ${this.name}`)
+      }
       return this.value.toShort(options)
     }
     return {

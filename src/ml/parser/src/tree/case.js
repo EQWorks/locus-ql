@@ -36,7 +36,7 @@ class CaseNode extends BaseNode {
   _toSQL(options) {
     return `
       CASE
-        ${this.case
+        ${this.cases
     .map(([cond, res]) =>
       `WHEN ${cond.toSQL(options)} THEN ${res.toSQL(options)}`)
     .join('\n')}

@@ -14,7 +14,7 @@ const {
 
 
 const intervalLiteralRE =
-  /^\s*(\d+\s+(millisecond|second|minute|hour|day|week|month|year)(\s+(?!$)|\s*$))+/
+  /^\s*(\d+\s+(millisecond|second|minute|hour|day|week|month|year)s?(\s+(?!$)|\s*$))+/
 const geometryLiteralRE = /^\s*[-a-z]+\s+[(]([-.a-z0-9]+(\s+(?![)])|\s*[)]))+\s*$/
 
 const findApproxLocation = (exp) => {
@@ -275,6 +275,18 @@ astParsers.TypeCast = (exp, context) => {
   if (cast === 'bool' && ['t', 'f'].includes(value)) {
     return value === 't'
   }
+  if (cast === 'date') {
+    return {
+      type: expTypes.FUNCTION,
+      values: ['date', value],
+    }
+  }
+  if (cast === 'timestamp' || cast === 'timestamptz') {
+    return {
+      type: expTypes.FUNCTION,
+      values: ['datetime', value],
+    }
+  }
   // interval - 'int quantity unit(s)'
   if (cast === 'interval' && isString(value)) {
     const safeValue = value.toLowerCase()
@@ -282,25 +294,24 @@ astParsers.TypeCast = (exp, context) => {
       throw sqlParserError({ message: 'Interval syntax not supported', expression: exp })
     }
     const intervals = safeValue.split(' ').filter(v => v !== '').reduce((acc, v, i) => {
-      if (i % 2) {
-        // unit
-        acc[acc.length - 1].value += ` ${v[v.length - 1] === 's' ? v.slice(0, -1) : v}`
-      } else {
+      if (i % 2 === 0) {
         // quantity
         acc.push({
-          type: expTypes.PRIMITIVE,
-          value: v,
-          cast,
+          type: expTypes.FUNCTION,
+          values: ['timedelta', undefined, parseInt(v)],
         })
+      } else {
+        // unit
+        acc[acc.length - 1].values[1] = `${v[v.length - 1] === 's' ? v.slice(0, -1) : v}`
       }
       return acc
-    }, ['+'])
-    if (intervals.length === 2) {
-      return intervals[1]
+    }, [])
+    if (intervals.length === 1) {
+      return intervals[0]
     }
     return {
       type: expTypes.OPERATOR,
-      values: intervals,
+      values: ['+', ...intervals],
     }
   }
   // geometry - '<type> (arg arg arg)'
@@ -349,7 +360,7 @@ astParsers.ParamRef = ({ number, location }, context) => {
   return { type: expTypes.SHORT, value: context.shorts[number - 1] }
 }
 
-astParsers.ListType = ({ items }, context) =>
+astParsers.List = ({ items }, context) =>
   ({ type: expTypes.LIST, values: items.map(e => parseASTNode(e, context)) })
 
 astParsers.A_ArrayExpr = ({ elements }, context) =>
@@ -364,7 +375,7 @@ astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
   const safeKind = kind.slice(6).toLowerCase()
   let operator = parseASTNode(name[0], context).toLowerCase()
   const left = lexpr ? parseASTNode(lexpr, context) : undefined
-  let right = parseASTNode(rexpr, context)
+  const right = parseASTNode(rexpr, context)
 
   switch (safeKind) {
     case 'op':
@@ -391,7 +402,7 @@ astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
     case 'op_any':
     case 'op_all':
       // left operator kind (right)
-      right = { type: expTypes.FUNCTION, values: [safeKind.slice(3), right] }
+      operator = [operator, safeKind.slice(3)]
       break
 
     case 'of':
@@ -401,7 +412,7 @@ astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
 
     case 'in':
       // left [operator - NOT] in right
-      operator = `${operator === '<>' ? 'not ' : ''}in`
+      operator = operator === '<>' ? ['not', 'in'] : 'in'
       break
 
     case 'distinct':
@@ -452,6 +463,9 @@ const parseSQLToAST = (sql) => {
     const [ast] = sqlParser.parse(`SELECT ${sql}`)
     return ast.RawStmt.stmt.SelectStmt.targetList[0].ResTarget.val
   } catch (_) {
+    if (/^syntax error at or near "\$\d+"$/.test(originalError.message)) {
+      throw parserError('Invalid short expression or parameter reference')
+    }
     throw parserError(`SQL error: ${originalError.message}`)
   }
 }

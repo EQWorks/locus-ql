@@ -20,13 +20,13 @@ class ShortNode extends BaseNode {
   }
 
   _toSQL(options) {
-    return (!options.keepParamRefs && this.hasParameterValues()) || !options.keepShorts
+    return (!options.keepParamRefs && this.parameters.size > 0) || !options.keepShorts
       ? this.value.toSQL(options)
       : this.short
   }
 
   _toQL(options) {
-    if ((!options.keepParamRefs && this.hasParameterValues()) || !options.keepShorts) {
+    if ((!options.keepParamRefs && this.parameters.size > 0) || !options.keepShorts) {
       return this.value.toQL(options)
     }
     if (!this.as && !this.cast) {
@@ -39,7 +39,7 @@ class ShortNode extends BaseNode {
   }
 
   _toShort(options) {
-    if (!options.keepParamRefs && this.hasParameterValues()) {
+    if (!options.keepParamRefs && this.parameters.size > 0) {
       if (this.as || this.cast) {
         throw parserError('Cannot push cast and alias values into short expression')
       }

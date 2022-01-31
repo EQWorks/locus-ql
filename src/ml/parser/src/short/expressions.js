@@ -136,7 +136,7 @@ shortExpressions.date = {
     if (Number.isNaN(Date.parse(value))) {
       throw parserError('Invalid arguments supplied to @date')
     }
-    return { type: expressionTypes.CAST, value, as, cast: 'date' }
+    return { type: expressionTypes.FUNCTION, values: ['date', value], as }
   },
 }
 
@@ -145,7 +145,7 @@ shortExpressions.datetime = {
   parser: ({
     year, month, day,
     hour = 0, minute = 0, second = 0,
-    tz = 'America/Toronto', as,
+    tz = 'UTC', as,
   }) => {
     if (![year, month, day, hour, minute, second].every(Number.isInteger) || !isString(tz)) {
       throw parserError('Invalid arguments supplied to @datetime')
@@ -157,7 +157,7 @@ shortExpressions.datetime = {
       throw parserError('Invalid arguments supplied to @datetime')
     }
     // timestamp in trino
-    return { type: expressionTypes.CAST, value: `${date} ${time} ${tz}`, as, cast: 'timestamptz' }
+    return { type: expressionTypes.FUNCTION, values: ['datetime', `${date} ${time} ${tz}`], as }
   },
 }
 
@@ -173,21 +173,20 @@ shortExpressions.timedelta = {
           throw parserError('Invalid arguments supplied to @timedelta')
         }
         acc.push({
-          type: expressionTypes.PRIMITIVE,
-          value: `${v} ${shortExpressions.timedelta.template[i]}`,
-          cast: 'interval',
+          type: expressionTypes.FUNCTION,
+          values: ['timedelta', shortExpressions.timedelta.template[i], v],
         })
         return acc
-      }, ['+'])
-    if (intervals.length === 1) {
-      return { type: expressionTypes.PRIMITIVE, value: '0 millisecond', cast: 'interval', as }
+      }, [])
+    if (!intervals.length) {
+      return { type: expressionTypes.FUNCTION, values: ['timedelta', 'millisecond', 0], as }
     }
-    if (intervals.length === 2) {
-      return { ...intervals[1], as }
+    if (intervals.length === 1) {
+      return { ...intervals[0], as }
     }
     return {
       type: expressionTypes.OPERATOR,
-      values: intervals,
+      values: ['+', ...intervals],
       as,
     }
   },
@@ -204,22 +203,32 @@ shortExpressions.operator = {
 }
 
 shortExpressions.and = {
-  template: ['operands', 'cast', 'as'],
-  parser: ({ operands = [], as, cast }) => {
+  template: ['operands', 'qualifier', 'cast', 'as'],
+  parser: ({ operands = [], qualifier, as, cast }) => {
     if (!isArray(operands)) {
       throw parserError('Invalid operands supplied to @and')
     }
-    return { type: expressionTypes.OPERATOR, values: ['and', ...operands], as, cast }
+    return {
+      type: expressionTypes.OPERATOR,
+      values: [qualifier !== undefined ? [qualifier, 'and'] : 'and', ...operands],
+      as,
+      cast,
+    }
   },
 }
 
 shortExpressions.or = {
-  template: ['operands', 'cast', 'as'],
-  parser: ({ operands = [], as, cast }) => {
+  template: ['operands', 'qualifier', 'cast', 'as'],
+  parser: ({ operands = [], qualifier, as, cast }) => {
     if (!isArray(operands)) {
       throw parserError('Invalid operands supplied to @or')
     }
-    return { type: expressionTypes.OPERATOR, values: ['or', ...operands], as, cast }
+    return {
+      type: expressionTypes.OPERATOR,
+      values: [qualifier !== undefined ? [qualifier, 'or'] : 'or', ...operands],
+      as,
+      cast,
+    }
   },
 }
 

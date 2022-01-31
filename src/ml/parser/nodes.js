@@ -1,6 +1,7 @@
 /* Node parsers */
 const { useAPIErrorOptions } = require('../../util/api-error')
 const functions = require('./functions')
+const operators = require('./operators')
 const { escapeIdentifier, escapeLiteral, trimSQL, ParserError } = require('./src/utils')
 
 
@@ -33,7 +34,7 @@ const arrayParser = engine => withOptions((node, options) =>
 
 const caseParser = engine => withOptions((node, options) => `
   CASE
-    ${node.case
+    ${node.cases
     .map(([cond, res]) =>
       `WHEN ${cond.to(engine, options)} THEN ${res.to(engine, options)}`)
     .join('\n')}
@@ -49,13 +50,13 @@ const columnParser = withOptions((node) => {
 })
 
 const functionParser = engine => withOptions((node, options) => {
-  let name = { node }
+  let { name } = node
   // function name is different or implementation is non-standard
-  if (node.name in functions && engine in functions[node.name]) {
-    if (typeof functions[node.name][engine] === 'function') {
-      return functions[node.name][engine](node, options)
+  if (name in functions && engine in functions[name]) {
+    if (typeof functions[name][engine] === 'function') {
+      return functions[name][engine](node, options)
     }
-    name = functions[node.name][engine]
+    name = functions[name][engine]
   }
   return `${name}(${node.args.map(e => e.to(engine, options)).join(', ')})`
 })
@@ -72,16 +73,26 @@ const listParser = engine => withOptions((node, options) =>
   `(${node.values.map(e => e.to(engine, options)).join(', ')})`)
 
 const operatorParser = engine => withOptions((node, options) => {
+  let { qualifier, name } = node
   let sql
-  if (node.name === 'between' || node.name === 'not between') {
-    const [oA, oB, oC] = node.operands
-    sql = `
-      ${oA.to(engine, options)} ${node.name}
-        ${oB.to(engine, options)} AND ${oC.to(engine, options)}
-    `
-  } else {
+  if (name in operators && engine in operators[name]) {
+    if (typeof operators[name][engine] === 'function') {
+      sql = operators[name][engine](node, options)
+    } else {
+      name = operators[name][engine]
+    }
+  }
+  if (!sql) {
+    if (qualifier in operators && engine in operators[qualifier]) {
+      // if qualifier has non-standard implementation throw error
+      if (typeof operators[qualifier][engine] === 'function') {
+        throw apiError(`Invalid operator qualifier for operator: ${qualifier}`)
+      }
+      qualifier = operators[name][engine]
+    }
+    const operator = `${qualifier ? `${qualifier} ` : ''}${name} `
     sql = node.operands.map((o, i, all) => {
-      const op = i > 0 || all.length === 1 ? `${node.name} ` : ''
+      const op = i > 0 || all.length === 1 ? operator : ''
       return op + o.to(engine, options)
     }).join(' ')
   }

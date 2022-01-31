@@ -1,4 +1,4 @@
-const { isArray, sanitizeString, parserError, expressionTypes } = require('../utils')
+const { isString, isArray, sanitizeString, parserError, expressionTypes } = require('../utils')
 const operators = require('../operators')
 const { parseExpression } = require('./expression')
 const BaseNode = require('./base')
@@ -8,18 +8,26 @@ class OperatorNode extends BaseNode {
   constructor(exp, context) {
     super(exp, context)
     // binary and left-unary operators
-    if (!isArray(exp.values, { minLength: 2 })) {
+    if (
+      !isArray(exp.values, { minLength: 2 })
+      || !(isString(exp.values[0]) || isArray(exp.values[0], { length: 2 }))
+    ) {
       throw parserError(`Invalid operator syntax: ${JSON.stringify(exp)}`)
     }
-    const [name, ...operands] = exp.values
-    this.name = sanitizeString(name)
-    const op = operators[this.name]
-    if (!op) {
-      throw parserError(`Invalid operator: ${name}`)
-    }
-    if ((this.name === 'between' || this.name === 'not between') && operands.length !== 3) {
-      throw parserError(`Invalid number of operands for operator: ${this.name}`)
-    }
+    const [operator, ...operands] = exp.values
+    const [qualifier, name] = isArray(operator) ? operator : [undefined, operator];
+
+    [qualifier, name].forEach((n, i) => {
+      const key = i ? 'name' : 'qualifier'
+      this[key] = sanitizeString(n)
+      if (key === 'qualifier' && n === undefined) {
+        return
+      }
+      const op = operators[this[key]]
+      if (!op) {
+        throw parserError(`Invalid operator: ${n}`)
+      }
+    })
     this.operands = operands.map((e) => {
       const operand = parseExpression(e, this._context)
       if (operand.as || operand._as) {
@@ -27,16 +35,31 @@ class OperatorNode extends BaseNode {
       }
       return operand
     })
+    const { opsLength, minOpsLength, maxOpsLength, validate } = operators[this.name]
+    if (
+      opsLength !== undefined
+        ? this.operands.length !== opsLength
+        : (
+          (minOpsLength && this.operands.length < minOpsLength)
+          || (maxOpsLength !== undefined && this.operands.length > maxOpsLength)
+        )
+    ) {
+      throw parserError(`Too few or too many operands for operator: ${this.name}`)
+    }
+    if (validate) {
+      validate(this)
+    }
   }
 
   _toSQL(options) {
     let sql
-    if (this.name === 'between' || this.name === 'not between') {
-      const [oA, oB, oC] = this.operands
-      sql = `${oA.toSQL(options)} ${this.name} ${oB.toSQL(options)} AND ${oC.toSQL(options)}`
+    const { toSQL } = operators[this.name]
+    if (toSQL) {
+      sql = toSQL(this, options)
     } else {
+      const operator = `${this.qualifier ? `${this.qualifier} ` : ''}${this.name} `.toUpperCase()
       sql = this.operands.map((o, i, all) => {
-        const op = i > 0 || all.length === 1 ? `${this.name} ` : ''
+        const op = i > 0 || all.length === 1 ? operator : ''
         return op + o.toSQL(options)
       }).join(' ')
     }
@@ -44,7 +67,7 @@ class OperatorNode extends BaseNode {
   }
 
   _toQL(options) {
-    if (this.name === 'and' || this.name === 'or') {
+    if ((this.name === 'and' || this.name === 'or') && !this.qualifier) {
       return {
         type: this.name === 'and' ? expressionTypes.AND : expressionTypes.OR,
         values: this.operands.map(e => e.toQL(options)),
@@ -52,7 +75,10 @@ class OperatorNode extends BaseNode {
     }
     return {
       type: expressionTypes.OPERATOR,
-      values: [this.name, ...this.operands.map(e => e.toQL(options))],
+      values: [
+        this.qualifier ? [this.qualifier, this.name] : this.name,
+        ...this.operands.map(e => e.toQL(options)),
+      ],
     }
   }
 
@@ -61,6 +87,7 @@ class OperatorNode extends BaseNode {
       return {
         name: this.name,
         args: {
+          qualifier: this.qualifier,
           operands: this.operands.map(e => e.toShort(options)),
           as: this.as,
           cast: this.cast,
@@ -71,6 +98,7 @@ class OperatorNode extends BaseNode {
       name: 'operator',
       args: {
         operator: this.name,
+        qualifier: this.qualifier,
         operands: this.operands.map(e => e.toShort(options)),
         as: this.as,
         cast: this.cast,

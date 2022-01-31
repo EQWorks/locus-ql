@@ -11,7 +11,7 @@ const {
 const { isShortExpression, parseShortExpression } = require('../short')
 
 
-const columnRefRE = /^\w+.\w+$/
+const columnRefRE = /^\w+\.\w+$/
 
 /** @type {Object.<string, (exp, context: { views, ctes, refs, params }) => Node} */
 const objectParsers = {}

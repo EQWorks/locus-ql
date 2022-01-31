@@ -7,6 +7,7 @@ const {
   escapeIdentifier,
   trimSQL,
   parserError,
+  expressionTypes,
 } = require('../utils')
 const { isShortExpression } = require('../short')
 
@@ -29,6 +30,7 @@ const addToViewColumns = (viewColumns = {}, columnOrColumns) => {
 
 const nodeOptions = {
   parameters: undefined,
+  paramsMustHaveValues: false,
   _safe: true,
 }
 
@@ -262,11 +264,17 @@ class BaseNode {
     const safeOptions = !options || !options._safe
       ? { ...parserOptions, ...(options || {}) }
       : options
-    const ql = this._toQL(safeOptions)
+    let ql = this._toQL(safeOptions)
     if (this.constructor.castable && this.cast) {
+      if (typeof ql === 'string') {
+        ql = { type: expressionTypes.PRIMITIVE, value: ql }
+      }
       ql.cast = this.cast
     }
     if (this.constructor.aliasable && this.as) {
+      if (typeof ql === 'string') {
+        ql = { type: expressionTypes.PRIMITIVE, value: ql }
+      }
       ql.as = this.as
     }
     // this._memo.ql = Object.freeze(ql)

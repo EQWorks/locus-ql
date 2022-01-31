@@ -17,6 +17,35 @@ functions.json_extract_path = {
   },
 }
 
+// date/time functions
+functions.datetime = {
+  pg: 'timestamptz',
+  trino: (node, options) => {
+    const ts = node.args[0].to('trino', options)
+    return `
+      COALESCE(
+        TRY_CAST(${ts} AS TIMESTAMP WITH TIME ZONE),
+        from_iso8601_timestamp(${ts})
+      )
+    `
+  },
+}
+functions.timestamptz = functions.datetime
+functions.timedelta = {
+  pg: (node, options) => {
+    const [unit, quantity] = node.args.map(e => e.to('pg', options))
+    const sql = `${quantity} * INTERVAL '1 ${unit.slice(1, -1)}'`
+    return node.isRoot() && !node.as && !node.cast ? sql : `(${sql})`
+  },
+  trino: (node, options) => {
+    const [unit, quantity] = node.args.map(e => e.to('trino', options))
+    const sql = `${quantity} * INTERVAL '1' ${unit.slice(1, -1)}`
+    return node.isRoot() && !node.as && !node.cast ? sql : `(${sql})`
+  },
+}
+
+
+// geo functions
 functions.geometry = {
   pg: geoParser('pg'),
   trino: geoParser('trino'),

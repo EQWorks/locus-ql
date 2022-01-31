@@ -58,18 +58,18 @@ objectParsers[expTypes.GEOMETRY] = (exp, context) => new GeometryNode(exp, conte
 objectParsers[expTypes.SORT] = (exp, context) => new SortNode(exp, context)
 objectParsers[expTypes.OPERATOR] = (exp, context) => new OperatorNode(exp, context)
 objectParsers[expTypes.AND] = (exp, context) => {
-  const { values, as, cast } = exp
+  const { values } = exp
   if (!isArray(values)) {
     throw parserError(`Invalid and syntax: ${JSON.stringify(exp)}`)
   }
-  return new OperatorNode({ values: ['and', ...values], as, cast }, context)
+  return new OperatorNode({ ...exp, type: 'operator', values: ['and', ...values] }, context)
 }
 objectParsers[expTypes.OR] = (exp, context) => {
-  const { values, as, cast } = exp
+  const { values } = exp
   if (!isArray(values)) {
     throw parserError(`Invalid or syntax: ${JSON.stringify(exp)}`)
   }
-  return new OperatorNode({ values: ['or', ...values], as, cast }, context)
+  return new OperatorNode({ ...exp, type: 'operator', values: ['or', ...values] }, context)
 }
 
 module.exports = {
