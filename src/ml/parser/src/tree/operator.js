@@ -1,4 +1,5 @@
-const { isString, isArray, sanitizeString, parserError, expressionTypes } = require('../utils')
+const { isString, isArray, sanitizeString, parserError } = require('../utils')
+const { expressionTypes } = require('../types')
 const operators = require('../operators')
 const { parseExpression } = require('./expression')
 const BaseNode = require('./base')

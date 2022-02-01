@@ -1,4 +1,5 @@
-const { isString, parserError, expressionTypes } = require('../utils')
+const { isString, parserError } = require('../utils')
+const { expressionTypes } = require('../types')
 const { parseShortExpression, sanitizeShortExpression } = require('../short')
 const { parseExpression } = require('./expression')
 const BaseNode = require('./base')

@@ -1,4 +1,5 @@
 const { parserError, sanitizeString } = require('./utils')
+const { castTypes } = require('./types')
 const { geometries } = require('./geometries')
 const PrimitiveNode = require('./tree/primitive')
 
@@ -10,23 +11,23 @@ const functions = {
   // aggregation functions
   sum: {
     // category: CAT_NUMERIC,
-    defaultCast: 'real',
+    defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
   count: { argsLength: 1 },
   avg: {
     // category: CAT_NUMERIC,
-    defaultCast: 'real',
+    defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
   min: {
     // category: CAT_NUMERIC,
-    defaultCast: 'real',
+    defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
   max: {
     // category: CAT_NUMERIC,
-    defaultCast: 'real',
+    defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
   // min_date: {
@@ -68,25 +69,23 @@ const functions = {
   },
 }
 
+// type cast functions
+Object.values(castTypes).forEach((cast) => {
+  functions[cast] = {
+    argsLength: 1,
+    validate: (node) => {
+      node.args[0]._validateCastAndAliasLayer(cast)
+      node._populateCastAndAliasProxies(node.args[0])
+    },
+  }
+})
+
 // Date/time functions
 functions.date = { argsLength: 1 }
+functions.time = { argsLength: 1 }
 functions.datetime = { argsLength: 1 }
 functions.timestamptz = functions.datetime
-functions.timedelta = {
-  argsLength: 2,
-  validate: (node) => {
-    const [unit] = node.args
-    // geo type must be known at parsing time
-    if (!(unit instanceof PrimitiveNode)) {
-      throw parserError("Time unit must be a string in function 'timedelta'")
-    }
-    unit.value = sanitizeString(unit.value)
-    if (!['millisecond', 'second', 'minute', 'hour', 'day', 'week', 'month', 'year']
-      .includes(unit.value)) {
-      throw parserError(`Invalid time unit: ${unit.value}`)
-    }
-  },
-}
+functions.timedelta = { argsLength: 2 }
 
 // Geo functions
 functions.geometry = {

@@ -6,8 +6,8 @@ const {
   isObjectExpression,
   sanitizeString,
   parserError,
-  expressionTypes: expTypes,
 } = require('../utils')
+const { expressionTypes: expTypes } = require('../types')
 const { isShortExpression, parseShortExpression } = require('../short')
 
 

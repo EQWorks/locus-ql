@@ -1,5 +1,5 @@
-const { geometryTypes } = require('../geometries')
-const { parserError, expressionTypes, isArray, isString } = require('../utils')
+const { expressionTypes, geometryTypes } = require('../types')
+const { parserError, isArray, isString } = require('../utils')
 
 
 const shortExpressions = {}

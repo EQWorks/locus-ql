@@ -7,8 +7,8 @@ const {
   escapeIdentifier,
   trimSQL,
   parserError,
-  expressionTypes,
 } = require('../utils')
+const { expressionTypes } = require('../types')
 const { isShortExpression } = require('../short')
 
 

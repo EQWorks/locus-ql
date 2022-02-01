@@ -1,42 +1,10 @@
 /* eslint-disable no-continue */
+const { expressionTypeValues, castTypeValues } = require('./types')
 
-// TODO: catToTypeMap
 
 // public parser errors
 class ParserError extends Error {}
 const parserError = args => new ParserError(args)
-
-/**
- * @enum
- */
-const expressionTypes = {
-  SELECT: 'select',
-  SELECT_CTE: 'select_cte',
-  SELECT_RANGE: 'select_range',
-  JOIN: 'join',
-  VIEW: 'view',
-  COLUMN: 'column',
-  PARAMETER: 'parameter',
-  SHORT: 'short',
-  CAST: 'cast',
-  PRIMITIVE: 'primitive',
-  SQL: 'sql',
-  CASE: 'case',
-  ARRAY: 'array',
-  LIST: 'list',
-  FUNCTION: 'function',
-  GEOMETRY: 'geometry',
-  SORT: 'sort',
-  OPERATOR: 'operator',
-  AND: 'and',
-  OR: 'or',
-}
-
-// reverse lookup
-const expressionTypeValues = Object.entries(expressionTypes).reduce((acc, [k, v]) => {
-  acc[v] = k
-  return acc
-}, {})
 
 const isString = (val, nonEmpty = false) => typeof val === 'string' && (!nonEmpty || val !== '')
 
@@ -86,9 +54,9 @@ const sanitizeCast = (val) => {
     return
   }
   const safeCast = sanitizeString(val)
-  // if (!(safeCast in catToTypeMap)) {
-  //   throw parserError(`Invalid cast type: ${val}`)
-  // }
+  if (!(safeCast in castTypeValues)) {
+    throw parserError(`Invalid cast type: ${val}`)
+  }
   return safeCast
 }
 
@@ -392,6 +360,4 @@ module.exports = {
   extractShortExpressionsFromSQL,
   ParserError,
   parserError,
-  expressionTypes,
-  expressionTypeValues,
 }

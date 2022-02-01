@@ -1,4 +1,5 @@
-const { sanitizeString, parserError, expressionTypes } = require('../utils')
+const { sanitizeString, parserError } = require('../utils')
+const { expressionTypes } = require('../types')
 const { parseExpression, parseViewExpression } = require('./expression')
 const BaseNode = require('./base')
 

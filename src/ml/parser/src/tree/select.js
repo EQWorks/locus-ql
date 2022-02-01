@@ -7,8 +7,8 @@ const {
   sanitizeString,
   escapeIdentifier,
   parserError,
-  expressionTypes,
 } = require('../utils')
+const { expressionTypes } = require('../types')
 const {
   parseExpression,
   parseViewExpression,

@@ -7,10 +7,10 @@ const {
   isString,
   isNonArrayObject,
   isObjectExpression,
-  expressionTypes: expTypes,
   parserError,
   extractShortExpressionsFromSQL,
 } = require('./utils')
+const { expressionTypes: expTypes } = require('./types')
 
 
 const intervalLiteralRE =

@@ -3,16 +3,17 @@ const { useAPIErrorOptions } = require('../../util/api-error')
 const functions = require('./functions')
 const operators = require('./operators')
 const { escapeIdentifier, escapeLiteral, trimSQL, ParserError } = require('./src/utils')
+const castMapping = require('./cast')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
 
-const withOptions = (parser, { alias = true, cast = true, trim = true } = {}) =>
+const withOptions = (parser, { alias = true, cast = true, trim = true, engine } = {}) =>
   (node, options) => {
     try {
       let sql = parser(node, options)
       if (cast && node.cast) {
-        sql = `CAST(${sql} AS ${node.cast})`
+        sql = `CAST(${sql} AS ${castMapping[engine][node.cast]})`
       }
       if (alias && node.as) {
         sql = `${sql} AS ${escapeIdentifier(node.as)}`
@@ -30,7 +31,7 @@ const withOptions = (parser, { alias = true, cast = true, trim = true } = {}) =>
   }
 
 const arrayParser = engine => withOptions((node, options) =>
-  `ARRAY[${node.values.map(e => e.to(engine, options)).join(', ')}]`)
+  `ARRAY[${node.values.map(e => e.to(engine, options)).join(', ')}]`, { engine })
 
 const caseParser = engine => withOptions((node, options) => `
   CASE
@@ -40,14 +41,15 @@ const caseParser = engine => withOptions((node, options) => `
     .join('\n')}
     ${node.defaultRes ? `ELSE ${node.defaultRes.to(engine, options)}` : ''}
   END
-`)
+`, { engine })
 
-const castParser = engine => withOptions((node, options) => node.value.to(engine, options))
+const castParser = engine => withOptions((node, options) =>
+  node.value.to(engine, options), { engine })
 
-const columnParser = withOptions((node) => {
+const columnParser = engine => withOptions((node) => {
   const column = node.column === '*' ? '*' : escapeIdentifier(node.column)
   return node.view ? `${escapeIdentifier(node.view)}.${column}` : column
-})
+}, { engine })
 
 const functionParser = engine => withOptions((node, options) => {
   let { name } = node
@@ -58,19 +60,24 @@ const functionParser = engine => withOptions((node, options) => {
     }
     name = functions[name][engine]
   }
-  return `${name}(${node.args.map(e => e.to(engine, options)).join(', ')})`
-})
+  const sql = `${name}(${node.args.map(e => e.to(engine, options)).join(', ')})`
+  // return as subquery to hide underlying implementation (column name)
+  return name === node.name ? sql : `(SELECT ${sql} AS ${name})`
+}, { engine })
 
 const geometryParser = engine => withOptions((node, options) => {
   const args = node.args.map(e => `UPPER(${e.to(engine, options)})`).join(" || ':' || ")
   return `'geo:${node.type}:' || ${args}`
-})
+}, { engine })
 
-const joinParser = engine => withOptions((node, options) =>
-  `${node.joinType} JOIN ${node.view.to(engine, options)} ON ${node.on.to(engine, options)}`)
+const joinParser = engine => withOptions(
+  (node, options) =>
+    `${node.joinType} JOIN ${node.view.to(engine, options)} ON ${node.on.to(engine, options)}`,
+  { engine },
+)
 
 const listParser = engine => withOptions((node, options) =>
-  `(${node.values.map(e => e.to(engine, options)).join(', ')})`)
+  `(${node.values.map(e => e.to(engine, options)).join(', ')})`, { engine })
 
 const operatorParser = engine => withOptions((node, options) => {
   let { qualifier, name } = node
@@ -97,17 +104,17 @@ const operatorParser = engine => withOptions((node, options) => {
     }).join(' ')
   }
   return node.isRoot() && !node.as && !node.cast ? sql : `(${sql})`
-})
+}, { engine })
 
 const parameterParser = engine => withOptions((node, options) => {
   if (node.value === undefined) {
     throw apiError('Missing parameter value', 400)
   }
   return node.value.to(engine, options)
-})
+}, { engine })
 
-const primitiveParser = withOptions(node =>
-  (typeof node.value === 'string' ? escapeLiteral(node.value) : String(node.value)))
+const primitiveParser = engine => withOptions(node =>
+  (typeof node.value === 'string' ? escapeLiteral(node.value) : String(node.value)), { engine })
 
 
 const baseSelectParser = engine => (node, options) => {
@@ -159,28 +166,30 @@ const baseSelectParser = engine => (node, options) => {
   return node.isRoot() && !node.as && !node.cast ? sql : `(${sql})`
 }
 
-const selectParser = engine => withOptions(baseSelectParser(engine))
+const selectParser = engine => withOptions(baseSelectParser(engine), { engine })
 
 const cteSelectParser = (engine) => {
   const parser = baseSelectParser(engine)
   return withOptions(
     (node, options) => `${escapeIdentifier(node.as)} AS ${parser(node, options)}`,
-    { alias: false, cast: false },
+    { alias: false, cast: false, engine },
   )
 }
-const rangeSelectParser = engine => withOptions(baseSelectParser(engine), { cast: false })
+const rangeSelectParser = engine => withOptions(baseSelectParser(engine), { cast: false, engine })
 
-const shortParser = engine => withOptions((node, options) => node.value.to(engine, options))
+const shortParser = engine => withOptions((node, options) =>
+  node.value.to(engine, options), { engine })
 
 const sortParser = engine => withOptions((node, options) => {
   const direction = node.direction ? ` ${node.direction}` : ''
   const nulls = node.nulls ? ` NULLS ${node.nulls}` : ''
   return node.value.to(engine, options) + direction + nulls
-})
+}, { engine })
 
-const sqlParser = engine => withOptions((node, options) => node.value.to(engine, options))
+const sqlParser = engine => withOptions((node, options) =>
+  node.value.to(engine, options), { engine })
 
-const viewParser = withOptions(node => escapeIdentifier(node.view))
+const viewParser = engine => withOptions(node => escapeIdentifier(node.view), { engine })
 
 module.exports = {
   arrayParser,

@@ -1,4 +1,5 @@
-const { escapeLiteral, parserError, expressionTypes } = require('../utils')
+const { escapeLiteral, parserError } = require('../utils')
+const { expressionTypes } = require('../types')
 const BaseNode = require('./base')
 
 

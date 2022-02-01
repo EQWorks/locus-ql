@@ -1,5 +1,6 @@
 const { objectParsers, parseExpression } = require('./expression')
-const { parserError, isArray, expressionTypes: expTypes } = require('../utils')
+const { parserError, isArray } = require('../utils')
+const { expressionTypes: expTypes } = require('../types')
 const ArrayNode = require('./array')
 const CaseNode = require('./case')
 const CastNode = require('./cast')

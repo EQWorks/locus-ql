@@ -1,6 +1,6 @@
 /* eslint-disable no-continue */
 const { useAPIErrorOptions } = require('../../../util/api-error')
-const { geometryTypes: geoTypes, geometryTypeValues } = require('../src/geometries')
+const { geometryTypes: geoTypes, geometryTypeValues } = require('../src/types')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
@@ -345,8 +345,11 @@ const getIntersectionGeometry = (geoA, geoB, options) =>
   || getGGIDKnownIntersectionGeometry(geoA, geoB, options) // types in intersection tbl
   || getCalculatedIntersectionGeometry(geoA, geoB, options) // compute on demand
 
-// sql: "'geo:<type>:' || (arg)[ || ':' || (arg)]"
+// sql: "(SELECT 'geo:<type>:' || (arg)[ || ':' || (arg)] AS geometry)"
 const extractGeoSQLValues = (sql) => {
+  if (!sql.startsWith("(SELECT 'geo:") || sql[sql.length - 1] !== ')') {
+    return
+  }
   const vals = []
   let val = ''
   let valEnding = false
@@ -354,7 +357,7 @@ const extractGeoSQLValues = (sql) => {
   let quoteEnding = false
   let inBlock = false
   let blockDepth = 0
-  for (const char of sql) {
+  for (const char of sql.slice(13, -1)) {
     // quote in progress
     if (quote) {
       // quote continues
@@ -423,17 +426,17 @@ const extractGeoSQLValues = (sql) => {
     vals.push(val)
   }
   if (vals.length < 2) {
-    return []
+    return
   }
   return [
-    ...vals[0].slice(1, -3).split(':'),
+    vals[0].slice(0, -3),
     ...vals.slice(1).filter(v => v !== " ':' ").map(v => v.trim()),
   ]
 }
 
 const parseGeoSQL = (sql) => {
-  const [check, type, ...args] = extractGeoSQLValues(sql)
-  if (check !== 'geo' || !(type in geometryTypeValues)) {
+  const [type, ...args] = extractGeoSQLValues(sql) || []
+  if (!(type in geometryTypeValues)) {
     throw apiError('Invalid geometry', 400)
   }
   // geo with id
@@ -452,8 +455,8 @@ const parseGeoSQL = (sql) => {
 
 const geoParser = engine => (node, options) => {
   const [type, ...args] = node.args
-  const parsedArgs = args.map(e => `UPPER(${e.to(engine, options)})`).join(" || ':' || ")
-  return `'geo:${type.value}:' || ${parsedArgs}`
+  const parsedArgs = args.map(e => `upper(trim(${e.to(engine, options)}))`).join(" || ':' || ")
+  return `(SELECT 'geo:${type.value}:' || ${parsedArgs} AS geometry)`
 }
 
 const geoIntersectsParser = engine => (node, options) => {
