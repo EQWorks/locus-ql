@@ -74,6 +74,17 @@ shortExpressions.ct = {
     ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_CT, ct], as, cast }),
 }
 
+shortExpressions.city = {
+  template: ['city', 'province', 'as', 'cast'],
+  parser: ({ city, province, as, cast }) => {
+    const id = province
+      ? { type: expressionTypes.OPERATOR, values: ['||', 'CA$', province, '$', city] }
+      : city
+    const values = ['geometry', geometryTypes.CA_CITY, id]
+    return { type: expressionTypes.FUNCTION, values, as, cast }
+  },
+}
+
 shortExpressions.poi = {
   template: ['poi', 'radius', 'as', 'cast'],
   parser: ({ poi, radius, as, cast }) => {

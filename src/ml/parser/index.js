@@ -20,6 +20,9 @@ const parseQueryToTree = (query, { type = 'ql', parameters, paramsMustHaveValues
   if (!(tree instanceof SelectNode) || tree.as || tree.cast) {
     throw apiError('Query must be of type select', 400)
   }
+  if (!Object.keys(tree.viewColumns).length) {
+    throw apiError('Query must use at least one view', 400)
+  }
   // check that translates into valid SQL
   const sql = tree.toSQL({ keepShorts: false, keepParamRefs: !paramsMustHaveValues })
   if (!isValidSQLExpression(sql)) {

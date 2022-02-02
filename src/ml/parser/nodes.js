@@ -53,17 +53,24 @@ const columnParser = engine => withOptions((node) => {
 
 const functionParser = engine => withOptions((node, options) => {
   let { name } = node
+  let sql
   // function name is different or implementation is non-standard
   if (name in functions && engine in functions[name]) {
     if (typeof functions[name][engine] === 'function') {
-      return functions[name][engine](node, options)
+      sql = functions[name][engine](node, options)
     }
     name = functions[name][engine]
   }
-  const sql = `${name}(${node.args.map(e => e.to(engine, options)).join(', ')})`
-  // return as subquery to hide underlying implementation (column name)
-  return name === node.name ? sql : `(SELECT ${sql} AS ${name})`
-}, { engine })
+  if (!sql) {
+    sql = `${name}(${node.args.map(e => e.to(engine, options)).join(', ')})`
+    // return as subquery to hide underlying implementation (column name)
+    if (name !== node.name && !node.as) {
+      sql = `(SELECT ${sql} AS ${name})`
+    }
+  }
+  const cast = node.cast || node.defaultCast
+  return cast ? `CAST(${sql} AS ${castMapping[engine][cast]})` : sql
+}, { engine, cast: false })
 
 const geometryParser = engine => withOptions((node, options) => {
   const args = node.args.map(e => `UPPER(${e.to(engine, options)})`).join(" || ':' || ")
@@ -113,8 +120,13 @@ const parameterParser = engine => withOptions((node, options) => {
   return node.value.to(engine, options)
 }, { engine })
 
-const primitiveParser = engine => withOptions(node =>
-  (typeof node.value === 'string' ? escapeLiteral(node.value) : String(node.value)), { engine })
+const primitiveParser = engine => withOptions((node) => {
+  if (typeof node.value === 'string') {
+    // trino has no escape character
+    return engine === 'trino' ? node.value.replace(/'/g, "''") : escapeLiteral(node.value)
+  }
+  return String(node.value)
+}, { engine })
 
 
 const baseSelectParser = engine => (node, options) => {
@@ -128,7 +140,7 @@ const baseSelectParser = engine => (node, options) => {
   const from = node.from ? `FROM ${node.from.to(engine, options)}` : ''
 
   const joins = node.joins.length
-    ? node.joins.map(e => e.to(engine, options)).join(', ')
+    ? node.joins.map(e => e.to(engine, options)).join(' ')
     : ''
 
   const where = node.where.length ?

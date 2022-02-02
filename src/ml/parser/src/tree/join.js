@@ -20,7 +20,8 @@ class JoinNode extends BaseNode {
   }
 
   _toSQL(options) {
-    return `${this.joinType} JOIN ${this.view.toSQL(options)} ON ${this.on.toSQL(options)}`
+    const joinType = this.joinType.toUpperCase()
+    return `${joinType} JOIN ${this.view.toSQL(options)} ON ${this.on.toSQL(options)}`
   }
 
   _toQL(options) {

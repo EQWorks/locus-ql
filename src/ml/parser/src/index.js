@@ -1,6 +1,7 @@
 const { parseExpression, nodes } = require('./tree')
 const { parseShortExpression } = require('./short')
 const { parseSQLExpression } = require('./sql')
+const { expressionTypes, castTypes, geometryTypes } = require('./types')
 
 
 const parseQLToTree = (ql, options) => (
@@ -22,4 +23,7 @@ module.exports = {
   parseSQLToTree,
   parseShortToTree,
   nodes,
+  expressionTypes,
+  castTypes,
+  geometryTypes,
 }

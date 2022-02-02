@@ -1,80 +1,12 @@
 /* eslint-disable no-continue */
 const { useAPIErrorOptions } = require('../../../util/api-error')
 const { geometryTypes: geoTypes, geometryTypeValues } = require('../src/types')
+const geoTables = require('../../geo-tables')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
 
 const DEFAULT_POINT_RADIUS = 500 // 500 metres
-
-const geoTypeTables = {
-  [geoTypes.CA_FSA]: {
-    schema: 'canada_geo',
-    table: 'fsa_simplified',
-    // idType: CAT_STRING,
-    idColumn: 'fsa',
-    geometryColumn: 'wkb_geometry',
-    intersectionQueryType: 'fsa',
-    intersectionSourceType: 'fsa',
-  },
-  [geoTypes.CA_DA]: {
-    schema: 'canada_geo',
-    table: 'da',
-    // idType: CAT_NUMERIC,
-    idColumn: 'dauid',
-    geometryColumn: 'wkb_geometry',
-    intersectionSourceType: 'da',
-  },
-  [geoTypes.CA_CT]: {
-    schema: 'canada_geo',
-    table: 'ct',
-    // idType: CAT_STRING,
-    idColumn: 'ctuid',
-    geometryColumn: 'wkb_geometry',
-    intersectionSourceType: 'ct',
-  },
-  [geoTypes.CA_CSD]: {
-    schema: 'canada_geo',
-    table: 'csd',
-    // idType: CAT_NUMERIC,
-    idColumn: 'gid',
-    geometryColumn: 'geom',
-  },
-  [geoTypes.CA_POSTALCODE]: {
-    schema: 'canada_geo',
-    table: 'postalcode_simplified',
-    // idType: CAT_STRING,
-    idColumn: 'postalcode',
-    geometryColumn: 'wkb_geometry',
-    intersectionQueryType: 'postalcode',
-  },
-  [geoTypes.CA_PROVINCE]: {
-    schema: 'canada_geo',
-    table: 'province',
-    // idType: CAT_STRING,
-    idColumn: 'province_code',
-    geometryColumn: 'wkb_geometry',
-  },
-  [geoTypes.CA_CITY]: {
-    schema: 'canada_geo',
-    table: 'city_dev',
-    // idType: CAT_STRING,
-    idColumn: 'name',
-    geometryColumn: "geo->>'geom'",
-  },
-  [geoTypes.POI]: {
-    schema: 'public',
-    table: 'poi',
-    // idType: CAT_NUMERIC,
-    idColumn: 'poi_id',
-    geometryColumn: 'polygon',
-    latColumn: 'lat',
-    longColumn: 'lon',
-    radiusColumn: 'default_radius',
-    whitelabelColumn: 'whitelabelid',
-    customerColumn: 'customerid',
-  },
-}
 
 const getGeoMeta = (geo, { engine = 'pg' } = {}) => (geo.type === geoTypes.GGID
   ? `(
@@ -92,7 +24,7 @@ const getGeoMeta = (geo, { engine = 'pg' } = {}) => (geo.type === geoTypes.GGID
 
 // geo with table
 const getKnownGeometry = (geo, { whitelabelID, customerID, engine = 'pg' } = {}) => {
-  const type = geoTypeTables[geo.type]
+  const type = geoTables[geo.type]
   if (!type) {
     return
   }
@@ -174,6 +106,33 @@ const getPointGeometry = (geo, { engine = 'pg' } = {}) => {
   return `(SELECT ${geometry} AS geometry)`
 }
 
+// const getCityGeometry = (geo, { engine = 'pg' } = {}) => {
+//   if (geo.type !== geoTypes.CA_CITY) {
+//     return
+//   }
+//   const { city, province } = geo
+//   let id
+//   if (province) {
+//     id = `ARRAY['CA', ${province}, ${city}]`
+//   } else {
+//     id = engine === 'trino'
+//       ? `split(${geo.id}, '$')`
+//       : `regexp_split_to_array(${geo.id}, '\\$')`
+//   }
+//   const geometry = engine === 'trino'
+//     ? 'ST_GeomFromBinary(wkb_geometry)'
+//     : 'ST_Transform(ST_MakeValid(wkb_geometry), 3347)'
+
+//   return `
+//     SELECT
+//       ${geometry} AS geometry
+//     FROM ${id} geo
+//     JOIN canada_geo.province p ON p.province_code = geo[2]
+//     JOIN canada_geo.city c ON c.pruid = p.pruid AND c.city = geo[3]
+//     WHERE geo[1] = 'CA' AND geo[3] IS NOT NULL
+//   `
+// }
+
 const getGGIDGeometry = (geo, { engine = 'pg' } = {}) => {
   if (geo.type !== geoTypes.GGID) {
     return
@@ -196,7 +155,7 @@ const getGGIDGeometry = (geo, { engine = 'pg' } = {}) => {
 }
 
 const getGeometry = (geo, options) => {
-  if (geo.type in geoTypeTables) {
+  if (geo.type in geoTables) {
     return getKnownGeometry(geo, options)
   }
   if (geo.type === geoTypes.POINT) {
@@ -209,8 +168,8 @@ const getGeometry = (geo, options) => {
 }
 
 const getKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
-  const typeA = geoTypeTables[geoA.type]
-  const typeB = geoTypeTables[geoB.type]
+  const typeA = geoTables[geoA.type]
+  const typeB = geoTables[geoB.type]
   if (!typeA || !typeB) {
     return
   }
@@ -218,10 +177,10 @@ const getKnownIntersectionGeometry = (geoA, geoB, { engine = 'pg' } = {}) => {
   let source
   if (typeA.intersectionQueryType && typeB.intersectionSourceType) {
     query = { type: typeA.intersectionQueryType, id: geoA.id }
-    source = { type: typeB.intersectionQueryType, id: geoB.id }
+    source = { type: typeB.intersectionSourceType, id: geoB.id }
   } else if (typeA.intersectionSourceType && typeB.intersectionQueryType) {
     query = { type: typeB.intersectionQueryType, id: geoB.id }
-    source = { type: typeA.intersectionQueryType, id: geoA.id }
+    source = { type: typeA.intersectionSourceType, id: geoA.id }
   } else {
     // can't use intersection table
     return
@@ -313,7 +272,7 @@ const getSameTypeIntersectionGeometry = (geoA, geoB, options) => {
   if (geoA.type !== geoB.type) {
     return
   }
-  return geoA.type in geoTypeTables || geoA.type === geoTypes.GGID
+  return geoA.type in geoTables || geoA.type === geoTypes.GGID
     ? `(
       SELECT
         ${getGeometry(geoA, options)}
@@ -347,7 +306,7 @@ const getIntersectionGeometry = (geoA, geoB, options) =>
 
 // sql: "(SELECT 'geo:<type>:' || (arg)[ || ':' || (arg)] AS geometry)"
 const extractGeoSQLValues = (sql) => {
-  if (!sql.startsWith("(SELECT 'geo:") || sql[sql.length - 1] !== ')') {
+  if (!sql.startsWith("(SELECT 'geo:") || !sql.endsWith(' AS geometry)')) {
     return
   }
   const vals = []
@@ -357,7 +316,7 @@ const extractGeoSQLValues = (sql) => {
   let quoteEnding = false
   let inBlock = false
   let blockDepth = 0
-  for (const char of sql.slice(13, -1)) {
+  for (const char of sql.slice(8, -13)) {
     // quote in progress
     if (quote) {
       // quote continues
@@ -429,7 +388,7 @@ const extractGeoSQLValues = (sql) => {
     return
   }
   return [
-    vals[0].slice(0, -3),
+    vals[0].slice(5, -3),
     ...vals.slice(1).filter(v => v !== " ':' ").map(v => v.trim()),
   ]
 }
@@ -439,8 +398,14 @@ const parseGeoSQL = (sql) => {
   if (!(type in geometryTypeValues)) {
     throw apiError('Invalid geometry', 400)
   }
+  if (type === geoTypes.POI) {
+    if (args.length !== 1 && args.length !== 2) {
+      throw apiError(`Invalid ${type} geometry`, 400)
+    }
+    return { type, id: args[0], radius: args[1] }
+  }
   // geo with id
-  if (type in geoTypeTables || type === geoTypes.GGID) {
+  if (type in geoTables || type === geoTypes.GGID) {
     if (args.length !== 1) {
       throw apiError(`Invalid ${type} geometry`, 400)
     }
@@ -455,7 +420,29 @@ const parseGeoSQL = (sql) => {
 
 const geoParser = engine => (node, options) => {
   const [type, ...args] = node.args
-  const parsedArgs = args.map(e => `upper(trim(${e.to(engine, options)}))`).join(" || ':' || ")
+  const parsedArgs = args.map((e) => {
+    let sql = `upper(trim(${e.to(engine, options)}))`
+    if ([geoTypes.CA_FSA, geoTypes.CA_POSTALCODE].includes(type.value)) {
+      // remove all spaces
+      return engine === 'trino'
+        ? `replace(${sql}, ' ', ')`
+        : `regexp_replace(${sql}, '\\s+', '', 'g')`
+    }
+    if (type.value !== geoTypes.CA_CITY) {
+      return sql
+    }
+    // remove duplicate spaces and replace with hyphen
+    sql = engine === 'trino'
+      ? `array_join(array_remove(split(${sql}, ' '), ''), '-')`
+      : `regexp_replace(${sql}, '\\s+', '-', 'g')`
+    return `
+      translate(
+        ${sql},
+        'ÂÃÄÅĀĂĄÁÀÇÉÈËÊĒĔĖĘĚÌÍÎÏĨĪĬÒÓÔÕÖŌŎŐÙÚÛÜŨŪŬŮ',
+        'AAAAAAAAACEEEEEEEEEIIIIIIIOOOOOOOOUUUUUUUU'
+      )
+    `
+  }).join(" || ':' || ")
   return `(SELECT 'geo:${type.value}:' || ${parsedArgs} AS geometry)`
 }
 

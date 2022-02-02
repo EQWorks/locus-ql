@@ -172,7 +172,7 @@ class SelectNode extends BaseNode {
     const from = this.from ? `FROM ${this.from.toSQL(options)}` : ''
 
     const joins = this.joins.length
-      ? this.joins.map(e => e.toSQL(options)).join(', ')
+      ? this.joins.map(e => e.toSQL(options)).join(' ')
       : ''
 
     const where = this.where.length ?
