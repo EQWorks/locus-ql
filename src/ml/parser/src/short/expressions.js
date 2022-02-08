@@ -1,5 +1,5 @@
 const { expressionTypes, geometryTypes } = require('../types')
-const { parserError, isArray, isString } = require('../utils')
+const { parserError, isArray, isString, isNull, isNonNull } = require('../utils')
 
 
 const shortExpressions = {}
@@ -31,79 +31,78 @@ shortExpressions.function = {
 }
 
 shortExpressions.geo = {
-  template: ['name', 'args', 'as', 'cast'],
-  parser: ({ name, args = [], as, cast }) => {
+  template: ['name', 'args', 'as'],
+  parser: ({ name, args = [], as }) => {
     if (!isArray(args)) {
       throw parserError('Invalid arguments supplied to @geo')
     }
-    return { type: expressionTypes.FUNCTION, values: ['geometry', name, ...args], as, cast }
+    return { type: expressionTypes.FUNCTION, values: ['geometry', name, ...args], as }
   },
 }
 
 shortExpressions.ggid = {
-  template: ['id', 'as', 'cast'],
-  parser: ({ id, as, cast }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.GGID, id], as, cast }),
+  template: ['id', 'as'],
+  parser: ({ id, as }) =>
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.GGID, id], as }),
 }
 
 shortExpressions.fsa = {
-  template: ['fsa', 'as', 'cast'],
-  parser: ({ fsa, as, cast }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_FSA, fsa], as, cast }),
+  template: ['fsa', 'as'],
+  parser: ({ fsa, as }) =>
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_FSA, fsa], as }),
 }
 
 shortExpressions.postalcode = {
-  template: ['pc', 'as', 'cast'],
-  parser: ({ pc, as, cast }) => ({
+  template: ['pc', 'as'],
+  parser: ({ pc, as }) => ({
     type: expressionTypes.FUNCTION,
     values: ['geometry', geometryTypes.CA_POSTALCODE, pc],
     as,
-    cast,
   }),
 }
 
 shortExpressions.da = {
-  template: ['da', 'as', 'cast'],
-  parser: ({ da, as, cast }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_DA, da], as, cast }),
+  template: ['da', 'as'],
+  parser: ({ da, as }) =>
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_DA, da], as }),
 }
 
 shortExpressions.ct = {
-  template: ['ct', 'as', 'cast'],
-  parser: ({ ct, as, cast }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_CT, ct], as, cast }),
+  template: ['ct', 'as'],
+  parser: ({ ct, as }) =>
+    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_CT, ct], as }),
 }
 
 shortExpressions.city = {
-  template: ['city', 'province', 'as', 'cast'],
-  parser: ({ city, province, as, cast }) => {
-    const id = province
+  template: ['city', 'province', 'as'],
+  parser: ({ city, province, as }) => {
+    const id = isNonNull(province)
       ? { type: expressionTypes.OPERATOR, values: ['||', 'CA$', province, '$', city] }
       : city
     const values = ['geometry', geometryTypes.CA_CITY, id]
-    return { type: expressionTypes.FUNCTION, values, as, cast }
+    return { type: expressionTypes.FUNCTION, values, as }
   },
 }
 
 shortExpressions.poi = {
-  template: ['poi', 'radius', 'as', 'cast'],
-  parser: ({ poi, radius, as, cast }) => {
+  template: ['poi', 'radius', 'as'],
+  parser: ({ poi, radius, as }) => {
     const values = ['geometry', geometryTypes.POI, poi]
-    if (radius !== undefined) {
+    if (isNonNull(radius)) {
       values.push(radius)
     }
-    return { type: expressionTypes.FUNCTION, values, as, cast }
+    return { type: expressionTypes.FUNCTION, values, as }
   },
 }
 
 shortExpressions.point = {
-  template: ['long', 'lat', 'radius', 'as', 'cast'],
-  parser: ({ long, lat, radius, as, cast }) => {
+  template: ['long', 'lat', 'radius', 'as'],
+  parser: ({ long, lat, radius, as }) => {
     const values = ['geometry', geometryTypes.POINT, long, lat]
-    if (radius !== undefined) {
+    if (isNonNull(radius)) {
       values.push(radius)
     }
-    return { type: expressionTypes.FUNCTION, values, as, cast }
+    return { type: expressionTypes.FUNCTION, values, as }
   },
 }
 
@@ -128,13 +127,13 @@ shortExpressions.list = {
 }
 
 shortExpressions.cast = {
-  template: ['value', 'cast', 'as'],
-  parser: ({ value, cast, as }) => ({ type: expressionTypes.CAST, value, as, cast }),
+  template: ['value', 'as'],
+  parser: ({ value, as }) => ({ type: expressionTypes.CAST, value, as }),
 }
 
 shortExpressions.primitive = {
-  template: ['value', 'cast', 'as'],
-  parser: ({ value, cast, as }) => ({ type: expressionTypes.PRIMITIVE, value, as, cast }),
+  template: ['value', 'as', 'cast'],
+  parser: ({ value, as, cast }) => ({ type: expressionTypes.PRIMITIVE, value, as, cast }),
 }
 
 shortExpressions.date = {
@@ -167,8 +166,19 @@ shortExpressions.datetime = {
     if (Number.isNaN(Date.parse(`${date}T${time}Z`))) {
       throw parserError('Invalid arguments supplied to @datetime')
     }
-    // timestamp in trino
     return { type: expressionTypes.FUNCTION, values: ['datetime', `${date} ${time} ${tz}`], as }
+  },
+}
+
+shortExpressions.time = {
+  template: ['hour', 'minute', 'second', 'tz', 'as'],
+  parser: ({ hour, minute, second, tz = 'UTC', as }) => {
+    if (![hour, minute, second].every(Number.isInteger) || !isString(tz)) {
+      throw parserError('Invalid arguments supplied to @time')
+    }
+    // eslint-disable-next-line max-len
+    const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+    return { type: expressionTypes.FUNCTION, values: ['time', `${time} ${tz}`], as }
   },
 }
 
@@ -177,7 +187,7 @@ shortExpressions.timedelta = {
   parser: ({ millisecond, second, minute, hour, day, week, month, year, as }) => {
     const intervals = [millisecond, second, minute, hour, day, week, month, year]
       .reduce((acc, v, i) => {
-        if (v === undefined || v === 0) {
+        if (isNull(v) || v === 0) {
           return acc
         }
         if (!Number.isInteger(v) || v < 0) {
@@ -204,24 +214,29 @@ shortExpressions.timedelta = {
 }
 
 shortExpressions.operator = {
-  template: ['operator', 'operands', 'cast', 'as'],
-  parser: ({ operator, operands = [], as, cast }) => {
+  template: ['operator', 'operands', 'qualifier', 'as', 'cast'],
+  parser: ({ operator, operands = [], qualifier, as, cast }) => {
     if (!isArray(operands)) {
       throw parserError('Invalid operands supplied to @operator')
     }
-    return { type: expressionTypes.OPERATOR, values: [operator, ...operands], as, cast }
+    return {
+      type: expressionTypes.OPERATOR,
+      values: [isNonNull(qualifier) ? [qualifier, operator] : operator, ...operands],
+      as,
+      cast,
+    }
   },
 }
 
 shortExpressions.and = {
-  template: ['operands', 'qualifier', 'cast', 'as'],
+  template: ['operands', 'qualifier', 'as', 'cast'],
   parser: ({ operands = [], qualifier, as, cast }) => {
     if (!isArray(operands)) {
       throw parserError('Invalid operands supplied to @and')
     }
     return {
       type: expressionTypes.OPERATOR,
-      values: [qualifier !== undefined ? [qualifier, 'and'] : 'and', ...operands],
+      values: [isNonNull(qualifier) ? [qualifier, 'and'] : 'and', ...operands],
       as,
       cast,
     }
@@ -229,14 +244,14 @@ shortExpressions.and = {
 }
 
 shortExpressions.or = {
-  template: ['operands', 'qualifier', 'cast', 'as'],
+  template: ['operands', 'qualifier', 'as', 'cast'],
   parser: ({ operands = [], qualifier, as, cast }) => {
     if (!isArray(operands)) {
       throw parserError('Invalid operands supplied to @or')
     }
     return {
       type: expressionTypes.OPERATOR,
-      values: [qualifier !== undefined ? [qualifier, 'or'] : 'or', ...operands],
+      values: [isNonNull(qualifier) ? [qualifier, 'or'] : 'or', ...operands],
       as,
       cast,
     }
@@ -244,8 +259,8 @@ shortExpressions.or = {
 }
 
 shortExpressions.sql = {
-  template: ['sql', 'cast', 'as'],
-  parser: ({ sql, cast, as }) => ({ type: expressionTypes.SQL, value: sql, as, cast }),
+  template: ['sql', 'as', 'cast'],
+  parser: ({ sql, as, cast }) => ({ type: expressionTypes.SQL, value: sql, as, cast }),
 }
 
 module.exports = shortExpressions

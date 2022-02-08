@@ -11,6 +11,14 @@ const {
   getSetAPIError,
 } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
 
+const makeRefSeq = () => {
+  let i = 0
+  return () => {
+    i += 1
+    return `__ref_${i}`
+  }
+}
+
 const parseQueryToTree = (query, { type = 'ql', parameters, paramsMustHaveValues } = {}) => {
   if (type !== 'ql' && type !== 'sql') {
     throw new Error('Unknown query type')
@@ -21,7 +29,7 @@ const parseQueryToTree = (query, { type = 'ql', parameters, paramsMustHaveValues
     throw apiError('Query must be of type select', 400)
   }
   if (!Object.keys(tree.viewColumns).length) {
-    throw apiError('Query must use at least one view', 400)
+    // throw apiError('Query must use at least one view', 400)
   }
   // check that translates into valid SQL
   const sql = tree.toSQL({ keepShorts: false, keepParamRefs: !paramsMustHaveValues })
@@ -46,7 +54,7 @@ const parseQueryTreeToEngine = (
     acc[v] = viewQueries[v]
     return acc
   }, {})
-  const query = tree.to(engine, { whitelabelID, customerID })
+  const query = tree.to(engine, { whitelabelID, customerID, getRef: makeRefSeq() })
   if (!Object.keys(views).length) {
     return query
   }

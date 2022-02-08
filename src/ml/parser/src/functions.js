@@ -1,7 +1,7 @@
-const { parserError, sanitizeString } = require('./utils')
+// const { parserError, sanitizeString } = require('./utils')
 const { castTypes } = require('./types')
-const { geometries } = require('./geometries')
-const PrimitiveNode = require('./tree/primitive')
+// const { geometries } = require('./geometries')
+// const PrimitiveNode = require('./tree/primitive')
 
 
 const functions = {
@@ -80,6 +80,15 @@ Object.values(castTypes).forEach((cast) => {
   }
 })
 
+// String/text functions
+functions.lower = { argsLength: 1 }
+functions.upper = { argsLength: 1 }
+functions.trim = { argsLength: 1 }
+functions.ltrim = { argsLength: 1 }
+functions.rtrim = { argsLength: 1 }
+functions.length = { argsLength: 1 }
+functions.replace = { argsLength: 3 }
+
 // Date/time functions
 functions.date = { argsLength: 1 }
 functions.time = { argsLength: 1 }
@@ -89,29 +98,31 @@ functions.timedelta = { argsLength: 2 }
 
 // Geo functions
 functions.geometry = {
-  validate: (node) => {
-    const [type, ...args] = node.args
-    // geo type must be known at parsing time
-    if (!(type instanceof PrimitiveNode)) {
-      throw parserError("Geometry type must be a string in function 'geometry'")
-    }
-    type.value = sanitizeString(type.value)
-    const geometry = geometries[type.value]
-    if (!geometry) {
-      throw parserError(`Invalid geometry type: ${type.value}`)
-    }
-    const { argsLength, minArgsLength, maxArgsLength } = geometry
-    if (
-      argsLength !== undefined
-        ? args.length !== argsLength
-        : (
-          (minArgsLength && args.length < minArgsLength)
-          || (maxArgsLength !== undefined && args.length > maxArgsLength)
-        )
-    ) {
-      throw parserError(`Too few or too many arguments in geometry: ${type.value}`)
-    }
-  },
+  minArgsLength: 2,
+  maxArgsLength: 4,
+  // validate: (node) => {
+  //   const [type, ...args] = node.args
+  //   // geo type must be known at parsing time
+  //   if (!(type instanceof PrimitiveNode)) {
+  //     throw parserError("Geometry type must be a string in function 'geometry'")
+  //   }
+  //   type.value = sanitizeString(type.value)
+  //   const geometry = geometries[type.value]
+  //   if (!geometry) {
+  //     throw parserError(`Invalid geometry type: ${type.value}`)
+  //   }
+  //   const { argsLength, minArgsLength, maxArgsLength } = geometry
+  //   if (
+  //     argsLength !== undefined
+  //       ? args.length !== argsLength
+  //       : (
+  //         (minArgsLength && args.length < minArgsLength)
+  //         || (maxArgsLength !== undefined && args.length > maxArgsLength)
+  //       )
+  //   ) {
+  //     throw parserError(`Too few or too many arguments in geometry: ${type.value}`)
+  //   }
+  // },
 }
 
 functions.geo = functions.geometry

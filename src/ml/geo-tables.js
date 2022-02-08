@@ -15,7 +15,7 @@ module.exports = {
   [geometryTypes.CA_DA]: {
     schema: 'canada_geo',
     table: 'da',
-    idType: CAT_NUMERIC,
+    idType: CAT_STRING,
     idColumn: 'dauid',
     geometryColumn: 'wkb_geometry',
     intersectionSourceType: 'da',
@@ -31,8 +31,8 @@ module.exports = {
   [geometryTypes.CA_CSD]: {
     schema: 'canada_geo',
     table: 'csd',
-    idType: CAT_NUMERIC,
-    idColumn: 'gid',
+    idType: CAT_STRING,
+    idColumn: 'csduid',
     geometryColumn: 'geom',
   },
   [geometryTypes.CA_POSTALCODE]: {
