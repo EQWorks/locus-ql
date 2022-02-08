@@ -7,6 +7,7 @@ const {
   escapeIdentifier,
   trimSQL,
   parserError,
+  getSourceContext,
 } = require('../utils')
 const { expressionTypes } = require('../types')
 const { isShortExpression } = require('../short')
@@ -19,14 +20,6 @@ const addToViewColumns = (viewColumns = {}, columnOrColumns) => {
   }
   return { '*': true }
 }
-
-/* context
- - refs: scoped to nearest parent SELECT node (or current node is SELECT)
- - ctes: scoped to nearest parent SELECT (inherits from higher scopes)
- - views: scoped to current node (updates must be propagated to parents)
- - params: scoped to current node (updates must be propagated to parents)
- - options: global
-*/
 
 const nodeOptions = {
   parameters: undefined,
@@ -45,16 +38,7 @@ class BaseNode {
     if (!isObjectExpression(exp)) {
       throw parserError(`Expression must be an object: ${JSON.stringify(exp)}`)
     }
-    this._parentContext = context || {}
-    if (!context || !context.options || !context.options._safe) {
-      this._parentContext.options = { ...nodeOptions, ...((context && context.options) || {}) }
-    }
-    this._context = {
-      ...this._parentContext,
-      views: {},
-      params: {},
-      _parentContext: this._parentContext,
-    }
+    this._initContext(context)
     this._memo = {}
     // as property
     if (this.constructor.aliasable) {
@@ -69,6 +53,26 @@ class BaseNode {
       this._castIsUpdatable = true
     } else if (exp.cast !== undefined) {
       throw parserError(`Illegal casting: ${exp.cast}`)
+    }
+  }
+
+  /* context
+    - refs: scoped to nearest parent SELECT node (or current node is SELECT)
+    - ctes: scoped to nearest parent SELECT (inherits from higher scopes)
+    - views: scoped to current node (updates must be propagated to parents)
+    - params: scoped to current node (updates must be propagated to parents)
+    - options: global
+  */
+  _initContext(context) {
+    this._parentContext = context || {}
+    if (!context || !context.options || !context.options._safe) {
+      this._parentContext.options = { ...nodeOptions, ...((context && context.options) || {}) }
+    }
+    this._context = {
+      ...this._parentContext,
+      views: {},
+      params: {},
+      _parentContext: this._parentContext,
     }
   }
 
@@ -144,12 +148,12 @@ class BaseNode {
     return true
   }
 
-  // writes to parent context
+  // writes to parent context recursively
   _propagateContext(key, depth = 1) {
     let context = this._context
     for (let i = 0; depth === -1 || i < depth; i++) {
       const parentContext = context._parentContext
-      if (!(key in parentContext && key in context)) {
+      if (!(parentContext && key in parentContext && key in context)) {
         return
       }
       if (key === 'views') {
@@ -164,41 +168,48 @@ class BaseNode {
     }
   }
 
+  // registers against wrapping select
   _registerRef(name, view) {
     if (!this.hasSelectAncestor()) {
       // expression evaluated in isolation
       return
     }
-    if (name in this._parentContext.refs || name in this._parentContext.ctes) {
+    // check that not already registered
+    // allowed to override cte's and inherited refs
+    const selectContext = getSourceContext(this._parentContext, 'refs')
+    if (
+      name in selectContext.refs
+      && (
+        !(name in selectContext._parentContext.refs)
+        || selectContext._parentContext.refs[name] !== selectContext.refs[name] // is not inherited
+      )
+    ) {
       throw parserError(`Identifier already in use: ${name}`)
     }
     // register identifier against parent context
-    this._parentContext.refs[name] = view in this._parentContext.ctes || view || true
+    selectContext.refs[name] = !view || view in selectContext.ctes ? {} : { view }
   }
 
+  // registers against wrapping select
   _registerCTE(name) {
     if (!this.hasSelectAncestor()) {
       // expression evaluated in isolation
       return
     }
-    if (name in this._parentContext.refs || name in this._parentContext.ctes) {
-      throw parserError(`Identifier already in use: ${name}`)
-    }
-    // allowed to override inherited cte
-    if (
-      name in this._parentContext.refs
-      || (
-        name in this._parentContext.ctes
-        && (
-          !(name in this._parentContext._parentContext.ctes)
-          || this._parentContext._parentContext.ctes[name] !== this._parentContext.ctes[name]
-        )
+    // check that not already registered
+    // allowed to override inherited refs and cte's
+    const selectContext = getSourceContext(this._parentContext, 'refs')
+    if (['refs', 'ctes'].some(k => (
+      name in selectContext[k]
+      && (
+        !(name in selectContext._parentContext[k])
+        || selectContext._parentContext[k][name] !== selectContext[k][name] // is not inherited
       )
-    ) {
+    ))) {
       throw parserError(`Identifier already in use: ${name}`)
     }
     // register cte against parent context
-    this._parentContext.ctes[name] = {}
+    selectContext.ctes[name] = {}
   }
 
   _registerParam(name) {
@@ -211,8 +222,8 @@ class BaseNode {
       // expression evaluated in isolation
       this._context.views[view] = addToViewColumns(this._context.views[view], column)
     } else {
-      const viewRef = this._context.refs[view]
-      if (viewRef !== true) {
+      const { view: viewRef } = this._context.refs[view]
+      if (viewRef) {
         this._context.views[viewRef] = addToViewColumns(this._context.views[viewRef], column)
       }
     }

@@ -12,7 +12,7 @@ const ListNode = require('./list')
 const OperatorNode = require('./operator')
 const ParameterReferenceNode = require('./parameter')
 const PrimitiveNode = require('./primitive')
-const { SelectNode, CTESelectNode, RangeSelectNode } = require('./select')
+const { SelectNode, CTESelectNode, RangeSelectNode, LateralRangeSelectNode } = require('./select')
 const ShortNode = require('./short')
 const SortNode = require('./sort')
 const SQLNode = require('./sql')
@@ -34,6 +34,7 @@ const nodes = {
   SelectNode,
   CTESelectNode,
   RangeSelectNode,
+  LateralRangeSelectNode,
   ShortNode,
   SortNode,
   SQLNode,
@@ -42,6 +43,8 @@ const nodes = {
 
 objectParsers[expTypes.SELECT] = (exp, context) => new SelectNode(exp, context)
 objectParsers[expTypes.SELECT_RANGE] = (exp, context) => new RangeSelectNode(exp, context)
+objectParsers[expTypes.SELECT_RANGE_LATERAL] = (exp, context) =>
+  new LateralRangeSelectNode(exp, context)
 objectParsers[expTypes.SELECT_CTE] = (exp, context) => new CTESelectNode(exp, context)
 objectParsers[expTypes.JOIN] = (exp, context) => new JoinNode(exp, context)
 objectParsers[expTypes.VIEW] = (exp, context) => new ViewReferenceNode(exp, context)

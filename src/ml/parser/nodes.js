@@ -77,11 +77,15 @@ const geometryParser = engine => withOptions((node, options) => {
   return `'geo:${node.type}:' || ${args}`
 }, { engine })
 
-const joinParser = engine => withOptions(
-  (node, options) =>
-    `${node.joinType} JOIN ${node.view.to(engine, options)} ON ${node.on.to(engine, options)}`,
-  { engine },
-)
+const joinParser = engine => withOptions((node, options) => {
+  const view = node.view.to(engine, options)
+  if (node.joinType === 'lateral') {
+    return `CROSS JOIN LATERAL ${view}`
+  }
+  const joinType = node.joinType.toUpperCase()
+  const on = node.on !== undefined ? `ON ${node.on.to(engine, options)}` : ''
+  return `${joinType} JOIN ${view}${on}`
+}, { engine })
 
 const listParser = engine => withOptions((node, options) =>
   `(${node.values.map(e => e.to(engine, options)).join(', ')})`, { engine })

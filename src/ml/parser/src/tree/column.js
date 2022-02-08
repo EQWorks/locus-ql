@@ -31,7 +31,7 @@ class ColumnReferenceNode extends BaseNode {
       this.as = undefined
     }
     this.column = column
-    this.view = isNull(view) ? Object.keys(this._context.refs)[0] : (view || undefined)
+    this.view = isNull(view) ? Object.keys(this._context.refs)[0] : view
     // register view + column in context
     this._registerViewColumn(this.view, this.column)
   }

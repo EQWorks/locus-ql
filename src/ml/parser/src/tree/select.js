@@ -1,4 +1,3 @@
-/* eslint-disable no-use-before-define */
 const {
   isNull,
   isNonNull,
@@ -7,6 +6,7 @@ const {
   sanitizeString,
   escapeIdentifier,
   parserError,
+  getSourceContext,
 } = require('../utils')
 const { expressionTypes } = require('../types')
 const {
@@ -34,12 +34,6 @@ class SelectNode extends BaseNode {
       limit,
       offset,
     } = exp
-
-    this._context = {
-      ...this._context,
-      ctes: { ...(this._context.ctes || {}) }, // shallow copy to prevent from adding to parent
-      refs: {}, // views/subs/cte's in use in scope
-    }
 
     // WITH
     this.with = []
@@ -85,7 +79,6 @@ class SelectNode extends BaseNode {
     this.where = []
     if (isNonNull(where)) {
       if (!isArray(where)) {
-        console.log('where', where)
         throw parserError(`Invalid where syntax: ${where}`)
       }
       this.where = where.map((e) => {
@@ -161,6 +154,13 @@ class SelectNode extends BaseNode {
     }
   }
 
+  _initContext(context) {
+    super._initContext(context)
+    // shallow copies to prevent from adding to parent
+    this._context.ctes = { ...(this._parentContext.ctes || {}) } // all inherited + preceding cte's
+    this._context.refs = { ...(this._parentContext.refs || {}) } // all inherited + preceding refs
+  }
+
   _toSQL(options) {
     const ctes = this.with.length
       ? `WITH ${this.with.map(e => e.toSQL(options)).join(', ')}`
@@ -231,7 +231,6 @@ class SelectNode extends BaseNode {
 
 class CTESelectNode extends SelectNode {
   constructor(exp, context) {
-    // const parentContext = context
     super(exp, context)
     const { as } = exp
     // alias is required
@@ -251,7 +250,6 @@ CTESelectNode.castable = false
 
 class RangeSelectNode extends SelectNode {
   constructor(exp, context) {
-    // const parentContext = context
     super(exp, context)
     const { as } = exp
     // alias is required
@@ -262,7 +260,21 @@ class RangeSelectNode extends SelectNode {
     this._registerRef(as)
     this._aliasIsUpdatable = false
   }
+
+  _initContext(context) {
+    super._initContext(context)
+    const parentContext = getSourceContext(this._parentContext, 'refs')._parentContext
+    this._context.refs = { ...((parentContext && parentContext.refs) || {}) } // only inherited refs
+  }
 }
 RangeSelectNode.castable = false
 
-module.exports = { SelectNode, RangeSelectNode, CTESelectNode }
+class LateralRangeSelectNode extends RangeSelectNode {
+  _initContext(context) {
+    super._initContext(context)
+    // all inherited + preceding refs
+    this._context.refs = { ...(this._parentContext.refs || {}) }
+  }
+}
+
+module.exports = { SelectNode, CTESelectNode, RangeSelectNode, LateralRangeSelectNode }

@@ -34,6 +34,7 @@ const {
     SelectNode,
     CTESelectNode,
     RangeSelectNode,
+    LateralRangeSelectNode,
     ShortNode,
     SortNode,
     SQLNode,
@@ -58,6 +59,7 @@ PrimitiveNode.registerParser(TRINO, primitiveParser(TRINO))
 SelectNode.registerParser(TRINO, selectParser(TRINO))
 CTESelectNode.registerParser(TRINO, cteSelectParser(TRINO))
 RangeSelectNode.registerParser(TRINO, rangeSelectParser(TRINO))
+LateralRangeSelectNode.registerParser(TRINO, rangeSelectParser(TRINO))
 ShortNode.registerParser(TRINO, shortParser(TRINO))
 SortNode.registerParser(TRINO, sortParser(TRINO))
 SQLNode.registerParser(TRINO, sqlParser(TRINO))

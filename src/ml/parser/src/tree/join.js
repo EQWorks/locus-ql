@@ -1,6 +1,6 @@
 const { sanitizeString, parserError } = require('../utils')
-const { expressionTypes } = require('../types')
-const { parseExpression, parseViewExpression } = require('./expression')
+const { expressionTypes, joinTypes, joinTypeValues } = require('../types')
+const { parseExpression, parseViewExpression, parseLateralViewExpression } = require('./expression')
 const BaseNode = require('./base')
 
 
@@ -8,11 +8,17 @@ class JoinNode extends BaseNode {
   constructor(exp, context) {
     super(exp, context)
     const { joinType, view, on } = exp
-    if (!['inner', 'left', 'right'].includes(sanitizeString(joinType))) {
+    this.joinType = sanitizeString(joinType)
+    if (!(this.joinType in joinTypeValues)) {
       throw parserError(`Invalid join type: ${joinType}`)
     }
-    this.joinType = joinType
-    this.view = parseViewExpression(view, this._context)
+    this.view = this.joinType === joinTypes.LATERAL
+      ? parseLateralViewExpression(view, this._context)
+      : parseViewExpression(view, this._context)
+    if ([joinTypes.CROSS, joinTypes.LATERAL].includes(this.joinType)) {
+      this.on = undefined
+      return
+    }
     this.on = parseExpression(on, this._context)
     if (this.on.as || this.on._as) {
       throw parserError(`Invalid alias in join condition: ${this.on.as || this.on._as}`)
@@ -20,8 +26,12 @@ class JoinNode extends BaseNode {
   }
 
   _toSQL(options) {
+    const view = this.view.toSQL(options)
+    if (this.joinType === joinTypes.LATERAL) {
+      return `CROSS JOIN LATERAL ${view}`
+    }
     const joinType = this.joinType.toUpperCase()
-    return `${joinType} JOIN ${this.view.toSQL(options)} ON ${this.on.toSQL(options)}`
+    return `${joinType} JOIN ${view}${this.on !== undefined ? `ON ${this.on.toSQL(options)}` : ''}`
   }
 
   _toQL(options) {
@@ -29,7 +39,7 @@ class JoinNode extends BaseNode {
       type: expressionTypes.JOIN,
       joinType: this.joinType,
       view: this.view.toQL(options),
-      on: this.on.toQL(options),
+      on: this.on !== undefined ? this.on.toQL(options) : undefined,
     }
   }
 }

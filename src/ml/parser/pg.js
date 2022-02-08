@@ -34,6 +34,7 @@ const {
     SelectNode,
     CTESelectNode,
     RangeSelectNode,
+    LateralRangeSelectNode,
     ShortNode,
     SortNode,
     SQLNode,
@@ -58,6 +59,7 @@ PrimitiveNode.registerParser(PG, primitiveParser(PG))
 SelectNode.registerParser(PG, selectParser(PG))
 CTESelectNode.registerParser(PG, cteSelectParser(PG))
 RangeSelectNode.registerParser(PG, rangeSelectParser(PG))
+LateralRangeSelectNode.registerParser(PG, rangeSelectParser(PG))
 ShortNode.registerParser(PG, shortParser(PG))
 SortNode.registerParser(PG, sortParser(PG))
 SQLNode.registerParser(PG, sqlParser(PG))

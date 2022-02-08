@@ -117,6 +117,17 @@ const parseViewExpression = (exp, context) => {
   throw parserError(`Invalid view identifier/subquery syntax: ${JSON.stringify(exp)}`)
 }
 
+const parseLateralViewExpression = (exp, context) => {
+  console.log('heree')
+  if (isObjectExpression(exp, expTypes.SELECT_RANGE_LATERAL)) {
+    return parseExpression(exp, context)
+  }
+  if (isObjectExpression(exp, expTypes.SELECT)) {
+    return parseExpression({ ...exp, type: expTypes.SELECT_RANGE_LATERAL }, context)
+  }
+  throw parserError(`Invalid lateral subquery syntax: ${JSON.stringify(exp)}`)
+}
+
 // used for 'with'
 const parseCTEExpression = (exp, context) => {
   if (isObjectExpression(exp, expTypes.SELECT_CTE)) {
@@ -142,6 +153,7 @@ module.exports = {
   objectParsers,
   parseExpression,
   parseViewExpression,
+  parseLateralViewExpression,
   parseCTEExpression,
   parseJoinExpression,
 }

@@ -341,6 +341,15 @@ const extractShortExpressionsFromSQL = (sql) => {
   return { sql: sqlWithoutShorts, shorts }
 }
 
+// returns first ancestor context where the key's value was set to its current value
+const getSourceContext = (context, key) => {
+  const parentContext = context._parentContext
+  if (!parentContext || context[key] !== parentContext[key]) {
+    return context
+  }
+  return getSourceContext(parentContext, key)
+}
+
 module.exports = {
   isNull,
   isNonNull,
@@ -360,4 +369,5 @@ module.exports = {
   extractShortExpressionsFromSQL,
   ParserError,
   parserError,
+  getSourceContext,
 }

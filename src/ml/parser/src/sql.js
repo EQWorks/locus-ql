@@ -75,8 +75,14 @@ astParsers.Float = ({ str }) => Number(str)
 astParsers.Null = () => null
 astParsers.RangeVar = ({ relname: view, alias: { aliasname: as } = {} }) =>
   ({ type: expTypes.VIEW, view, as })
-astParsers.RangeSubselect = ({ subquery, alias: { aliasname: as } = {} }, context) =>
-  Object.assign(parseASTNode(subquery, context), { as })
+astParsers.RangeSubselect = ({ subquery, lateral, alias: { aliasname: as } = {} }, context) => {
+  const select = parseASTNode(subquery, context)
+  if (lateral) {
+    select.type = expTypes.SELECT_RANGE_LATERAL
+  }
+  return Object.assign(select, { as })
+}
+
 astParsers.SubLink = ({ testexpr, subselect, subLinkType, operName, location }, context) => {
   // subLinkType: EXISTS_SUBLINK, ALL_SUBLINK, ANY_SUBLINK, ROWCOMPARE_SUBLINK,
   // EXPR_SUBLINK, ARRAY_SUBLINK, CTE_SUBLINK
@@ -130,12 +136,16 @@ astParsers.SelectStmt = (exp, context) => {
   let from // should be string (view or alias) or object (view and/or alias)
   let joins
   if (fromClause) {
-    const queue = [parseASTNode(fromClause[0], context)]
+    const queue = fromClause.map(e => parseASTNode(e, context))
     joins = []
     while (queue.length) {
       const item = queue.shift()
       if (item.type !== expTypes.JOIN) {
-        from = item
+        if (!from) {
+          from = item
+          continue
+        }
+        joins.push({ type: expTypes.JOIN, joinType: 'cross', view: item })
         continue
       }
       const { type, joinType, on, right: view, left } = item
@@ -214,13 +224,24 @@ astParsers.ResTarget = ({ name: as, val }, context) => {
   return { type: expTypes.PRIMITIVE, value, as }
 }
 
-astParsers.JoinExpr = ({ jointype, larg, rarg, quals }, context) => ({
-  type: expTypes.JOIN,
-  joinType: jointype.slice(5).toLowerCase(),
-  on: parseASTNode(quals, context),
-  left: parseASTNode(larg, context),
-  right: parseASTNode(rarg, context),
-})
+astParsers.JoinExpr = (exp, context) => {
+  const { jointype, larg, rarg, quals } = exp
+  if (!['JOIN_INNER', 'JOIN_LEFT', 'JOIN_RIGHT'].includes(jointype)) {
+    throw sqlParserError({ message: 'join not supported', expression: exp })
+  }
+  let joinType = jointype.slice(5).toLowerCase()
+  const right = parseASTNode(rarg, context)
+  if (joinType === 'inner' && !quals) {
+    joinType = right.type === expTypes.SELECT_RANGE_LATERAL ? 'lateral' : 'cross'
+  }
+  return {
+    type: expTypes.JOIN,
+    joinType,
+    on: quals ? parseASTNode(quals, context) : undefined,
+    left: parseASTNode(larg, context),
+    right,
+  }
+}
 
 astParsers.CommonTableExpr = ({ ctename: as, ctequery }, context) =>
   Object.assign(parseASTNode(ctequery, context), { as })

@@ -7,6 +7,7 @@ const expressionTypes = {
   SELECT: 'select',
   SELECT_CTE: 'select_cte',
   SELECT_RANGE: 'select_range',
+  SELECT_RANGE_LATERAL: 'select_range_lateral',
   JOIN: 'join',
   VIEW: 'view',
   COLUMN: 'column',
@@ -52,6 +53,22 @@ const castTypeValues = Object.entries(castTypes).reduce((acc, [k, v]) => {
 /**
  * @enum
  */
+const joinTypes = {
+  LEFT: 'left',
+  RIGHT: 'right',
+  INNER: 'inner',
+  CROSS: 'cross',
+  LATERAL: 'lateral',
+}
+// reverse lookup
+const joinTypeValues = Object.entries(joinTypes).reduce((acc, [k, v]) => {
+  acc[v] = k
+  return acc
+}, {})
+
+/**
+ * @enum
+ */
 const geometryTypes = {
   CA_FSA: 'ca-fsa',
   CA_DA: 'ca-da',
@@ -76,6 +93,8 @@ module.exports = {
   expressionTypeValues,
   castTypes,
   castTypeValues,
+  joinTypes,
+  joinTypeValues,
   geometryTypes,
   geometryTypeValues,
 }
