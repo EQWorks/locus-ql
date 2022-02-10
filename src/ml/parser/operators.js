@@ -1,5 +1,12 @@
 const operators = {}
 
+operators['^'] = {
+  trino: (node, options) => {
+    const [left, right] = node.operands.map(o => o.to('trino', options))
+    return `pow(${left}, ${right})`
+  },
+}
+
 operators.any = {
   pg: (node, options) => {
     const [left, right] = node.operands.map(o => o.to('pg', options))

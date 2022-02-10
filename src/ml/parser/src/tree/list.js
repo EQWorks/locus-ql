@@ -36,7 +36,6 @@ class ListNode extends BaseNode {
       args: {
         values: this.values.map(e => e.toShort(options)),
         as: this.as,
-        cast: this.cast,
       },
     }
   }

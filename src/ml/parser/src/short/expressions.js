@@ -31,12 +31,12 @@ shortExpressions.function = {
 }
 
 shortExpressions.geo = {
-  template: ['name', 'args', 'as'],
-  parser: ({ name, args = [], as }) => {
+  template: ['type', 'args', 'as'],
+  parser: ({ type, args = [], as }) => {
     if (!isArray(args)) {
       throw parserError('Invalid arguments supplied to @geo')
     }
-    return { type: expressionTypes.FUNCTION, values: ['geometry', name, ...args], as }
+    return { type: expressionTypes.FUNCTION, values: ['geometry', type, ...args], as }
   },
 }
 
@@ -107,22 +107,22 @@ shortExpressions.point = {
 }
 
 shortExpressions.array = {
-  template: ['values', 'as', 'cast'],
-  parser: ({ values = [], as, cast }) => {
+  template: ['values', 'as'],
+  parser: ({ values = [], as }) => {
     if (!isArray(values)) {
       throw parserError('Invalid arguments supplied to @array')
     }
-    return { type: expressionTypes.ARRAY, values, as, cast }
+    return { type: expressionTypes.ARRAY, values, as }
   },
 }
 
 shortExpressions.list = {
-  template: ['values', 'as', 'cast'],
-  parser: ({ values = [], as, cast }) => {
+  template: ['values', 'as'],
+  parser: ({ values = [], as }) => {
     if (!isArray(values)) {
       throw parserError('Invalid arguments supplied to @list')
     }
-    return { type: expressionTypes.LIST, values, as, cast }
+    return { type: expressionTypes.LIST, values, as }
   },
 }
 
@@ -134,6 +134,11 @@ shortExpressions.cast = {
 shortExpressions.primitive = {
   template: ['value', 'as', 'cast'],
   parser: ({ value, as, cast }) => ({ type: expressionTypes.PRIMITIVE, value, as, cast }),
+}
+
+shortExpressions.null = {
+  template: ['as', 'cast'],
+  parser: ({ as, cast }) => ({ type: expressionTypes.PRIMITIVE, value: null, as, cast }),
 }
 
 shortExpressions.date = {

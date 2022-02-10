@@ -31,6 +31,7 @@ const operators = {
   '*': { minOpsLength: 2 },
   '/': { minOpsLength: 2 },
   '%': { minOpsLength: 2 },
+  '^': { minOpsLength: 2 },
 
   // JSON operators
   // 'json array element at': { value: '->' },

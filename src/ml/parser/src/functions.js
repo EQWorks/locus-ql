@@ -47,20 +47,14 @@ const functions = {
     maxArgsLength: 2,
   },
 
-  // time/date functions
-  // field can be year, month, day, hour etc
-  date: {
-    argsLength: 1,
-    // category: CAT_NUMERIC,
-  },
-  date_part: { // date_part(field, timestamp)
-    argsLength: 2,
-    // category: CAT_NUMERIC,
-  },
-  date_trunc: { // date_trunc(field, timestamp)
-    argsLength: 2,
-    // category: CAT_DATE,
-  },
+  // date_part: { // date_part(field, timestamp)
+  //   argsLength: 2,
+  //   // category: CAT_NUMERIC,
+  // },
+  // date_trunc: { // date_trunc(field, timestamp)
+  //   argsLength: 2,
+  //   // category: CAT_DATE,
+  // },
 
   // JSON functions
   json_extract_path: { // json_extract_path(field, keys)
@@ -86,6 +80,8 @@ functions.upper = { argsLength: 1 }
 functions.trim = { argsLength: 1 }
 functions.ltrim = { argsLength: 1 }
 functions.rtrim = { argsLength: 1 }
+functions.lpad = { argsLength: 3 }
+functions.rpad = { argsLength: 3 }
 functions.length = { argsLength: 1 }
 functions.replace = { argsLength: 3 }
 
