@@ -309,7 +309,7 @@ class BaseNode {
     const namedArgs = Object.entries(args).reduce((acc, [k, v]) => {
       if (v !== undefined) {
         // json stringify any value other than short
-        acc.push(`${k}=${isString(v) && isShortExpression(v) ? v : JSON.stringify(v)}`)
+        acc.push(`${k}=${isString(v, true) && isShortExpression(v) ? v : JSON.stringify(v)}`)
       }
       return acc
     }, [])

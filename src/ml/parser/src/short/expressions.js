@@ -157,7 +157,7 @@ shortExpressions.datetime = {
     hour = 0, minute = 0, second = 0,
     tz = 'UTC', as,
   }) => {
-    if (![year, month, day, hour, minute, second].every(Number.isInteger) || !isString(tz)) {
+    if (![year, month, day, hour, minute, second].every(Number.isInteger) || !isString(tz, true)) {
       throw parserError('Invalid arguments supplied to @datetime')
     }
     const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
@@ -173,7 +173,7 @@ shortExpressions.datetime = {
 shortExpressions.time = {
   template: ['hour', 'minute', 'second', 'tz', 'as'],
   parser: ({ hour, minute, second, tz = 'UTC', as }) => {
-    if (![hour, minute, second].every(Number.isInteger) || !isString(tz)) {
+    if (![hour, minute, second].every(Number.isInteger) || !isString(tz, true)) {
       throw parserError('Invalid arguments supplied to @time')
     }
     // eslint-disable-next-line max-len

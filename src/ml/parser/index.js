@@ -1,5 +1,5 @@
 const { useAPIErrorOptions } = require('../../util/api-error')
-const { parseQLToTree, parseSQLToTree, nodes: { SelectNode } } = require('./src')
+const { parseQLToTree, parseSQLToTree, nodes: { SelectNode, OperatorNode } } = require('./src')
 const { isValidSQLExpression } = require('./src/sql')
 const { ParserError } = require('./src/utils')
 require('./pg') // init - attach parsers
@@ -25,16 +25,24 @@ const parseQueryToTree = (query, { type = 'ql', parameters, paramsMustHaveValues
   }
   const options = { parameters, paramsMustHaveValues }
   const tree = type === 'ql' ? parseQLToTree(query, options) : parseSQLToTree(query, options)
-  if (!(tree instanceof SelectNode) || tree.as || tree.cast) {
-    throw apiError('Query must be of type select', 400)
+  // top-level node validation
+  if (
+    !(
+      tree instanceof SelectNode
+      || (tree instanceof OperatorNode && ['union', 'except', 'intercept'].includes(tree.name))
+    )
+    || tree.as
+    || tree.cast
+  ) {
+    throw apiError('Invalid query syntax', 400)
   }
   if (!Object.keys(tree.viewColumns).length) {
     // throw apiError('Query must use at least one view', 400)
   }
-  // check that translates into valid SQL
+  // check that query makes sense using the sql parser
   const sql = tree.toSQL({ keepShorts: false, keepParamRefs: !paramsMustHaveValues })
   if (!isValidSQLExpression(sql)) {
-    throw apiError('Invalid query syntax')
+    throw apiError('Invalid query syntax', 400)
   }
   return tree
 }

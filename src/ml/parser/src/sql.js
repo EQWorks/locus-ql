@@ -116,21 +116,46 @@ astParsers.SelectStmt = (exp, context) => {
     groupClause,
     havingClause,
     sortClause,
-    // limitOption,
+    limitOption, // LIMIT_OPTION_DEFAULT, LIMIT_OPTION_COUNT, LIMIT_OPTION_WITH_TIES
     limitCount,
     limitOffset,
-    withClause: { ctes: cteClause } = {},
+    withClause,
     valuesLists,
+    op, // SETOP_NONE, SETOP_UNION, SETOP_INTERSECT, SETOP_EXCEPT
+    all,
+    larg,
+    rarg,
+    lockingClause,
   } = exp
+
+  const safeOp = op.slice(6).toLowerCase()
+  // union, intersect or except
+  if (safeOp !== 'none') {
+    return {
+      type: expTypes.OPERATOR,
+      values: [
+        all ? ['all', safeOp] : safeOp,
+        ...[larg, rarg].map(SelectStmt => parseASTNode({ SelectStmt }, context)),
+      ],
+    }
+  }
+
   if (valuesLists) {
-    throw sqlParserError({
-      message: 'Lists of values not supported',
-      expression: valuesLists,
-    })
+    throw sqlParserError({ message: 'Lists of values not supported', expression: valuesLists })
+  }
+
+  if (lockingClause) {
+    throw sqlParserError({ message: 'Locking not supported', expression: lockingClause })
   }
 
   // WITH
-  const ctes = cteClause ? cteClause.map(e => parseASTNode(e, context)) : undefined
+  let ctes
+  if (withClause) {
+    if (withClause.recursive) {
+      throw sqlParserError({ message: '"with recursive" not supported', expression: withClause })
+    }
+    ctes = withClause.ctes.map(e => parseASTNode(e, context))
+  }
 
   // FROM AND JOINS
   let from // should be string (view or alias) or object (view and/or alias)
@@ -159,8 +184,13 @@ astParsers.SelectStmt = (exp, context) => {
     joins = joins.length ? joins.reverse() : undefined
   }
 
-  // DISTINCT AND COLUMNS
+  // DISTINCT
+  if (distinctClause && (distinctClause.length > 1 || Object.keys(distinctClause[0]).length)) {
+    throw sqlParserError({ message: '"distinct on" not supported', expression: distinctClause })
+  }
   const distinct = distinctClause !== undefined || undefined
+
+  // COLUMNS
   const columns = targetList.map(e => parseASTNode(e, context))
 
   // WHERE
@@ -190,9 +220,10 @@ astParsers.SelectStmt = (exp, context) => {
   const orderBy = sortClause ? sortClause.map(e => parseASTNode(e, context)) : undefined
 
   // LIMIT
-  // if (limitOption !== 'LIMIT_OPTION_DEFAULT') {
+  if (limitOption === 'LIMIT_OPTION_WITH_TIES') {
+    throw sqlParserError({ message: 'Fetch with ties not supported', expression: limitOffset })
+  }
   const limit = limitCount ? parseASTNode(limitCount, context) : undefined
-  // }
 
   // OFFSET
   const offset = limitOffset ? parseASTNode(limitOffset, context) : undefined
@@ -225,9 +256,12 @@ astParsers.ResTarget = ({ name: as, val }, context) => {
 }
 
 astParsers.JoinExpr = (exp, context) => {
-  const { jointype, larg, rarg, quals } = exp
+  const { jointype, larg, rarg, quals, usingClause } = exp
+  if (usingClause) {
+    throw sqlParserError({ message: '"using" not supported in join expression', expression: exp })
+  }
   if (!['JOIN_INNER', 'JOIN_LEFT', 'JOIN_RIGHT'].includes(jointype)) {
-    throw sqlParserError({ message: 'join not supported', expression: exp })
+    throw sqlParserError({ message: 'Join type not supported', expression: exp })
   }
   let joinType = jointype.slice(5).toLowerCase()
   const right = parseASTNode(rarg, context)
@@ -309,7 +343,7 @@ astParsers.TypeCast = (exp, context) => {
     }
   }
   // interval - 'int quantity unit(s)'
-  if (cast === 'interval' && isString(value)) {
+  if (cast === 'interval' && isString(value, true)) {
     const safeValue = value.toLowerCase()
     if (!intervalLiteralRE.test(safeValue)) {
       throw sqlParserError({ message: 'Interval syntax not supported', expression: exp })
@@ -336,7 +370,7 @@ astParsers.TypeCast = (exp, context) => {
     }
   }
   // geometry - '<type> (arg arg arg)'
-  if (cast === 'geometry' && isString(value)) {
+  if (cast === 'geometry' && isString(value, true)) {
     const safeValue = value.toLowerCase()
     if (!geometryLiteralRE.test(safeValue)) {
       throw sqlParserError({ message: 'Geometry syntax not supported', expression: exp })

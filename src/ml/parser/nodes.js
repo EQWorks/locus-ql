@@ -91,7 +91,8 @@ const listParser = engine => withOptions((node, options) =>
   `(${node.values.map(e => e.to(engine, options)).join(', ')})`, { engine })
 
 const operatorParser = engine => withOptions((node, options) => {
-  let { qualifier, name } = node
+  let { name } = node
+  const { qualifier } = node
   let sql
   if (name in operators && engine in operators[name]) {
     if (typeof operators[name][engine] === 'function') {
@@ -100,14 +101,8 @@ const operatorParser = engine => withOptions((node, options) => {
       name = operators[name][engine]
     }
   }
+  // TODO: qualifier validation?
   if (!sql) {
-    if (qualifier in operators && engine in operators[qualifier]) {
-      // if qualifier has non-standard implementation throw error
-      if (typeof operators[qualifier][engine] === 'function') {
-        throw apiError(`Invalid operator qualifier for operator: ${qualifier}`)
-      }
-      qualifier = operators[name][engine]
-    }
     const operator = `${qualifier ? `${qualifier} ` : ''}${name} `
     sql = node.operands.map((o, i, all) => {
       const op = i > 0 || all.length === 1 ? operator : ''

@@ -11,24 +11,21 @@ class OperatorNode extends BaseNode {
     // binary and left-unary operators
     if (
       !isArray(exp.values, { minLength: 2 })
-      || !(isString(exp.values[0]) || isArray(exp.values[0], { length: 2 }))
+      || !(isString(exp.values[0], true) || isArray(exp.values[0], { length: 2 }))
     ) {
       throw parserError(`Invalid operator syntax: ${JSON.stringify(exp)}`)
     }
     const [operator, ...operands] = exp.values
-    const [qualifier, name] = isArray(operator) ? operator : [undefined, operator];
-
-    [qualifier, name].forEach((n, i) => {
-      const key = i ? 'name' : 'qualifier'
-      this[key] = sanitizeString(n)
-      if (key === 'qualifier' && n === undefined) {
-        return
-      }
-      const op = operators[this[key]]
-      if (!op) {
-        throw parserError(`Invalid operator: ${n}`)
-      }
-    })
+    const [qualifier, name] = isArray(operator) ? operator : [undefined, operator]
+    this.name = sanitizeString(name, true)
+    const op = operators[this.name]
+    if (!op) {
+      throw parserError(`Invalid operator: ${name}`)
+    }
+    this.qualifier = sanitizeString(qualifier, true)
+    if (this.qualifier && (!op.qualifiers || !op.qualifiers.includes(this.qualifier))) {
+      throw parserError(`Missing operator qualifier for operator: ${this.name}`)
+    }
     this.operands = operands.map((e) => {
       const operand = parseExpression(e, this._context)
       if (operand.as || operand._as) {

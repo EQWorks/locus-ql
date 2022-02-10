@@ -1,5 +1,24 @@
 const operators = {}
 
+operators.union = {
+  pg: (node, options) => {
+    const operator = `${node.name} ${node.qualifier ? `${node.qualifier} ` : ''}`
+    return node.operands.map((o, i) => {
+      const op = i > 0 ? operator : ''
+      return op + o.to('pg', options)
+    }).join(' ')
+  },
+  trino: (node, options) => {
+    const operator = `${node.name} ${node.qualifier ? `${node.qualifier} ` : ''}`
+    return node.operands.map((o, i) => {
+      const op = i > 0 ? operator : ''
+      return op + o.to('trino', options)
+    }).join(' ')
+  },
+}
+operators.intersect = operators.union
+operators.except = operators.union
+
 operators.any = {
   pg: (node, options) => {
     const [left, right] = node.operands.map(o => o.to('pg', options))
