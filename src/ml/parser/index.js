@@ -26,14 +26,7 @@ const parseQueryToTree = (query, { type = 'ql', parameters, paramsMustHaveValues
   const options = { parameters, paramsMustHaveValues }
   const tree = type === 'ql' ? parseQLToTree(query, options) : parseSQLToTree(query, options)
   // top-level node validation
-  if (
-    !(
-      tree instanceof SelectNode
-      || (tree instanceof OperatorNode && ['union', 'except', 'intercept'].includes(tree.name))
-    )
-    || tree.as
-    || tree.cast
-  ) {
+  if (!(tree instanceof SelectNode) || tree.as || tree.cast) {
     throw apiError('Invalid query syntax', 400)
   }
   if (!Object.keys(tree.viewColumns).length) {

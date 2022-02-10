@@ -128,24 +128,23 @@ astParsers.SelectStmt = (exp, context) => {
     lockingClause,
   } = exp
 
-  const safeOp = op.slice(6).toLowerCase()
-  // union, intersect or except
-  if (safeOp !== 'none') {
-    return {
-      type: expTypes.OPERATOR,
-      values: [
-        all ? ['all', safeOp] : safeOp,
-        ...[larg, rarg].map(SelectStmt => parseASTNode({ SelectStmt }, context)),
-      ],
-    }
-  }
-
   if (valuesLists) {
     throw sqlParserError({ message: 'Lists of values not supported', expression: valuesLists })
   }
 
   if (lockingClause) {
     throw sqlParserError({ message: 'Locking not supported', expression: lockingClause })
+  }
+
+  // OPERATOR
+  const safeOp = op.slice(6).toLowerCase() // none, union, intersect or except
+  let operator
+  let distinct
+  let operands
+  if (safeOp !== 'none') {
+    operator = safeOp
+    distinct = !all
+    operands = [larg, rarg].map(SelectStmt => parseASTNode({ SelectStmt }, context))
   }
 
   // WITH
@@ -185,13 +184,15 @@ astParsers.SelectStmt = (exp, context) => {
   }
 
   // DISTINCT
-  if (distinctClause && (distinctClause.length > 1 || Object.keys(distinctClause[0]).length)) {
-    throw sqlParserError({ message: '"distinct on" not supported', expression: distinctClause })
+  if (distinctClause) {
+    if (distinctClause.length > 1 || Object.keys(distinctClause[0]).length) {
+      throw sqlParserError({ message: '"distinct on" not supported', expression: distinctClause })
+    }
+    distinct = true
   }
-  const distinct = distinctClause !== undefined || undefined
 
   // COLUMNS
-  const columns = targetList.map(e => parseASTNode(e, context))
+  const columns = targetList ? targetList.map(e => parseASTNode(e, context)) : undefined
 
   // WHERE
   let where
@@ -230,6 +231,8 @@ astParsers.SelectStmt = (exp, context) => {
 
   return {
     type: expTypes.SELECT,
+    operator,
+    operands,
     distinct,
     with: ctes,
     from,

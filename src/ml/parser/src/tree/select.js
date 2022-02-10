@@ -3,6 +3,7 @@ const {
   isNonNull,
   isArray,
   isInt,
+  isObjectExpression,
   sanitizeString,
   escapeIdentifier,
   parserError,
@@ -22,6 +23,8 @@ class SelectNode extends BaseNode {
   constructor(exp, context) {
     super(exp, context)
     const {
+      operator, // union, intersect, except
+      operands,
       with: ctes,
       from,
       joins,
@@ -29,16 +32,35 @@ class SelectNode extends BaseNode {
       columns,
       where,
       having,
-      groupBy,
-      orderBy,
+      groupBy, // TODO: able to reference output column
+      orderBy, // TODO: able to reference output column
       limit,
       offset,
     } = exp
 
+    // OPERATOR
+    this.operator = undefined
+    if (isNonNull(operator)) {
+      this.operator = sanitizeString(operator, true)
+      if (!this.operator || !['union', 'except', 'intersect'].includes(this.operator)) {
+        throw parserError(`Invalid operator syntax: ${operator}`)
+      }
+    }
+    // OPERANDS
+    if (this.operator ? !isArray(operands, { length: 2 }) : isNonNull(operands)) {
+      throw parserError(`Invalid operands syntax: ${operands}`)
+    }
+    this.operands = (operands || []).map((e) => {
+      if (!isObjectExpression(e, expressionTypes.SELECT)) {
+        throw parserError(`Invalid select operand: ${JSON.stringify(e)}`)
+      }
+      return parseExpression(e, this._context)
+    })
+
     // WITH
     this.with = []
     if (isNonNull(ctes)) {
-      if (!isArray(ctes)) {
+      if (this.operator || !isArray(ctes)) {
         throw parserError(`Invalid with syntax: ${ctes}`)
       }
       this.with = ctes.map(e => parseCTEExpression(e, this._context))
@@ -48,20 +70,23 @@ class SelectNode extends BaseNode {
     // string, select object or undefined/null (e.g. select true)
     this.from = undefined
     if (isNonNull(from)) {
+      if (this.operator) {
+        throw parserError(`Invalid from syntax: ${ctes}`)
+      }
       this.from = parseViewExpression(from, this._context)
     }
 
     // JOINS
     this.joins = []
     if (isNonNull(joins)) {
-      if (!isArray(joins)) {
+      if (this.operator || !isArray(joins)) {
         throw parserError(`Invalid join syntax: ${joins}`)
       }
       this.joins = joins.map(e => parseJoinExpression(e, this._context))
     }
 
     // DISTINCT
-    this.distinct = false
+    this.distinct = this.operator !== undefined
     if (isNonNull(distinct)) {
       if (typeof distinct !== 'boolean') {
         throw parserError(`Invalid distinct syntax: ${distinct}`)
@@ -70,15 +95,15 @@ class SelectNode extends BaseNode {
     }
 
     // COLUMNS
-    if (!isArray(columns, { minLength: 1 })) {
+    if (this.operator ? isNonNull(columns) : !isArray(columns, { minLength: 1 })) {
       throw parserError('Missing columns in select expression')
     }
-    this.columns = columns.map(e => parseExpression(e, this._context))
+    this.columns = (columns || []).map(e => parseExpression(e, this._context))
 
     // WHERE
     this.where = []
     if (isNonNull(where)) {
-      if (!isArray(where)) {
+      if (this.operator || !isArray(where)) {
         throw parserError(`Invalid where syntax: ${where}`)
       }
       this.where = where.map((e) => {
@@ -93,7 +118,7 @@ class SelectNode extends BaseNode {
     // HAVING
     this.having = []
     if (isNonNull(having)) {
-      if (!isArray(having)) {
+      if (this.operator || !isArray(having)) {
         throw parserError(`Invalid having syntax: ${having}`)
       }
       this.having = having.map((e) => {
@@ -108,13 +133,13 @@ class SelectNode extends BaseNode {
     // GROUP BY
     this.groupBy = []
     if (isNonNull(groupBy)) {
-      if (!isArray(groupBy)) {
+      if (this.operator || !isArray(groupBy)) {
         throw parserError(`Invalid groupBy syntax: ${groupBy}`)
       }
       this.groupBy = groupBy.map((e) => {
         const value = parseExpression(e, this._context)
         if (value.as || value._as) {
-          throw parserError(`Invalid alias in group by expression: ${value.as || value._as}`)
+          throw parserError(`Invalid alias in groupBy expression: ${value.as || value._as}`)
         }
         return value
       })
@@ -129,7 +154,7 @@ class SelectNode extends BaseNode {
       this.orderBy = orderBy.map((e) => {
         const value = parseExpression(e, this._context)
         if (value.as || value._as) {
-          throw parserError(`Invalid alias in order by expression: ${value.as || value._as}`)
+          throw parserError(`Invalid alias in orderBy expression: ${value.as || value._as}`)
         }
         return value
       })
@@ -162,11 +187,30 @@ class SelectNode extends BaseNode {
   }
 
   _toSQL(options) {
+    const orderBy = this.orderBy.length
+      ? `ORDER BY ${this.orderBy.map(e => e.toSQL(options)).join(', ')}`
+      : ''
+    const limit = this.limit !== undefined ? `LIMIT ${this.limit}` : ''
+    const offset = this.offset !== undefined ? `OFFSET ${this.offset}` : ''
+
+    // has operator
+    if (this.operator) {
+      const operator = ` ${this.operator.toUpperCase()} ${!this.distinct ? 'ALL ' : ''}`
+      const sql = `
+        ${this.operands.map(e => e.toSQL(options)).join(operator)}
+        ${orderBy}
+        ${limit}
+        ${offset}
+      `
+      return this.isRoot() && !this.as && !this.cast ? sql : `(${sql})`
+    }
+
+    // no operator
     const ctes = this.with.length
       ? `WITH ${this.with.map(e => e.toSQL(options)).join(', ')}`
       : ''
 
-    const distinct = this.distinct ? 'DISTINCT' : ''
+    const distinct = this.distinct ? ' DISTINCT' : ''
     const columns = this.columns.map(e => e.toSQL(options)).join(', ')
 
     const from = this.from ? `FROM ${this.from.toSQL(options)}` : ''
@@ -187,16 +231,9 @@ class SelectNode extends BaseNode {
       ? `GROUP BY ${this.groupBy.map(e => e.toSQL(options)).join(', ')}`
       : ''
 
-    const orderBy = this.orderBy.length
-      ? `ORDER BY ${this.orderBy.map(e => e.toSQL(options)).join(', ')}`
-      : ''
-
-    const limit = this.limit !== undefined ? `LIMIT ${this.limit}` : ''
-    const offset = this.offset !== undefined ? `OFFSET ${this.offset}` : ''
-
     const sql = `
       ${ctes}
-      SELECT ${distinct}
+      SELECT${distinct}
         ${columns}
       ${from}
       ${joins}
@@ -207,18 +244,19 @@ class SelectNode extends BaseNode {
       ${limit}
       ${offset}
     `
-
     return this.isRoot() && !this.as && !this.cast ? sql : `(${sql})`
   }
 
   _toQL(options) {
     return {
       type: expressionTypes.SELECT,
+      operator: this.operator,
+      operands: this.operands.length ? this.operands.map(e => e.toQL(options)) : undefined,
       with: this.with.length ? this.with.map(e => e.toQL(options)) : undefined,
       from: this.from ? this.from.toQL(options) : undefined,
       joins: this.joins.length ? this.joins.map(e => e.toQL(options)) : undefined,
       distinct: this.distinct || undefined,
-      columns: this.columns.map(e => e.toQL(options)),
+      columns: this.joins.length ? this.columns.map(e => e.toQL(options)) : undefined,
       where: this.where.length ? this.where.map(e => e.toQL(options)) : undefined,
       having: this.having.length ? this.having.map(e => e.toQL(options)) : undefined,
       groupBy: this.groupBy.length ? this.groupBy.map(e => e.toQL(options)) : undefined,

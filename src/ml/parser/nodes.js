@@ -129,11 +129,31 @@ const primitiveParser = engine => withOptions((node) => {
 
 
 const baseSelectParser = engine => (node, options) => {
+  const orderBy = node.orderBy.length
+    ? `ORDER BY ${node.orderBy.map(e => e.to(engine, options)).join(', ')}`
+    : ''
+
+  const limit = node.limit !== undefined ? `LIMIT ${node.limit}` : ''
+  const offset = node.offset !== undefined ? `OFFSET ${node.offset}` : ''
+
+  // has operator
+  if (node.operator) {
+    const operator = ` ${node.operator} ${!node.distinct ? 'ALL ' : ''}`
+    const sql = `
+      ${node.operands.map(e => e.to(engine, options)).join(operator)}
+      ${orderBy}
+      ${limit}
+      ${offset}
+    `
+    return node.isRoot() && !node.as && !node.cast ? sql : `(${sql})`
+  }
+
+  // no operator
   const ctes = node.with.length
     ? `WITH ${node.with.map(e => e.to(engine, options)).join(', ')}`
     : ''
 
-  const distinct = node.distinct ? 'DISTINCT' : ''
+  const distinct = node.distinct ? ' DISTINCT' : ''
   const columns = node.columns.map(e => e.to(engine, options)).join(', ')
 
   const from = node.from ? `FROM ${node.from.to(engine, options)}` : ''
@@ -154,16 +174,9 @@ const baseSelectParser = engine => (node, options) => {
     ? `GROUP BY ${node.groupBy.map(e => e.to(engine, options)).join(', ')}`
     : ''
 
-  const orderBy = node.orderBy.length
-    ? `ORDER BY ${node.orderBy.map(e => e.to(engine, options)).join(', ')}`
-    : ''
-
-  const limit = node.limit !== undefined ? `LIMIT ${node.limit}` : ''
-  const offset = node.offset !== undefined ? `OFFSET ${node.offset}` : ''
-
   const sql = `
     ${ctes}
-    SELECT ${distinct}
+    SELECT${distinct}
       ${columns}
     ${from}
     ${joins}

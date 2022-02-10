@@ -41,21 +41,6 @@ const operators = {
   // 'json object as text at path': { value: '#>>' },
 }
 
-// query combination operators
-operators.union = {
-  minOpsLength: 2,
-  qualifiers: ['all'],
-  toSQL: (node, options) => {
-    const operator = `${node.name} ${node.qualifier ? `${node.qualifier} ` : ''}`.toUpperCase()
-    return node.operands.map((o, i) => {
-      const op = i > 0 ? operator : ''
-      return op + o.toSQL(options)
-    }).join(' ')
-  },
-}
-operators.intersect = operators.union
-operators.except = operators.union
-
 // comparison operators
 operators['>'] = { opsLength: 2 }
 operators['>='] = { opsLength: 2 }
