@@ -163,10 +163,10 @@ router.get('/executions/', listExecutions)
  * rerun). Ignored when `query` has a value
  * @apiParam (query) {number} [preview] '1' or 'true' if the execution only needs to be evaluated
  * but not submitted (e.g. generate query hash or price execution)
- * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of `query`
+ * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
- * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of `query`
+ * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
  * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.
@@ -257,10 +257,10 @@ router.get('/queries/', listQueries)
  * when `query` has a value
  * @apiParam (Req body) {string} name Query name
  * @apiParam (Req body) {string} [description] Query description
- * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of `query`
+ * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
- * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of `query`
+ * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
  * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.

@@ -262,13 +262,13 @@ module.exports = {
       category: CAT_STRING,
       geo_type: geometryTypes.CA_CITY,
       dependsOn: ['city'],
-      viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$(.*)$'))",
+      viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$.+$'))",
     },
     geo_us_city: {
       category: CAT_STRING,
       // geo_type: 'us-city',
       dependsOn: ['city'],
-      viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$(.*)$'))",
+      viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$.+$'))",
     },
     banner_code: {
       category: CAT_NUMERIC,

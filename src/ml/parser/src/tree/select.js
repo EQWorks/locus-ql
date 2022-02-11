@@ -19,6 +19,10 @@ const {
 const BaseNode = require('./base')
 
 
+// [] or [null]
+const isEmptyOrNullArray = val =>
+  isArray(val, { maxLength: 1 }) && [undefined, null].includes(val[0])
+
 class SelectNode extends BaseNode {
   constructor(exp, context) {
     super(exp, context)
@@ -47,7 +51,11 @@ class SelectNode extends BaseNode {
       }
     }
     // OPERANDS
-    if (this.operator ? !isArray(operands, { length: 2 }) : isNonNull(operands)) {
+    if (
+      this.operator
+        ? !isArray(operands, { length: 2 })
+        : isNonNull(operands) && !isEmptyOrNullArray(operands)
+    ) {
       throw parserError(`Invalid operands syntax: ${operands}`)
     }
     this.operands = (operands || []).map((e) => {
@@ -59,7 +67,7 @@ class SelectNode extends BaseNode {
 
     // WITH
     this.with = []
-    if (isNonNull(ctes)) {
+    if (isNonNull(ctes) && !isEmptyOrNullArray(ctes)) {
       if (this.operator || !isArray(ctes)) {
         throw parserError(`Invalid with syntax: ${ctes}`)
       }
@@ -78,7 +86,7 @@ class SelectNode extends BaseNode {
 
     // JOINS
     this.joins = []
-    if (isNonNull(joins)) {
+    if (isNonNull(joins) && !isEmptyOrNullArray(joins)) {
       if (this.operator || !isArray(joins)) {
         throw parserError(`Invalid join syntax: ${joins}`)
       }
@@ -95,14 +103,18 @@ class SelectNode extends BaseNode {
     }
 
     // COLUMNS
-    if (this.operator ? isNonNull(columns) : !isArray(columns, { minLength: 1 })) {
+    if (
+      this.operator
+        ? isNonNull(columns) && !isEmptyOrNullArray(columns)
+        : !isArray(columns, { minLength: 1 })
+    ) {
       throw parserError('Missing columns in select expression')
     }
     this.columns = (columns || []).map(e => parseExpression(e, this._context))
 
     // WHERE
     this.where = []
-    if (isNonNull(where)) {
+    if (isNonNull(where) && !isEmptyOrNullArray(where)) {
       if (this.operator || !isArray(where)) {
         throw parserError(`Invalid where syntax: ${where}`)
       }
@@ -117,7 +129,7 @@ class SelectNode extends BaseNode {
 
     // HAVING
     this.having = []
-    if (isNonNull(having)) {
+    if (isNonNull(having) && !isEmptyOrNullArray(having)) {
       if (this.operator || !isArray(having)) {
         throw parserError(`Invalid having syntax: ${having}`)
       }
@@ -132,7 +144,7 @@ class SelectNode extends BaseNode {
 
     // GROUP BY
     this.groupBy = []
-    if (isNonNull(groupBy)) {
+    if (isNonNull(groupBy) && !isEmptyOrNullArray(groupBy)) {
       if (this.operator || !isArray(groupBy)) {
         throw parserError(`Invalid groupBy syntax: ${groupBy}`)
       }
@@ -147,7 +159,7 @@ class SelectNode extends BaseNode {
 
     // ORDER BY
     this.orderBy = []
-    if (isNonNull(orderBy)) {
+    if (isNonNull(orderBy) && !isEmptyOrNullArray(orderBy)) {
       if (!isArray(orderBy)) {
         throw parserError(`Invalid orderBy syntax: ${orderBy}`)
       }
@@ -256,7 +268,7 @@ class SelectNode extends BaseNode {
       from: this.from ? this.from.toQL(options) : undefined,
       joins: this.joins.length ? this.joins.map(e => e.toQL(options)) : undefined,
       distinct: this.distinct || undefined,
-      columns: this.joins.length ? this.columns.map(e => e.toQL(options)) : undefined,
+      columns: this.columns.length ? this.columns.map(e => e.toQL(options)) : undefined,
       where: this.where.length ? this.where.map(e => e.toQL(options)) : undefined,
       having: this.having.length ? this.having.map(e => e.toQL(options)) : undefined,
       groupBy: this.groupBy.length ? this.groupBy.map(e => e.toQL(options)) : undefined,

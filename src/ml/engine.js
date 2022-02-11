@@ -59,9 +59,9 @@ const executeQuery = async (
     // establish fdw connections
     await establishFdwConnections(pgClient, fdwConnections)
     // run query
-    return pgWithCache(query, [], pgClient, cacheOptions)
+    return await pgWithCache(query, [], pgClient, cacheOptions)
   } finally {
-    pgClient.release()
+    pgClient.end()
   }
 }
 
