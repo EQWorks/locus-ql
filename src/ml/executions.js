@@ -942,5 +942,5 @@ module.exports = {
   listExecutions,
   cancelExecution,
   getExecutionMetas,
-  getExecutionResults,
+  getAllExecutionResults,
 }

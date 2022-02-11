@@ -409,10 +409,10 @@ module.exports = {
       viewExpression: 'locus_poi.locus_poi_lat',
       viewJoins: [locusPoiJoin],
     },
-    locus_poi_long: {
+    locus_poi_lon: {
       category: CAT_NUMERIC,
       dependsOn: ['locus_poi_id'],
-      viewExpression: 'locus_poi.locus_poi_long',
+      viewExpression: 'locus_poi.locus_poi_lon',
       viewJoins: [locusPoiJoin],
     },
     locus_poi_list_id: {
@@ -738,7 +738,7 @@ module.exports = {
       category: CAT_NUMERIC,
       pgType: 'int',
       expression: 'count_if(view_did_scroll)',
-      viewExpression: 'SUM(COALESCE(log.view_did_scroll, 0))',
+      viewExpression: 'SUM(COALESCE(log.viewability_did_scroll, 0))',
       isAggregate: true,
       inFastViews: [pgViews.ATOM_CH_VIEWABILITY],
     },
