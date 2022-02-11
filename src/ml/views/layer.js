@@ -1,39 +1,46 @@
 /* eslint-disable indent */
-/* eslint-disable no-use-before-define */
 const { knex } = require('../../util/db')
 const { CAT_STRING, CAT_NUMERIC } = require('../type')
+const { filterViewColumns } = require('./utils')
 const { useAPIErrorOptions } = require('../../util/api-error')
 const { knexWithCache } = require('../../util/cache')
-const { geoMapping } = require('../geo')
+const geoTables = require('../geo-tables')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
+
+const viewCategoryToLayerType = {
+  [viewCategories.LAYER_DEMOGRAPHIC]: 18,
+  [viewCategories.LAYER_DEMOGRAPHIC]: 19,
+  [viewCategories.LAYER_PROPENSITY]: 20,
+}
+const layerTypeToViewCategory = Object.entries(viewCategoryToLayerType).reduce((acc, [k, v]) => {
+  acc[v] = k
+  return acc
+}, {})
+
 const getLayerColumns = (table, resolution) => {
   const geoType = `ca-${resolution}`
-  const { idType: geoCategory } = geoMapping[geoType]
+  const { idType: geoCategory } = geoTables[geoType]
 
   // init with geo columns
   const columns = {
+    id: { category: CAT_NUMERIC }, // geo ggid
     geo_id: { category: geoCategory, geo_type: geoType },
     [`geo_ca_${resolution}`]: { category: geoCategory, geo_type: geoType },
+    title: { category: CAT_STRING },
   }
 
   // append columns based on layer table
   switch (true) {
     case table.startsWith('persona'):
-      Object.assign(columns, {
-        id: { category: CAT_NUMERIC }, // geo ggid
-        title: { category: CAT_STRING },
-        has_persona: { category: CAT_NUMERIC },
-      })
+      Object.assign(columns, { has_persona: { category: CAT_NUMERIC } })
       break
 
     default:
       Object.assign(columns, {
-        id: { category: CAT_NUMERIC }, // geo ggid
-        title: { category: CAT_STRING },
         // total: { category: CAT_NUMERIC },
         value: { category: CAT_NUMERIC },
         percent: { category: CAT_NUMERIC },
@@ -49,15 +56,17 @@ const getLayerColumns = (table, resolution) => {
   return columns
 }
 
-const viewCategoryToLayerType = {
-  [viewCategories.LAYER_DEMOGRAPHIC]: 18,
-  [viewCategories.LAYER_DEMOGRAPHIC]: 19,
-  [viewCategories.LAYER_PROPENSITY]: 20,
+const parseViewID = (viewID) => {
+  const [, layerIDStr, categoryKeyStr] = viewID.match(/^layer_(\d+)_(\d+)$/) || []
+  // eslint-disable-next-line radix
+  const layer_id = parseInt(layerIDStr, 10)
+  // eslint-disable-next-line radix
+  const categoryKey = parseInt(categoryKeyStr, 10)
+  if (Number.isNaN(layer_id) || Number.isNaN(categoryKey)) {
+    throw apiError(`Invalid view: ${viewID}`, 400)
+  }
+  return { layer_id, categoryKey }
 }
-const layerTypeToViewCategory = Object.entries(viewCategoryToLayerType).reduce((acc, [k, v]) => {
-  acc[v] = k
-  return acc
-}, {})
 
 const getKnexLayerQuery = async (access, { categories, ...filter } = {}) => {
   const { whitelabel, customers, email = '' } = access
@@ -129,8 +138,8 @@ const getKnexLayerQuery = async (access, { categories, ...filter } = {}) => {
   return knexWithCache(layerQuery, { ttl: 600 }) // 10 minutes
 }
 
-const getQueryView = async (access, { layer_id, categoryKey }) => {
-  const viewID = `${viewTypes.LAYER}_${layer_id}_${categoryKey}`
+const getQueryView = async (access, viewID, queryColumns, engine) => {
+  const { layer_id, categoryKey } = parseViewID(viewID)
   const [layer] = await getKnexLayerQuery(access, { layer_id })
   if (!layer) {
     throw apiError('Access to layer not allowed', 403)
@@ -138,39 +147,66 @@ const getQueryView = async (access, { layer_id, categoryKey }) => {
 
   const category = layer.layer_categories[categoryKey]
   if (!category) {
-    throw apiError('Invalid layer category', 403)
+    throw apiError('Invalid layer category', 400)
   }
 
   const { table, slug, resolution } = category
   // inject view columns
-  const mlViewColumns = getLayerColumns(table || slug, resolution)
+  const layerColumns = getLayerColumns(table || slug, resolution)
+  const columns = filterViewColumns(layerColumns, queryColumns)
+  if (!Object.keys(columns).length) {
+    throw apiError(`No column selected from view: ${viewID}`, 400)
+  }
 
-  const geo = geoMapping[`ca-${resolution}`]
+  const geo = geoTables[`ca-${resolution}`]
   // add schema if missing
-  const schema = (table || slug).indexOf('.') === -1 ? 'public.' : ''
+  const schema = (table || slug).indexOf('.') === -1 ? '"public".' : ''
 
-  const columnExpressions = (table || slug).startsWith('persona')
-    ? '1 AS has_persona'
-    : `
-      (L.summary_data::json #>> '{main_number_pcnt, value}')::real AS value,
-      (L.summary_data::json #>> '{main_number_pcnt, percent}')::real AS percent,
-      L.summary_data::json #>> '{main_number_pcnt, units}' AS units
+  let columnExpressions = engine === 'trino'
+      ? "json_extract(L.summary_data, '$.main_number_pcnt.title}') AS title,"
+      : "L.summary_data::json #>> '{main_number_pcnt, title}' AS title,"
+
+  if ((table || slug).startsWith('persona')) {
+    columnExpressions = `
+      ${columnExpressions}
+      1 AS has_persona'
     `
+  } else {
+    columnExpressions = engine === 'trino'
+      ? `
+        ${columnExpressions}
+        CAST(
+          json_extract(L.summary_data, '$.main_number_pcnt.value}') AS double precision
+        ) AS value,
+        CAST(
+          json_extract(L.summary_data, '$.main_number_pcnt.percent}') AS double precision
+        ) AS percent,
+        json_extract(L.summary_data, '$.main_number_pcnt.units}') AS units
+      `
+      : `
+        ${columnExpressions}
+        (L.summary_data::json #>> '{main_number_pcnt, value}')::real AS value,
+        (L.summary_data::json #>> '{main_number_pcnt, percent}')::real AS percent,
+        L.summary_data::json #>> '{main_number_pcnt, units}' AS units
+      `
+  }
 
-  const mlView = knex.raw(`
+  const catalog = engine === 'trino' ? 'locus_place.' : ''
+
+  const query = `
     SELECT
       GM.ggid AS id,
       L.geo_id,
       L.geo_id AS geo_ca_${resolution},
-      L.summary_data::json #>> '{main_number_pcnt, title}' AS title,
       ${columnExpressions}
-    FROM ${schema}${table || slug} as L
-    INNER JOIN config.ggid_map as GM ON GM.type = '${resolution}' AND GM.local_id = L.geo_id
-    INNER JOIN ${geo.schema}.${geo.table} as GT ON GT.${geo.idColumn} = L.geo_id
+    FROM ${catalog}${schema}${table || slug} as L
+    INNER JOIN ${catalog}config.ggid_map as GM ON
+      GM.type = '${resolution}' AND GM.local_id = L.geo_id
+    INNER JOIN ${catalog}"${geo.schema}"."${geo.table}" as GT ON GT."${geo.idColumn}" = L.geo_id
     WHERE GT.wkb_geometry IS NOT NULL
-  `)
+  `
 
-  return { viewID, mlView, mlViewColumns }
+  return { viewID, query, columns }
 }
 
 const listViews = async ({ access, filter = {}, inclMeta = true }) => {
@@ -201,14 +237,7 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
 }
 
 const getView = async (access, viewID) => {
-  const [, layerIDStr, categoryKeyStr] = viewID.match(/^layer_(\d+)_(\d+)$/) || []
-  // eslint-disable-next-line radix
-  const layer_id = parseInt(layerIDStr, 10)
-  // eslint-disable-next-line radix
-  const categoryKey = parseInt(categoryKeyStr, 10)
-  if (!layer_id || Number.isNaN(categoryKey)) {
-    throw apiError(`Invalid view: ${viewID}`, 403)
-  }
+  const { layer_id, categoryKey } = parseViewID(viewID)
 
   const [layer] = await getKnexLayerQuery(access, { layer_id })
   if (!layer || !(categoryKey in layer.layer_categories)) {

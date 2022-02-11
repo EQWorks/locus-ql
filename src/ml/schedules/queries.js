@@ -113,7 +113,7 @@ const deleteQuerySchedule = async (scheduleID, queryID) => {
 
 const putQuerySchedule = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
+    const { queryID } = req.ql.query
     const { cron, startDate, endDate, isPaused } = req.body
     const { whitelabel, customers } = req.access
 
@@ -169,7 +169,7 @@ const putQuerySchedule = async (req, res, next) => {
 
 const deleteQueryScheduleMW = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
+    const { queryID } = req.ql.query
     const { cron } = req.body
     const { whitelabel, customers } = req.access
 
@@ -199,7 +199,7 @@ const deleteQueryScheduleMW = async (req, res, next) => {
 
 const listQuerySchedules = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
+    const { queryID } = req.ql.query
 
     const schedules = await getQuerySchedules(queryID)
     res.json(schedules)

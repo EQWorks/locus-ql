@@ -17,9 +17,9 @@ const viewTypesToModules = {
   [viewTypes.GEO]: require('./geo'),
   [viewTypes.LAYER]: require('./layer'),
   [viewTypes.LOGS]: require('./logs'),
-  [viewTypes.REPORT_VWI]: require('./reports/reportvwi'),
-  [viewTypes.REPORT_WI]: require('./reports/reportwi'),
-  [viewTypes.REPORT_XWI]: require('./reports/reportxwi'),
+  [viewTypes.REPORT_VWI]: require('./reports'),
+  [viewTypes.REPORT_WI]: require('./reports'),
+  [viewTypes.REPORT_XWI]: require('./reports'),
   [viewTypes.WEATHER]: require('./weather'),
 }
 
@@ -88,78 +88,49 @@ const listViewsMW = async (req, res, next) => {
   }
 }
 
-// returns knex query obj
-const getQueryViews = async (access, views, query) => {
-  const mlViews = {}
-  const mlViewColumns = {}
-  const mlViewDependencies = {}
-  const mlViewIsInternal = {}
-  const mlViewFdwConnections = {}
-  await Promise.all(views.map(async (v) => {
-    const { type, ...viewParams } = v
-
+/**
+ * Retrieves queries and meta necessary to populatea query's views
+ * @param {Object} access Access object (typically sourced from req.access)
+ * @param {Object<string, Set>} queryColumns Map of views -> columns used by the query
+ * @param {string} [engine='pg'] Query engine
+ * @returns {Object}
+ */
+const getQueryViews = async (access, queryColumns, engine = 'pg') => {
+  const views = {}
+  await Promise.all(Object.entries(queryColumns).map(async ([viewID, columns]) => {
+    const [type] = viewID.split('_', 1)
     if (!(type in viewTypeValues)) {
-      throw apiError(`Invalid view type: ${type}`, 400)
+      throw apiError(`Invalid view: ${viewID}`, 400)
     }
-
     const viewModule = viewTypesToModules[type]
     if (!viewModule) {
-      throw apiError(`View type not found: ${type}`, 400)
+      throw apiError(`Failed to retrieve view: ${viewID}`, 500)
     }
-
-    viewParams.query = query
-    const view = await viewModule.getQueryView(access, viewParams)
-    const { viewID } = view || {}
-    if (viewID) {
-      mlViews[viewID] = view.mlView
-      mlViewColumns[viewID] = view.mlViewColumns
-      mlViewDependencies[viewID] = view.mlViewDependencies
-      mlViewIsInternal[viewID] = view.mlViewIsInternal
-      mlViewFdwConnections[viewID] = view.mlViewFdwConnections
-    }
+    views[viewID] = await viewModule.getQueryView(access, viewID, columns, engine)
   }))
-
-  return { mlViews, mlViewColumns, mlViewDependencies, mlViewIsInternal, mlViewFdwConnections }
+  return views
 }
 
 // single view
 const getView = (access, viewID) => {
-  const [, type] = viewID.match(/^([^_]+)_.*$/) || []
-
+  const [type] = viewID.split('_', 1)
   if (!(type in viewTypeValues)) {
     throw apiError(`Invalid view type: ${type}`, 400)
   }
-
   const viewModule = viewTypesToModules[type]
   if (!viewModule) {
-    throw apiError(`View type not found: ${type}`, 400)
+    throw apiError(`View type not found: ${type}`, 404)
   }
   return viewModule.getView(access, viewID)
 }
 
 // load views into req object based on request body.views
-const loadQueryViews = (onlyUseBodyQuery = false) => async (req, _, next) => {
+const loadQueryViews = async (req, _, next) => {
   try {
-    const { access } = req
-    let query
-    let views
-    // if a saved query or execution have been attached to req, use it
-    // else use req.body
-    const loadedQuery = !onlyUseBodyQuery && (req.mlQuery || req.mlExecution)
-    if (loadedQuery) {
-      // get views
-      ({ query } = loadedQuery)
-      const { viewIDs } = loadedQuery
-      views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
-    } else {
-      ({ query, views } = req.body)
-    }
-    if (!query || !views) {
-      throw apiError('Missing field(s): query and/or view')
-    }
-    const mlViews = await getQueryViews(access, views, query)
+    const { access, ql: { tree, engine } } = req
+    const queryColumns = tree.viewColumns
     // attach views to req object
-    Object.assign(req, mlViews)
+    req.ql.views = await getQueryViews(access, queryColumns, engine)
     next()
   } catch (err) {
     next(getSetAPIError(err, 'Failed to load the query views', 500))

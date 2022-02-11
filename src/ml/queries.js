@@ -6,10 +6,11 @@ const { validateQuery } = require('./engine')
 const { updateExecution, queueExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
 const { QL_SCHEMA } = require('./constants')
+const { parseQueryToTree, ParserError } = require('./parser')
+const { isInternalUser } = require('./utils')
 
 
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
-const isInternalUser = prefix => ['dev', 'internal'].includes(prefix)
 
 /**
  * Returns an array of query metas based on the supplied filters
@@ -281,22 +282,21 @@ const updateQuery = async (
 
 const postQuery = async (req, res, next) => {
   try {
-    const { name, description = '', query } = req.body
+    const { name, description = '' } = req.body
     const {
       access: { whitelabel, customers },
-      mlViews,
-      mlViewIsInternal,
+      ql: { views, tree },
       mlQueryHash,
       mlQueryColumnHash,
       mlQueryColumns,
     } = req
-    const { query: loadedQuery, viewIDs: loadedViewIDs } = req.mlQuery || req.mlExecution || {}
-    const { executionID, queryID: executionQueryID, isOrphaned } = req.mlExecution || {}
+    const { executionID, queryID: executionQueryID, isOrphaned } = req.ql.execution || {}
     if (!name) {
       throw apiError('Query name cannot be empty')
     }
+    const query = tree.toQL({ keepParamRefs: !tree.hasParameterValues() })
     // determine whether or not query uses internal-only views
-    const isInternal = Object.values(mlViewIsInternal).some(is => is)
+    const isInternal = Object.values(views).some(v => v.isInternal)
 
     // create query + update execution (as applicable) in transaction
     const queryID = await knex.transaction(async (trx) => {
@@ -306,8 +306,8 @@ const postQuery = async (req, res, next) => {
         mlQueryHash,
         mlQueryColumnHash,
         name.trim(),
-        loadedQuery || query,
-        loadedViewIDs || Object.keys(mlViews),
+        query,
+        Object.keys(views),
         mlQueryColumns,
         isInternal,
         description.trim(),
@@ -323,39 +323,47 @@ const postQuery = async (req, res, next) => {
 
     res.json({ queryID })
   } catch (err) {
+    if (err instanceof ParserError) {
+      return next(apiError(err.message, 400))
+    }
     next(getSetAPIError(err, 'Failed to save the query', 500))
   }
 }
 
 const putQuery = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
-    const { name, description = '', query } = req.body
-    const { mlViews, mlViewIsInternal, mlQueryHash, mlQueryColumnHash, mlQueryColumns } = req
+    const { queryID } = req.ql.query
+    const { name, description = '' } = req.body
+    const { views, tree } = req.ql
+    const { mlQueryHash, mlQueryColumnHash, mlQueryColumns } = req
     if (!name) {
       throw apiError('Query name cannot be empty')
     }
+    const query = tree.toQL({ keepParamRefs: !tree.hasParameterValues() })
     // determine whether or not query uses internal-only views
-    const isInternal = Object.values(mlViewIsInternal).some(is => is)
+    const isInternal = Object.values(views).some(v => v.isInternal)
     await updateQuery(queryID, {
       name: name.trim(),
       queryHash: mlQueryHash,
       columnHash: mlQueryColumnHash,
       query,
-      viewIDs: Object.keys(mlViews),
+      viewIDs: Object.keys(views),
       columns: mlQueryColumns,
       isInternal,
       description: description.trim(),
     })
     res.json({ queryID })
   } catch (err) {
+    if (err instanceof ParserError) {
+      return next(apiError(err.message, 400))
+    }
     next(getSetAPIError(err, 'Failed to update the query', 500))
   }
 }
 
 const deleteQuery = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
+    const { queryID } = req.ql.query
     await updateQuery(queryID, { isActive: false })
     res.json({ queryID })
   } catch (err) {
@@ -369,50 +377,48 @@ const deleteQuery = async (req, res, next) => {
  * @param {number} [scheduleJobID] The ID of the schedule job which triggered the execution, if any
  * @returns {number} Execution ID or undefined
  */
-const queueQueryExecution = async (queryID, scheduleJobID) => {
-  const [queryMeta] = await getQueryMetas({ queryID })
-  if (!queryMeta) {
-    throw apiError('Invalid query ID')
+const queueQueryExecution = async (queryID, scheduleJobID, engine = 'pg') => {
+  try {
+    const [queryMeta] = await getQueryMetas({ queryID })
+    if (!queryMeta) {
+      throw apiError('Invalid query ID')
+    }
+    const { whitelabelID, customerID, query, isInternal } = queryMeta
+    const access = {
+      whitelabel: [whitelabelID],
+      customers: [customerID],
+      prefix: isInternal ? 'internal' : 'customers',
+    }
+
+    const tree = parseQueryToTree(query, { type: 'ql', paramsMustHaveValues: true })
+
+    // get query views
+    const views = await getQueryViews(access, tree.viewColumns)
+
+    const {
+      mlQueryHash,
+      mlQueryColumnHash,
+      mlQueryColumns,
+    } = await validateQuery(whitelabelID, customerID, views, tree, engine)
+
+    const executionID = await queueExecution(
+      whitelabelID,
+      customerID,
+      mlQueryHash,
+      mlQueryColumnHash,
+      query,
+      views,
+      mlQueryColumns,
+      { queryID, scheduleJobID },
+    )
+
+    return executionID
+  } catch (err) {
+    if (err instanceof ParserError) {
+      throw apiError(err.message, 400)
+    }
+    throw err
   }
-  const { whitelabelID, customerID, query, viewIDs, isInternal } = queryMeta
-  const access = {
-    whitelabel: [whitelabelID],
-    customers: [customerID],
-    prefix: isInternal ? 'internal' : 'customers',
-  }
-
-  // get views
-  const views = await Promise.all(viewIDs.map(id => getView(access, id).then(v => v.view)))
-
-  // get query views
-  const {
-    mlViews,
-    mlViewColumns,
-    mlViewDependencies,
-    mlViewIsInternal,
-    mlViewFdwConnections,
-  } = await getQueryViews(access, views, query)
-
-  const {
-    mlQueryHash,
-    mlQueryColumnHash,
-    mlQueryColumns,
-  } = await validateQuery(mlViews, mlViewColumns, mlViewFdwConnections, query, access)
-
-  const executionID = await queueExecution(
-    whitelabelID,
-    customerID,
-    mlQueryHash,
-    mlQueryColumnHash,
-    query,
-    mlViews,
-    mlViewDependencies,
-    mlViewIsInternal,
-    mlQueryColumns,
-    { queryID, scheduleJobID },
-  )
-
-  return executionID
 }
 
 // isRequired flags whether or not 'query' is a mandatory route/query param
@@ -441,8 +447,8 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
     if (!query) {
       throw apiError('Invalid query ID', 404)
     }
-    // attach to req
-    req.mlQuery = query
+    // attach to req.ql
+    req.ql.query = query
     getContext(req, ERROR_QL_CTX).queryID = queryID
     // set customer to that of the query
     req.access = {
@@ -458,30 +464,31 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
 
 const respondWithQuery = async (req, res, next) => {
   try {
-    const { viewIDs, columns } = req.mlQuery
+    const { query } = req.ql
+    const { viewIDs, columns } = query
 
     // convert columns from array to object
-    req.mlQuery.columns = columns.map(([name, pgType]) => ({
+    query.columns = columns.map(([name, pgType]) => ({
       name,
       category: typeToCatMap.get(pgType) || CAT_STRING,
     }))
 
     // populate views (instead of viewIDs)
-    delete req.mlQuery.viewIDs
-    req.mlQuery.views = req.mlQuery.views || []
+    delete query.viewIDs
+    query.views = query.views || []
     await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
-      // req.mlQuery.views = req.mlQuery.views || []
+      // query.views = query.views || []
       view.name = name
-      req.mlQuery.views.push(view)
+      query.views.push(view)
     }).catch((err) => {
       // edge case when view has been unsubscribed or is no longer available
       // soft fail
-      req.mlQuery.views.push({
+      query.views.push({
         id,
         error: (err instanceof APIError && err.message) || 'View could not be retrieved',
       })
     })))
-    res.json(req.mlQuery)
+    res.json(query)
   } catch (err) {
     next(getSetAPIError(err, 'Failed to retrieve the query', 500))
   }

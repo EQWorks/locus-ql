@@ -3,9 +3,9 @@
 const { createHash } = require('crypto')
 
 const { knex } = require('../../../util/db')
+const { filterViewColumns } = require('../utils')
 const { useAPIErrorOptions } = require('../../../util/api-error')
 const { knexWithCache } = require('../../../util/cache')
-const { Expression } = require('../../expressions')
 const impView = require('./imp')
 const bcnView = require('./bcn')
 const {
@@ -35,54 +35,49 @@ const accessMap = {
 // columns excluded from the viewHash and included in all log pulls from Athena
 const excludedViewColumns = ['date', '_date', 'hour', '_hour']
 
+const parseViewID = (viewID) => {
+  const [, logType, agencyIDStr] = viewID.match(/^logs_([a-z]+)_(\d+)$/) || []
+  // eslint-disable-next-line radix
+  const agencyID = parseInt(agencyIDStr, 10)
+  if (!logType || !agencyID) {
+    throw apiError(`Invalid view: ${viewID}`, 400)
+  }
+  if (!(logType in logTypes)) {
+    throw apiError(`Invalid log type: ${logType}`, 400)
+  }
+  return { logType, agencyID }
+}
+
 /**
  * Extracts all columns from a query or an expression for a specific view
- * @param {string} viewID ID of the view which columns are to be extracted
  * @param {object} viewColumns An object with column names as keys
- * @param {object} query Query or expression
+ * @param {Set} queryColumns An object with column names as keys
  * @param {number} [accessType=2] Access type. See access enum values.
  * @returns {[string[], string[], number]} The view's columns contained in the
  * query along with the minimum access required to access the said view.
  * [cacheColumns, queryColumns, minAccess]
  */
-const getQueryColumns = (viewID, viewColumns, query, accessType = ACCESS_CUSTOMER) => {
+const getQueryColumns = (viewColumns, queryColumns, accessType = ACCESS_CUSTOMER) => {
+  const filteredColumns = filterViewColumns(viewColumns, queryColumns)
   const cacheColumns = new Set() // aliases/dependents substituted with the columns they reference
-  const queryColumns = new Set() // aliases/dependents not substituted
   let minAccess = 0
-  const queue = [query]
-  const exp = new Expression({ [viewID]: viewColumns })
-  while (queue.length) {
-    const item = queue.shift()
-
-    const col = exp.extractColumn(item)
-    if (!col) {
-      if (typeof item === 'object' && item !== null) {
-        queue.push(...Object.values(item))
-      }
-      continue
-    }
-
-    // push all columns into queue when wildcard
-    if (col.column === '*') {
-      queue.push(...Object.keys(viewColumns).map(column => [column, viewID]))
-      continue
-    }
-
+  Object.entries(filteredColumns).forEach(([col, config]) => {
     // add columns to sets
-    const { access, aliasFor } = viewColumns[col.column]
-    const { dependsOn } = viewColumns[aliasFor || col.column]
+    const { access, aliasFor } = config
+    const { dependsOn } = viewColumns[aliasFor || col]
+    // check access
     if (access && access > accessType) {
-      continue
+      throw apiError(`Invalid column: ${col}`, 500)
     }
     minAccess = Math.max(access || 0, minAccess)
-    queryColumns.add(col.column)
+    // add dependents
     if (dependsOn) {
       dependsOn.forEach(column => cacheColumns.add(column))
-      continue
+      return
     }
-    cacheColumns.add(aliasFor || col.column)
-  }
-  return [[...cacheColumns], [...queryColumns], minAccess]
+    cacheColumns.add(aliasFor || col)
+  })
+  return [[...cacheColumns], Object.keys(filteredColumns), minAccess]
 }
 
 /**
@@ -192,7 +187,7 @@ const getViewHash = (cols) => {
  * @returns {object} Columns
  */
 // eslint-disable-next-line arrow-body-style
-const getMlViewColumns = (logType, accessType = ACCESS_CUSTOMER) => {
+const getPublicViewColumns = (logType, accessType = ACCESS_CUSTOMER) => {
   return Object.entries(logTypes[logType].columns)
     // order will be honoured by the most common browsers but is not guaranteed by JS specs
     .sort(([a], [b]) => {
@@ -338,10 +333,8 @@ const createViewCache = (agencyID, logType, viewHash, viewColumns, athenaQuery) 
     return viewID
   })
 
-const getQueryView = async (access, { logType, query, agencyID }) => {
-  if (!(logType in logTypes)) {
-    throw apiError(`Invalid log type: ${logType}`, 400)
-  }
+const getQueryView = async (access, viewID, queryColumns, engine) => {
+  const { logType, agencyID } = parseViewID(viewID)
   // check access
   const { whitelabel, customers, prefix } = access
   if (!(Array.isArray(customers) && customers.includes(agencyID)) && customers !== -1) {
@@ -354,11 +347,9 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
     throw apiError('Invalid access permissions', 403)
   }
 
-  const viewID = `logs_${logType}_${agencyID}`
-  const [cacheColumns, queryColumns, minAccess] = getQueryColumns(
-    viewID,
+  const [cacheColumns, publicColumns, minAccess] = getQueryColumns(
     logTypes[logType].columns,
-    query,
+    queryColumns,
     accessMap[prefix],
   )
   if (!cacheColumns.length || cacheColumns.length > 15) {
@@ -373,7 +364,7 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
 
   // otherwise update pg view cache with log data, as applicable
   let cacheID
-  let mlViewDependencies
+  let dependencies
   if (!fastView) {
     const viewHash = getViewHash(cacheColumns)
     cacheID = await getViewCacheID(agencyID, logType, viewHash)
@@ -381,7 +372,7 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
       const athenaQuery = prepareAthenaQuery(agencyID, advertiserID, logType, cacheColumns)
       cacheID = await createViewCache(agencyID, logType, viewHash, cacheColumns, athenaQuery)
     }
-    mlViewDependencies = [['log', cacheID]]
+    dependencies = [['log', cacheID]]
   }
 
   const groupByColumns = []
@@ -389,7 +380,7 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
   const joins = {}
   const fdwConnections = new Set()
 
-  queryColumns.forEach((col) => {
+  publicColumns.forEach((col) => {
     const { aliasFor } = logTypes[logType].columns[col]
     const { viewExpression, viewJoins, isAggregate } = logTypes[logType].columns[aliasFor || col]
     if (viewJoins) {
@@ -404,18 +395,18 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
     groupByColumns.push(`${viewExpression || `log."${aliasFor || col}"`} AS "${col}"`)
   })
 
-  const mlView = knex
+  const pg = knex
     .select(knex.raw([...groupByColumns, ...aggColumns].join(', ')))
 
   if (fastView) {
-    const { view, fdwConnection } = getPgView(fastView, agencyID, advertiserID)
+    const { view, fdwConnection } = getPgView(fastView, agencyID, advertiserID, engine)
     if (fdwConnection) {
       fdwConnections.add(fdwConnection)
     }
-    mlView.from({ log: knex.select().from(view) })
+    pg.from({ log: knex.select().from(view) })
   } else {
     const timeZone = await getCustomerTimeZone(agencyID)
-    mlView
+    pg
       // convert dates from utc to customer's tz
       .from({
         log: knex.select('*', knex.raw(`
@@ -429,29 +420,25 @@ const getQueryView = async (access, { logType, query, agencyID }) => {
   }
 
   if (groupByColumns.length) {
-    mlView.groupByRaw(groupByColumns.map((_, i) => i + 1).join(', '))
+    pg.groupByRaw(groupByColumns.map((_, i) => i + 1).join(', '))
   }
 
   // join enrich views
   Object.values(joins).forEach(({ type, view, condition }) => {
-    const { view: knexView, fdwConnection } = getPgView(view, agencyID, advertiserID)
+    const { view: knexView, fdwConnection } = getPgView(view, agencyID, advertiserID, engine)
     if (fdwConnection) {
       fdwConnections.add(fdwConnection)
     }
-    mlView[`${type}Join`](knexView, condition)
+    pg[`${type}Join`](knexView, condition)
   })
-
-  const mlViewColumns = getMlViewColumns(logType, accessMap[prefix])
-  const mlViewIsInternal = minAccess >= ACCESS_INTERNAL
-  const mlViewFdwConnections = [...fdwConnections]
 
   return {
     viewID,
-    mlView,
-    mlViewColumns,
-    mlViewDependencies,
-    mlViewIsInternal,
-    mlViewFdwConnections,
+    query: pg.toString(),
+    columns: filterViewColumns(getPublicViewColumns(logType, accessMap[prefix]), queryColumns),
+    dependencies,
+    isInternal: minAccess >= ACCESS_INTERNAL,
+    fdwConnections: [...fdwConnections],
   }
 }
 
@@ -475,7 +462,7 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
           },
         }
         if (inclMeta) {
-          view.columns = getMlViewColumns(type, accessMap[prefix])
+          view.columns = getPublicViewColumns(type, accessMap[prefix])
         }
         views.push(view)
         return views
@@ -486,15 +473,7 @@ const listViews = async ({ access, filter = {}, inclMeta = true }) => {
 }
 
 const getView = async (access, viewID) => {
-  const [, logType, agencyIDStr] = viewID.match(/^logs_([a-z]+)_(\d+)$/) || []
-  // eslint-disable-next-line radix
-  const agencyID = parseInt(agencyIDStr, 10)
-  if (!logType || !agencyID) {
-    throw apiError(`Invalid view: ${viewID}`, 400)
-  }
-  if (!(logType in logTypes)) {
-    throw apiError(`Invalid log type: ${logType}`, 400)
-  }
+  const { logType, agencyID } = parseViewID(viewID)
   // check access
   const { whitelabel, customers, prefix } = access
   if (!(Array.isArray(customers) && customers.includes(agencyID)) && customers !== -1) {
@@ -516,7 +495,7 @@ const getView = async (access, viewID) => {
       logType,
       agencyID,
     },
-    columns: getMlViewColumns(logType, accessMap[prefix]),
+    columns: getPublicViewColumns(logType, accessMap[prefix]),
   }
 }
 

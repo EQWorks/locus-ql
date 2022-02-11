@@ -1,12 +1,11 @@
-/* eslint-disable no-use-before-define */
-const { knex } = require('../../util/db')
 const {
   CAT_STRING,
   CAT_NUMERIC,
   CAT_DATE,
   CAT_JSON,
 } = require('../type')
-const { geoTypes } = require('../geo')
+const { filterViewColumns } = require('./utils')
+const { geometryTypes } = require('../parser/src')
 const { useAPIErrorOptions } = require('../../util/api-error')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
@@ -38,54 +37,46 @@ const VIEWS = {
 }
 
 const columns = {
-  geo_ca_csd: { key: 'geo_ca_csd', geo_type: geoTypes.CA_CSD, category: CAT_NUMERIC },
+  geo_ca_csd: { key: 'geo_ca_csd', geo_type: geometryTypes.CA_CSD, category: CAT_NUMERIC },
   local_ts: { key: 'local_ts', category: CAT_DATE },
   timezone: { key: 'timezone', category: CAT_STRING },
   data: { key: 'data', category: CAT_JSON },
 }
 
-const getQueryView = async (_, { frequency }) => {
-  const viewID = `${viewTypes.WEATHER}_${frequency}`
-
-  if (![FREQ_DAILY, FREQ_HOURLY].includes(frequency)) {
-    throw apiError(`Invalid frequency: ${frequency}`, 400)
+const parseViewID = (viewID) => {
+  if (!(viewID in VIEWS)) {
+    throw apiError(`Invalid view: ${viewID}`, 400)
   }
+  const { frequency } = VIEWS[viewID]
+  return { frequency }
+}
 
-  // view columns, skipping listViews here because columns is fixed
-  const mlViewColumns = columns
-
-  // view
-  const mlView = knex.raw(`
+const getQueryView = async (_, viewID, queryColumns, engine) => {
+  const { frequency } = parseViewID(viewID)
+  const filteredColumns = filterViewColumns(columns, queryColumns)
+  if (!Object.keys(filteredColumns).length) {
+    throw apiError(`No column selected from view: ${viewID}`, 400)
+  }
+  const catalog = engine === 'trino' ? 'locus_place.' : ''
+  const query = `
     SELECT
       csd_gid AS geo_ca_csd,
-      local_ts at time zone 'UTC' as local_ts,
+      local_ts AT TIME ZONE 'UTC' AS local_ts,
       timezone,
       data
-    FROM public.dark_sky_${frequency}_stats
-  `)
-
-  return { viewID, mlView, mlViewColumns }
+    FROM ${catalog}public.dark_sky_${frequency}_stats
+  `
+  return { viewID, query, columns: filteredColumns }
 }
 
 const listViews = async ({ inclMeta = true }) => Object.values(VIEWS)
-  .map((view) => {
-    if (!inclMeta) {
-      return view
-    }
-    return {
-      view,
-      columns,
-    }
-  })
+  .map(view => (inclMeta ? { view, columns } : view))
 
 const getView = async (_, viewID) => {
   if (!(viewID in VIEWS)) {
-    throw apiError(`Invalid view: ${viewID}`, 403)
+    throw apiError(`Invalid view: ${viewID}`, 400)
   }
-  return {
-    ...VIEWS[viewID],
-    columns,
-  }
+  return { ...VIEWS[viewID], columns }
 }
 
 module.exports = {

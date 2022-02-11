@@ -1,193 +1,12 @@
-/* eslint-disable valid-typeof */
-/* eslint-disable func-names */
-/* eslint-disable no-nested-ternary */
-const { createHash } = require('crypto')
-
-const { knex, mlPool, knexBuilderToRaw, fdwConnectByName } = require('../util/db')
-const { Expression } = require('./expressions')
-const { insertGeo } = require('./geo')
+const { mlPool, fdwConnectByName, newPGClientFromPoolConfig } = require('../util/db')
+const { parseQueryTreeToEngine } = require('./parser')
 const { QUERY_BUCKET } = require('./constants')
 const { useAPIErrorOptions } = require('../util/api-error')
-const { knexWithCache, queryWithCache, cacheTypes } = require('../util/cache')
+const { queryWithCache, cacheTypes, pgWithCache } = require('../util/cache')
+const { getObjectHash } = require('./utils')
 
 
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
-
-// const TYPE_STRING = 'string'
-
-const JOIN_TYPES = ['left', 'right', 'inner']
-
-/**
- * Converts all non-array objects to sorted arrays of key/value pairs
- * Can be used to obtain a normalized value of an object
- * @param {Object} object Object
- * @returns {any} Array or non-object value
- */
-const sortObject = (object) => {
-  // return non-object as is
-  if (typeof object !== 'object') {
-    return object
-  }
-  // return null as undefined
-  if (object === null) {
-    return
-  }
-  // sort array elements and filter out undefined elements
-  // return undefined if empty array
-  if (Array.isArray(object)) {
-    const objectvalue = object.map(i => sortObject(i)).filter(i => i !== undefined)
-    return objectvalue.length ? objectvalue : undefined
-  }
-  // return object as sorted array of key/value pairs
-  // remove undefined keys (e.g. undefined, empty array, null, array with only null entries...)
-  const objectValue = Object.entries(object).reduce((value, [k, v]) => {
-    const sorted = sortObject(v)
-    if (sorted !== undefined) {
-      value.push([k, sorted])
-    }
-    return value
-  }, [])
-  // return undefined if empty array
-  if (!objectValue.length) {
-    return
-  }
-  // sort so results are consistent across calls
-  return objectValue.sort(([kA], [kB]) => {
-    if (kA < kB) {
-      return -1
-    }
-    if (kA > kB) {
-      return 1
-    }
-    return 0
-  })
-}
-
-/**
- * Computes a hash for an object based on its JSON value
- * The hash can be used to version the object
- * @param {Object} object Object
- * @returns {string} Hash
- */
-const getObjectHash = object => createHash('sha256')
-  .update(JSON.stringify(sortObject(object)))
-  .digest('base64')
-
-// return viewID if it exists in views
-const getView = (views, viewID) => {
-  if (!views[viewID]) {
-    throw apiError(`Invalid view: ${viewID}`, 403)
-  }
-  return viewID
-
-  // reserve for complex viewID, when viewID can be sub query object
-  // if (typeof viewID === TYPE_STRING) {
-  //   const view = views[viewID]
-  //   if (view) {
-  //     return view
-  //   }
-  //   throw apiError(`Invalid view: ${viewID}`, 403)
-  // } else {
-  //   throw apiError(`Invalid view: ${viewID}`, 403)
-  // }
-}
-
-// TODO: think through multiple DB case
-// should db be in views? Should first view determine db etc
-const select = (
-  views,
-  viewColumns,
-  {
-    distinct,
-    columns,
-    from,
-    joins = [],
-    where = [],
-    having = [],
-    groupBy,
-    orderBy,
-    limit,
-    // db = 'place',
-  },
-) => {
-  const exp = new Expression(viewColumns)
-
-  // attach all views as CTE's
-  const knexQuery = Object.entries(views)
-    // '__source' > '__geo' > rest
-    .sort(([idA], [idB]) => {
-      const idValueA = idA.startsWith('__source') ? 2 : idA.startsWith('__geo') ? 1 : 0
-      const idValueB = idB.startsWith('__source') ? 2 : idB.startsWith('__geo') ? 1 : 0
-      return idValueB - idValueA
-    })
-    .reduce((knex, [id, view]) => knex.with(id, view), knex)
-
-  // use bind() here to prevent exp instance from getting lost, same for other bind() usage below
-  knexQuery
-    .column(columns.map(exp.parseExpression.bind(exp)))
-    .from(getView(views, from))
-
-  // Where
-  exp.parseConditions(
-    where,
-    knexQuery.where.bind(knexQuery),
-    knexQuery.whereRaw.bind(knexQuery),
-  )
-
-  // Having
-  exp.parseConditions(
-    having,
-    knexQuery.having.bind(knexQuery),
-    knexQuery.havingRaw.bind(knexQuery),
-  )
-
-  // Distinct Flag
-  if (distinct) {
-    knexQuery.distinct()
-  }
-
-  // Group By
-  if (groupBy && groupBy.length > 0) {
-    knexQuery.groupByRaw(groupBy.map(exp.parseExpression.bind(exp)).join(', '))
-  }
-
-  // Order By
-  if (orderBy && orderBy.length > 0) {
-    knexQuery.orderByRaw(orderBy.map(exp.parseExpression.bind(exp)).join(', '))
-  }
-
-  // JOINs
-  joins.forEach((join) => {
-    if (!JOIN_TYPES.includes(join.joinType)) {
-      throw apiError(`Invalid join type: ${join.joinType}`, 403)
-    }
-    knexQuery[`${join.joinType}Join`](getView(views, join.view), function () {
-      exp.parseConditions(
-        join.on,
-        this.on.bind(this),
-      )
-    })
-  })
-
-  // LIMIT
-  if (limit || limit === 0) {
-    if (Number.isInteger(limit) && limit >= 0) {
-      knexQuery.limit(limit)
-    } else {
-      throw apiError(`Invalid limit: ${limit}`, 403)
-    }
-  }
-
-  return knexQuery
-}
-
-// parses query to knex object
-const getKnexQuery = (views, viewColumns, query) => {
-  const { type } = query
-  if (type === 'select') {
-    return select(views, viewColumns, query)
-  }
-}
 
 /**
  * Establishes connections with foreign databases
@@ -198,7 +17,12 @@ const getKnexQuery = (views, viewColumns, query) => {
  */
 const establishFdwConnections = (pgConnection, fdwConnections, timeout) => {
   // remove duplicates
-  const uniqueConnections = [...(new Set(Object.values(fdwConnections).flat()))]
+  const uniqueConnections = [...Object.values(fdwConnections).reduce((acc, connections) => {
+    if (connections) {
+      connections.forEach(c => acc.add(c))
+    }
+    return acc
+  }, new Set())]
   return Promise.all(uniqueConnections.map(connectionName => fdwConnectByName(
     pgConnection,
     { connectionName, timeout },
@@ -206,66 +30,87 @@ const establishFdwConnections = (pgConnection, fdwConnections, timeout) => {
 }
 
 // runs query with cache
-const executeQuery = (views, viewColumns, query, { pgConnection, maxAge }) => {
-  const knexQuery = getKnexQuery(views, viewColumns, query)
-  if (pgConnection) {
-    knexQuery.connection(pgConnection)
+const executeQuery = async (
+  whitelabelID, customerID, views, tree,
+  { engine = 'pg', executionID, maxAge },
+) => {
+  if (engine !== 'pg') {
+    throw apiError('Failed to execute the query', 500)
   }
-  return knexWithCache(
-    knexQuery,
-    // 30 minutes (subject to maxAge)
-    { ttl: 1800, maxAge, type: cacheTypes.S3, bucket: QUERY_BUCKET },
-  )
+  // get view queries
+  const { viewQueries, fdwConnections } = Object.entries(views)
+    .reduce((acc, [id, { query, fdwConnections }]) => {
+      acc.viewQueries[id] = query
+      acc.fdwConnections[id] = fdwConnections
+      return acc
+    }, { viewQueries: {}, fdwConnections: {} })
+  const query = parseQueryTreeToEngine(tree, { engine, viewQueries, whitelabelID, customerID })
+  // 30 minutes (subject to maxAge)
+  const cacheOptions = { ttl: 1800, maxAge, type: cacheTypes.S3, bucket: QUERY_BUCKET }
+  // instantiate PG connection to use for fdw + query (must be same)
+  // client's application name must be specific to this execution so the pg pid can be
+  // readily identified
+  const pgClient = newPGClientFromPoolConfig(mlPool, {
+    application_name: `ql-executor-${process.env.STAGE}-${executionID ? `-${executionID}` : ''}`,
+  // eslint-disable-next-line object-curly-newline
+  })
+  await pgClient.connect()
+  try {
+    // establish fdw connections
+    await establishFdwConnections(pgClient, fdwConnections)
+    // run query
+    return pgWithCache(query, [], pgClient, cacheOptions)
+  } finally {
+    pgClient.release()
+  }
 }
 
 /**
  * Parses and validates query by running it with a limit of 0
- * @param {Object.<string, Knex.QueryBuilder|Knex.Raw>} views Map of view ID's and knex view objects
- * @param {Object.<string, Object>} viewColumns Map of view ID's and column objects
- * @param {Object.<string, string[]>} fdwConnections Map of view ID's and array of connection names
- * @param {Object} query Query object
- * @param {Object} access Access object
- * @param {number[]|-1} access.whitelabel
- * @param {number[]|-1} access.customers
- * @param {string} access.prefix
+ * @param {number} whitelabelID Whitelabel ID
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {Object.<string, Object>} views Map of view ID's to query, columns...
+ * @param {Object} tree Query tree
+ * @param {string} [engine='pg'] One of 'pg' or 'trino'
  * @returns {Promise<Object>} Query and result column hashes along with result schema
  */
-const validateQuery = async (views, viewColumns, fdwConnections, query, access) => {
-  // insert geo views & joins
-  const [
-    queryWithGeo,
-    viewsWithGeo,
-    fdwConnectionsWithGeo,
-  ] = insertGeo(access, views, viewColumns, fdwConnections, query)
+const validateQuery = async (whitelabelID, customerID, views, tree, engine = 'pg') => {
+  if (engine !== 'pg') {
+    throw apiError('Failed to validate the query', 500)
+  }
+  // get view queries
+  const { viewQueries, fdwConnections } = Object.entries(views)
+    .reduce((acc, [id, { query, fdwConnections }]) => {
+      acc.viewQueries[id] = query
+      acc.fdwConnections[id] = fdwConnections
+      return acc
+    }, { viewQueries: {}, fdwConnections: {} })
+  const query = parseQueryTreeToEngine(
+    tree,
+    { engine, viewQueries, whitelabelID, customerID, limit: 0 },
+  )
+  console.log(query)
 
-  // if no error then query was parsed successfully
-  const knexQuery = getKnexQuery(viewsWithGeo, viewColumns, queryWithGeo)
-
-  // check out PG connection to use for fdw + query (must be same)
-  const pgConnection = await mlPool.connect()
+  const pgClient = await mlPool.connect()
   let fields
   try {
     // establish fdw connections
-    await establishFdwConnections(pgConnection, fdwConnectionsWithGeo)
-
-    // set connection on ml query
-    knexQuery.connection(pgConnection)
-
-    // run the query with limit 0
-    knexQuery.limit(0)
-    const { sql, bindings } = knexQuery.toSQL()
+    await establishFdwConnections(pgClient, fdwConnections)
+    // run query
     fields = await queryWithCache(
-      [sql, bindings, 'fields'],
-      () => knexBuilderToRaw(knexQuery).then(({ fields }) => fields), // only cache fields
-      { ttl: 86400, type: cacheTypes.REDIS, rows: false }, // 1 day
+      [query, 'fields'],
+      () => pgClient.query(query).then(({ fields }) => fields), // only cache fields
+      { ttl: 86400, type: cacheTypes.REDIS }, // 1 day
     )
   } finally {
-    pgConnection.release()
+    pgClient.release()
   }
 
+  // pg specific
   const columns = fields.map(({ name, dataTypeID }) => [name, dataTypeID])
+
   return {
-    mlQueryHash: getObjectHash(query),
+    mlQueryHash: getObjectHash(tree.toQL({ keepParamRefs: !tree.hasParameterValues() })),
     mlQueryColumnHash: getObjectHash(columns),
     mlQueryColumns: columns,
   }
@@ -273,25 +118,22 @@ const validateQuery = async (views, viewColumns, fdwConnections, query, access) 
 
 // throws an error if the query cannot be parsed
 // attaches queryHash, columnHash and columns to req
-const validateQueryMW = (onlyUseBodyQuery = false) => async (req, _, next) => {
+const validateQueryMW = async (req, _, next) => {
   try {
-    // if a saved query or execution have been attached to req, use it
-    // else use req.body
-    const loadedQuery = !onlyUseBodyQuery && (req.mlQuery || req.mlExecution)
-    const { query } = loadedQuery || req.body
-    const { mlViews, mlViewColumns, mlViewFdwConnections, access } = req
+    // access has single customer
+    const { whitelabel: [whitelabelID], customers: [customerID] } = req.access
+    const { tree, views, engine } = req.ql
 
     // get query and column hashes + results schema and attach to req
-    const values = await validateQuery(mlViews, mlViewColumns, mlViewFdwConnections, query, access)
+    const values = await validateQuery(whitelabelID, customerID, views, tree, engine)
     Object.assign(req, values)
     next()
   } catch (err) {
-    next(getSetAPIError(err, 'Failed to parse the query', 500))
+    next(getSetAPIError(err, 'Failed to validate the query', 500))
   }
 }
 
 module.exports = {
-  getKnexQuery,
   executeQuery,
   validateQuery,
   validateQueryMW,

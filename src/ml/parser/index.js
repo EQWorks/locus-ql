@@ -1,5 +1,5 @@
 const { useAPIErrorOptions } = require('../../util/api-error')
-const { parseQLToTree, parseSQLToTree, nodes: { SelectNode, OperatorNode } } = require('./src')
+const { parseQLToTree, parseSQLToTree, nodes: { SelectNode } } = require('./src')
 const { isValidSQLExpression } = require('./src/sql')
 const { ParserError } = require('./src/utils')
 require('./pg') // init - attach parsers

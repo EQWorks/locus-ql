@@ -1,7 +1,8 @@
 /* eslint-disable no-use-before-define */
 /* eslint-disable no-continue */
 const { useAPIErrorOptions } = require('../../../util/api-error')
-const { geometryTypes: geoTypes, geometryTypeValues } = require('../src/types')
+// const { geometryTypes: geoTypes, geometryTypeValues } = require('../src/types')
+const { geometryTypes: geoTypes } = require('../src/types')
 const geoTables = require('../../geo-tables')
 
 
@@ -463,119 +464,119 @@ const getIntersectionGeometryFromString = (geoStringA, geoStringB, options) => {
   )`
 }
 
-// sql: "(SELECT 'geo:<type>:' || (arg)[ || ':' || (arg)] AS geometry)"
-const extractGeoSQLValues = (sql) => {
-  if (!sql.startsWith("(SELECT 'geo:") || !sql.endsWith(' AS geometry)')) {
-    return
-  }
-  const vals = []
-  let val = ''
-  let valEnding = false
-  let quote = ''
-  let quoteEnding = false
-  let inBlock = false
-  let blockDepth = 0
-  for (const char of sql.slice(8, -13)) {
-    // quote in progress
-    if (quote) {
-      // quote continues
-      if (!quoteEnding || char === quote) {
-        if (char === quote) {
-          quoteEnding = !quoteEnding
-        }
-        val += char
-        continue
-      }
-      // quote ends, need to deal with char
-      quote = ''
-      quoteEnding = false
-    }
+// // sql: "(SELECT 'geo:<type>:' || (arg)[ || ':' || (arg)] AS geometry)"
+// const extractGeoSQLValues = (sql) => {
+//   if (!sql.startsWith("(SELECT 'geo:") || !sql.endsWith(' AS geometry)')) {
+//     return
+//   }
+//   const vals = []
+//   let val = ''
+//   let valEnding = false
+//   let quote = ''
+//   let quoteEnding = false
+//   let inBlock = false
+//   let blockDepth = 0
+//   for (const char of sql.slice(8, -13)) {
+//     // quote in progress
+//     if (quote) {
+//       // quote continues
+//       if (!quoteEnding || char === quote) {
+//         if (char === quote) {
+//           quoteEnding = !quoteEnding
+//         }
+//         val += char
+//         continue
+//       }
+//       // quote ends, need to deal with char
+//       quote = ''
+//       quoteEnding = false
+//     }
 
-    if (valEnding) {
-      valEnding = false
-      // val ended
-      if (char === '|') {
-        vals.push(val)
-        val = ''
-        continue
-      }
-      // val continues
-      val += '|'
-    }
+//     if (valEnding) {
+//       valEnding = false
+//       // val ended
+//       if (char === '|') {
+//         vals.push(val)
+//         val = ''
+//         continue
+//       }
+//       // val continues
+//       val += '|'
+//     }
 
-    // no quote or quote has just ended
-    // new quote starting
-    if (char === '"' || char === "'") {
-      quote = char
-      val += char
-      continue
-    }
+//     // no quote or quote has just ended
+//     // new quote starting
+//     if (char === '"' || char === "'") {
+//       quote = char
+//       val += char
+//       continue
+//     }
 
-    if (!inBlock) {
-      // end of val
-      if (char === '|') {
-        valEnding = true
-        continue
-      }
-      // new block starting
-      if (char === '(') {
-        inBlock = true
-      }
-      val += char
-      continue
-    }
+//     if (!inBlock) {
+//       // end of val
+//       if (char === '|') {
+//         valEnding = true
+//         continue
+//       }
+//       // new block starting
+//       if (char === '(') {
+//         inBlock = true
+//       }
+//       val += char
+//       continue
+//     }
 
-    // block in progress
-    // nested block
-    if (char === '(') {
-      blockDepth += 1
-    } else if (char === ')') {
-      // end block (main or nested)
-      if (!blockDepth) {
-        inBlock = false
-      } else {
-        blockDepth -= 1
-      }
-    }
-    val += char
-  }
-  // last val
-  if (val) {
-    vals.push(val)
-  }
-  if (vals.length < 2) {
-    return
-  }
-  return [
-    vals[0].slice(5, -3),
-    ...vals.slice(1).filter(v => v !== " ':' ").map(v => v.trim()),
-  ]
-}
+//     // block in progress
+//     // nested block
+//     if (char === '(') {
+//       blockDepth += 1
+//     } else if (char === ')') {
+//       // end block (main or nested)
+//       if (!blockDepth) {
+//         inBlock = false
+//       } else {
+//         blockDepth -= 1
+//       }
+//     }
+//     val += char
+//   }
+//   // last val
+//   if (val) {
+//     vals.push(val)
+//   }
+//   if (vals.length < 2) {
+//     return
+//   }
+//   return [
+//     vals[0].slice(5, -3),
+//     ...vals.slice(1).filter(v => v !== " ':' ").map(v => v.trim()),
+//   ]
+// }
 
-const parseGeoSQL = (sql) => {
-  const [type, ...args] = extractGeoSQLValues(sql) || []
-  if (!(type in geometryTypeValues)) {
-    throw apiError('Invalid geometry', 400)
-  }
-  if (type === geoTypes.POI) {
-    if (args.length !== 1 && args.length !== 2) {
-      throw apiError(`Invalid ${type} geometry`, 400)
-    }
-    return { type, id: args[0], radius: args[1] }
-  }
-  // geo with id
-  if (type in geoTables || type === geoTypes.GGID) {
-    if (args.length !== 1) {
-      throw apiError(`Invalid ${type} geometry`, 400)
-    }
-    return { type, id: args[0] }
-  }
-  // point
-  if (args.length !== 2 && args.length !== 3) {
-    throw apiError('Invalid point geometry', 400)
-  }
-  return { type, long: args[0], lat: args[1], radius: args[2] }
-}
+// const parseGeoSQL = (sql) => {
+//   const [type, ...args] = extractGeoSQLValues(sql) || []
+//   if (!(type in geometryTypeValues)) {
+//     throw apiError('Invalid geometry', 400)
+//   }
+//   if (type === geoTypes.POI) {
+//     if (args.length !== 1 && args.length !== 2) {
+//       throw apiError(`Invalid ${type} geometry`, 400)
+//     }
+//     return { type, id: args[0], radius: args[1] }
+//   }
+//   // geo with id
+//   if (type in geoTables || type === geoTypes.GGID) {
+//     if (args.length !== 1) {
+//       throw apiError(`Invalid ${type} geometry`, 400)
+//     }
+//     return { type, id: args[0] }
+//   }
+//   // point
+//   if (args.length !== 2 && args.length !== 3) {
+//     throw apiError('Invalid point geometry', 400)
+//   }
+//   return { type, long: args[0], lat: args[1], radius: args[2] }
+// }
 
 const geoParser = engine => (node, options) => {
   const [type, ...args] = node.args.map(e => e.to(engine, options))
@@ -609,33 +610,33 @@ const geoParser = engine => (node, options) => {
   )`
 }
 
-const geoParserKnownType = engine => (node, options) => {
-  const [type, ...args] = node.args
-  const parsedArgs = args.map((e) => {
-    let sql = `upper(trim(${e.to(engine, options)}))`
-    if ([geoTypes.CA_FSA, geoTypes.CA_POSTALCODE].includes(type.value)) {
-      // remove all spaces
-      return engine === 'trino'
-        ? `replace(${sql}, ' ', '')`
-        : `regexp_replace(${sql}, '\\s+', '', 'g')`
-    }
-    if (type.value !== geoTypes.CA_CITY) {
-      return sql
-    }
-    // remove duplicate spaces and replace with hyphen
-    sql = engine === 'trino'
-      ? `array_join(array_remove(split(${sql}, ' '), ''), '-')`
-      : `regexp_replace(${sql}, '\\s+', '-', 'g')`
-    return `
-      translate(
-        ${sql},
-        'ÂÃÄÅĀĂĄÁÀÇÉÈËÊĒĔĖĘĚÌÍÎÏĨĪĬÒÓÔÕÖŌŎŐÙÚÛÜŨŪŬŮ',
-        'AAAAAAAAACEEEEEEEEEIIIIIIIOOOOOOOOUUUUUUUU'
-      )
-    `
-  }).join(" || ':' || ")
-  return `(SELECT 'geo:${type.value}:' || ${parsedArgs} AS geometry)`
-}
+// const geoParserKnownType = engine => (node, options) => {
+//   const [type, ...args] = node.args
+//   const parsedArgs = args.map((e) => {
+//     let sql = `upper(trim(${e.to(engine, options)}))`
+//     if ([geoTypes.CA_FSA, geoTypes.CA_POSTALCODE].includes(type.value)) {
+//       // remove all spaces
+//       return engine === 'trino'
+//         ? `replace(${sql}, ' ', '')`
+//         : `regexp_replace(${sql}, '\\s+', '', 'g')`
+//     }
+//     if (type.value !== geoTypes.CA_CITY) {
+//       return sql
+//     }
+//     // remove duplicate spaces and replace with hyphen
+//     sql = engine === 'trino'
+//       ? `array_join(array_remove(split(${sql}, ' '), ''), '-')`
+//       : `regexp_replace(${sql}, '\\s+', '-', 'g')`
+//     return `
+//       translate(
+//         ${sql},
+//         'ÂÃÄÅĀĂĄÁÀÇÉÈËÊĒĔĖĘĚÌÍÎÏĨĪĬÒÓÔÕÖŌŎŐÙÚÛÜŨŪŬŮ',
+//         'AAAAAAAAACEEEEEEEEEIIIIIIIOOOOOOOOUUUUUUUU'
+//       )
+//     `
+//   }).join(" || ':' || ")
+//   return `(SELECT 'geo:${type.value}:' || ${parsedArgs} AS geometry)`
+// }
 
 const geoIntersectsParser = engine => (node, options) => {
   // const [geoA, geoB] = node.args.map(e => parseGeoSQL(e.to(engine, options)))

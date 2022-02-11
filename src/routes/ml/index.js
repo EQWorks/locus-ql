@@ -4,6 +4,8 @@
 const express = require('express')
 
 const { listViewsMW, getViewMW, loadQueryViews } = require('../../ml/views')
+const { parseQueryToTreeMW } = require('../../ml/parser')
+const { insertGeoIntersectsInTreeMW } = require('../../ml/geo-intersects')
 const { getViewCategoryTreeMW } = require('../../ml/views/taxonomies')
 const {
   queueExecutionMW,
@@ -33,6 +35,12 @@ const { accessHasSingleCustomer } = require('../../middleware/validation')
 
 const router = express.Router()
 
+// init req.ql
+router.use((req, _, next) => {
+  req.ql = { engine: 'pg' }
+  next()
+})
+
 /** -- LEGACY ROUTES -- */
 
 // list out all accessible views with column data -> replaced by GET /views
@@ -46,8 +54,10 @@ router.post(
   loadQuery(false), // run saved query
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
-  loadQueryViews(),
-  validateQueryMW(),
+  parseQueryToTreeMW({ paramsMustHaveValues: true }),
+  loadQueryViews,
+  insertGeoIntersectsInTreeMW,
+  validateQueryMW,
   queueExecutionMW,
 )
 
@@ -92,6 +102,16 @@ router.get('/views/:viewID', getViewMW)
 /* -- QUERY EXECUTIONS -- */
 
 /**
+ * @api {get} /executions/:id
+ * @apiName Get a specific execution
+ * @apiDescription Returns an execution object based on id
+ * @apiGroup ml
+ * @apiParam (params) {number} id ID of the execution to return
+ * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned
+*/
+router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
+
+/**
  * @api {get} /executions/:id/results
  * @apiName Get a specific execution's results URL
  * @apiDescription Redirects or returns a url to the execution's results based on an id
@@ -105,16 +125,6 @@ router.get(
   loadExecution(true),
   respondWithOrRedirectToExecutionResultsURL,
 )
-
-/**
- * @api {get} /executions/:id
- * @apiName Get a specific execution
- * @apiDescription Returns an execution object based on id
- * @apiGroup ml
- * @apiParam (params) {number} id ID of the execution to return
- * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned
-*/
-router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
 
 /**
  * @api {put} /executions/:id
@@ -153,18 +163,23 @@ router.get('/executions/', listExecutions)
  * rerun). Ignored when `query` has a value
  * @apiParam (query) {number} [preview] '1' or 'true' if the execution only needs to be evaluated
  * but not submitted (e.g. generate query hash or price execution)
- * @apiParam (Req body) {Object} [query] Query markup. Need only be sent when none of `query`
- * and `execution` have a value
- * @apiParam (Req body) {Array} [views] Views the query depends on. Need only be sent when
- * none of `query` and `execution` have a value
+ * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of `query`
+ * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
+ * precedence
+ * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of `query`
+ * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
+ * precedence
+ * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.
 */
 router.post(
   '/executions/',
   loadQuery(false), // run saved query
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
-  loadQueryViews(),
-  validateQueryMW(),
+  parseQueryToTreeMW({ paramsMustHaveValues: true }),
+  loadQueryViews,
+  insertGeoIntersectsInTreeMW,
+  validateQueryMW,
   previewExecutionMW,
   queueExecutionMW,
 )
@@ -191,14 +206,19 @@ router.get('/queries/:id(\\d+)', loadQuery(true), respondWithQuery)
  * @apiParam (params) {number} id ID of the query to update
  * @apiParam (Req body) {string} name Query name
  * @apiParam (Req body) {string} [description] Query description
- * @apiParam (Req body) {Object} query Query markup
- * @apiParam (Req body) {Array} views Views the query depends on
+ * @apiParam (Req body) {Object} [query] JSON query. When both `query` and `sql` are supplied,
+ * `query` takes precedence
+ * @apiParam (Req body) {Object} [sql] SQL query. When both `query` and `sql` are supplied,
+ * `query` takes precedence
+ * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.
 */
 router.put(
   '/queries/:id(\\d+)',
   loadQuery(true),
-  loadQueryViews(true),
-  validateQueryMW(true),
+  parseQueryToTreeMW({ onlyUseBodyQuery: true }),
+  loadQueryViews,
+  insertGeoIntersectsInTreeMW,
+  validateQueryMW,
   putQuery,
 )
 
@@ -237,18 +257,24 @@ router.get('/queries/', listQueries)
  * when `query` has a value
  * @apiParam (Req body) {string} name Query name
  * @apiParam (Req body) {string} [description] Query description
- * @apiParam (Req body) {Object} query Query markup. Need only be sent when none of `query` and
- * `execution` have a value
- * @apiParam (Req body) {Array} views Views the query depends on. Need only be sent when none
- * of `query` and `execution` have a value
+ * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of `query`
+ * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
+ * precedence
+ * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of `query`
+ * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
+ * precedence
+ * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.
+
 */
 router.post(
   '/queries/',
   loadQuery(false), // use saved query as template
   loadExecution(false), // use execution as template (superseded by saved query)
   accessHasSingleCustomer,
-  loadQueryViews(),
-  validateQueryMW(),
+  parseQueryToTreeMW(),
+  loadQueryViews,
+  insertGeoIntersectsInTreeMW,
+  validateQueryMW,
   postQuery,
 )
 

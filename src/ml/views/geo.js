@@ -1,16 +1,16 @@
-/* eslint-disable no-use-before-define */
 const { typeToCatMap } = require('../type')
 const { knex } = require('../../util/db')
+const { filterViewColumns } = require('./utils')
 const { useAPIErrorOptions } = require('../../util/api-error')
 const { knexWithCache } = require('../../util/cache')
-const { geoMapping } = require('../geo')
+const geoTables = require('../geo-tables')
 const { viewTypes, viewCategories } = require('./taxonomies')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
 const GEO_TABLES = {
-  ...Object.entries(geoMapping).reduce((acc, [key, val]) => {
+  ...Object.entries(geoTables).reduce((acc, [key, val]) => {
     // skip poi as a bridge table for now due to high cardinality (geo joins all customer POI's
     // instead of only the ones required to bridge the view)
     if (key === 'poi') {
@@ -29,41 +29,31 @@ const GEO_TABLES = {
   },
 }
 
-// public available
-const getQueryView = async ({ whitelabel, customers }, { tableKey }) => {
-  const viewID = `${viewTypes.GEO}_${tableKey}`
-  const { schema, table, whitelabelColumn, customerColumn, idColumn } = GEO_TABLES[tableKey]
-
-  if (!schema || !table) {
-    throw apiError('Invalid geo view', 403)
+const parseViewID = (viewID) => {
+  const [, tableKey] = viewID.match(/^geo_([\w]+)$/) || []
+  // eslint-disable-next-line radix
+  if (!(tableKey in GEO_TABLES)) {
+    throw apiError(`Invalid view: ${viewID}`, 400)
   }
+  return { tableKey }
+}
 
-  // inject view columns
-  const viewMeta = await listViews({ filter: { tableKey } })
-  const mlViewColumns = (viewMeta[0] || {}).columns
-
-  // inject view
-  const mlView = knex
-    .select(idColumn ? { [`geo_${tableKey}`]: idColumn } : '*')
-    .from(`${schema}.${table}`)
-
-  // scoped to WL/CU for now
-  // in the future, might expose POI's where WL IS NULL
-  // issue: slows down geo joins
-  if (whitelabelColumn && whitelabel !== -1) {
-    const customerFilter = customerColumn && customers !== -1
-      ? `AND (
-        ${table}.${customerColumn} IS NULL
-        OR ${table}.${customerColumn} = ANY (:customers)
-      )`
-      : ''
-    mlView.where(knex.raw(`(
-      ${table}.${whitelabelColumn} = ANY (:whitelabel)
-      ${customerFilter}
-    )`, { whitelabel, customers }))
-  }
-
-  return { viewID, mlView, mlViewColumns }
+const getTableColumns = async (schema, table) => {
+  const tableColumns = await knexWithCache(
+    knex('information_schema.columns')
+      .columns(['column_name', 'data_type', 'udt_name'])
+      .where({ table_schema: schema, table_name: table }),
+    { ttl: 3600 }, // 1 hour
+  )
+  return tableColumns.reduce((acc, { column_name, data_type, udt_name }) => {
+    const type = data_type === 'USER-DEFINED' ? udt_name : data_type
+    acc[column_name] = {
+      category: typeToCatMap.get(type),
+      key: column_name,
+      type,
+    }
+    return acc
+  }, {})
 }
 
 const listViews = async ({ filter, inclMeta = true }) => {
@@ -76,7 +66,7 @@ const listViews = async ({ filter, inclMeta = true }) => {
     geoTableList = Object.entries(GEO_TABLES)
   }
 
-  const tablePromises = geoTableList.map(async ([tableKey, { schema, table, idType, geoType }]) => {
+  return Promise.all(geoTableList.map(async ([tableKey, { schema, table, idType, geoType }]) => {
     const view = {
       name: tableKey,
       view: {
@@ -97,35 +87,54 @@ const listViews = async ({ filter, inclMeta = true }) => {
         }
         return view
       }
-
-      const tableColumns = await knexWithCache(
-        knex('information_schema.columns')
-          .columns(['column_name', 'data_type', 'udt_name'])
-          .where({ table_schema: schema, table_name: table }),
-        { ttl: 3600 }, // 1 hour
-      )
-      view.columns = {}
-      tableColumns.forEach(({ column_name, data_type, udt_name }) => {
-        const type = data_type === 'USER-DEFINED' ? udt_name : data_type
-        view.columns[column_name] = {
-          category: typeToCatMap.get(type),
-          key: column_name,
-          type,
-        }
-      })
+      view.columns = await getTableColumns(schema, table)
     }
     return view
-  })
+  }))
+}
 
-  return Promise.all(tablePromises)
+const getQueryView = async ({ whitelabel, customers }, viewID, queryColumns, engine) => {
+  const { tableKey } = parseViewID(viewID)
+  const { schema, table, whitelabelColumn, customerColumn, idColumn } = GEO_TABLES[tableKey]
+
+  if (!schema || !table) {
+    throw apiError('Invalid geo view', 400)
+  }
+
+  // inject view columns
+  const viewMeta = await listViews({ filter: { tableKey } })
+  const columns = filterViewColumns((viewMeta[0] || {}).columns, queryColumns)
+  if (!Object.keys(columns).length) {
+    throw apiError(`No column selected from view: ${viewID}`, 400)
+  }
+
+  const where = []
+  // scoped to WL/CU for now
+  // in the future, might expose POI's where WL IS NULL
+  if (whitelabelColumn && whitelabel !== -1) {
+    where.push(`"${table}"."${whitelabelColumn}" = ANY (ARRAY[${whitelabel.join(', ')}])`)
+    if (customerColumn && customers !== -1) {
+      where.push(`(
+        "${table}"."${customerColumn}" IS NULL
+        OR "${table}"."${customerColumn}" = (ARRAY[${customers.join(', ')}])
+      )`)
+    }
+  }
+
+  const catalog = engine === 'trino' ? 'locus_place.' : ''
+
+  const query = `
+    SELECT
+      ${idColumn ? `"${idColumn}" AS "geo_${tableKey}"` : '*'}
+    FROM ${catalog}"${schema}"."${table}"
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+  `
+
+  return { viewID, query, columns }
 }
 
 const getView = async (_, viewID) => {
-  const [, tableKey] = viewID.match(/^geo_([\w]+)$/) || []
-  // eslint-disable-next-line radix
-  if (!(tableKey in GEO_TABLES)) {
-    throw apiError(`Invalid view: ${viewID}`, 403)
-  }
+  const { tableKey } = parseViewID(viewID)
 
   const view = {
     name: tableKey,
@@ -149,25 +158,7 @@ const getView = async (_, viewID) => {
     }
     return view
   }
-
-  const tableColumns = await knexWithCache(
-    knex('information_schema.columns')
-      .columns(['column_name', 'data_type', 'udt_name'])
-      .where({ table_schema: schema, table_name: table }),
-    { ttl: 3600 }, // 1 hour
-  )
-
-  const columns = {}
-  tableColumns.forEach(({ column_name, data_type, udt_name }) => {
-    const type = data_type === 'USER-DEFINED' ? udt_name : data_type
-    columns[column_name] = {
-      category: typeToCatMap.get(type),
-      key: column_name,
-      type,
-    }
-  })
-
-  view.columns = columns
+  view.columns = await getTableColumns(schema, table)
   return view
 }
 
