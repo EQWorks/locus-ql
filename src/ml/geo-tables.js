@@ -68,5 +68,6 @@ module.exports = {
     radiusColumn: 'default_radius',
     whitelabelColumn: 'whitelabelid',
     customerColumn: 'customerid',
+    publicColumn: 'public',
   },
 }

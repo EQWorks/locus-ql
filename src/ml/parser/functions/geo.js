@@ -107,20 +107,20 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine, getRef }) => 
       : `ST_Transform(ST_MakeValid(${ref}.${type.geometryColumn}), 3347)`)
   }
   if (type.longColumn && type.latColumn) {
-    let radius
+    const radius = []
     if (geo.radius !== undefined) {
-      radius = castAsInteger(geo.radius, engine)
-    } else if (type.radiusColumn) {
-      radius = `${ref}.${type.radiusColumn}`
-    } else {
-      radius = DEFAULT_POINT_RADIUS
+      radius.push(castAsInteger(geo.radius, engine))
     }
+    if (type.radiusColumn) {
+      radius.push(`${ref}.${type.radiusColumn}`)
+    }
+    radius.push(DEFAULT_POINT_RADIUS)
     geometries.push(engine === 'trino'
       // trino
       ? `
         ST_Buffer(
           ST_Point(${ref}.${type.longColumn}, ${ref}.${type.latColumn}),
-          ${radius}
+          COALESCE(${radius.join(', ')})
         )
       `
       // pg
@@ -128,7 +128,7 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine, getRef }) => 
         ST_Transform(
           ST_Buffer(
             ST_SetSRID(ST_Point(${ref}.${type.longColumn}, ${ref}.${type.latColumn}), 4326),
-            ${radius}
+            COALESCE(${radius.join(', ')})
           ),
           3347
         )
@@ -148,7 +148,11 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine, getRef }) => 
     ? `AND ${ref}.${type.whitelabelColumn} = ${whitelabelID}`
     : ''}
       ${customerID && type.customerColumn
-    ? `AND ${ref}.${type.customerColumn} = ${customerID}` : ''}
+    ? `AND (
+      ${ref}.${type.customerColumn} = ${customerID}
+      OR ${ref}.${type.customerColumn} IS NULL
+    )` : ''}
+      ${type.publicColumn ? `AND ${ref}.${type.publicColumn} IS TRUE` : ''}
   )`
 }
 
@@ -156,12 +160,17 @@ const getPointGeometry = (geo, { engine }) => {
   if (geo.type !== geoTypes.POINT) {
     return
   }
+  const radius = []
+  if (geo.radius !== undefined) {
+    radius.push(castAsInteger(geo.radius, engine))
+  }
+  radius.push(DEFAULT_POINT_RADIUS)
   const geometry = engine === 'trino'
     // trino
     ? `
       ST_Buffer(
         ST_Point(${castAsDouble(geo.long, engine)}, ${castAsDouble(geo.lat, engine)}),
-        ${geo.radius !== undefined ? castAsInteger(geo.radius, engine) : DEFAULT_POINT_RADIUS}
+        COALESCE(${radius.join(', ')})
       )
     `
     // pg
@@ -172,7 +181,7 @@ const getPointGeometry = (geo, { engine }) => {
             ST_Point(${castAsDouble(geo.long, engine)}, ${castAsDouble(geo.lat, engine)}),
             4326
           ),
-          ${geo.radius !== undefined ? castAsInteger(geo.radius, engine) : DEFAULT_POINT_RADIUS}
+          COALESCE(${radius.join(', ')})
         ),
         3347
       )
@@ -244,28 +253,13 @@ const getGeometry = (geo, options) => {
 const getGeometryFromString = (geoString, options) => {
   const ref = options.getRef()
   const outerRef = options.getRef()
-  const cases = [
-    // point with radius
-    [
-      `${ref}.type = '${geoTypes.POINT}' AND ${ref}.radius IS NOT NULL`,
-      { type: geoTypes.POINT, long: `${ref}.long`, lat: `${ref}.lat`, radius: `${ref}.radius` },
-    ],
-    // point
-    [
-      `${ref}.type = '${geoTypes.POINT}'`,
-      { type: geoTypes.POINT, long: `${ref}.long`, lat: `${ref}.lat` },
-    ],
-  ]
-  Object.entries(geoTables).forEach(([type, table]) => {
-    // latlong with radius
-    if (table.longColumn && table.latColumn) {
-      cases.push([
-        `${ref}.type = '${type}' AND ${ref}.radius IS NOT NULL`,
-        { type, id: `${ref}.id`, radius: `${ref}.radius` },
-      ])
-    }
-    cases.push([`${ref}.type = '${type}'`, { type, id: `${ref}.id` }])
-  })
+  const cases = Object.keys(geoTables)
+    .map(type => [`${ref}.type = '${type}'`, { type, id: `${ref}.id`, radius: `${ref}.radius` }])
+  // point
+  cases.push([
+    `${ref}.type = '${geoTypes.POINT}'`,
+    { type: geoTypes.POINT, long: `${ref}.long`, lat: `${ref}.lat`, radius: `${ref}.radius` },
+  ])
   return `(
     SELECT
       ${outerRef}.geometry
@@ -369,19 +363,14 @@ const getSameTypeIntersectionGeometry = (geoA, geoB, options) => {
   if (geoA.type !== geoB.type) {
     return
   }
-  if (geoA.type in geoTables || geoA.type === geoTypes.GGID) {
-    const outerRef = options.getRef()
-    return `(
-      SELECT
-        ${outerRef}.geometry
-      FROM (
-        SELECT
-          ${getGeometry(geoA, options)} AS geometry
-        WHERE ${geoA.id} = ${geoB.id}
-      ) AS ${outerRef}
-      WHERE ${outerRef}.geometry IS NOT NULL
-    )`
-  }
+  const radiusCond = [geoA, geoB]
+    .map(({ radius }) => (radius !== undefined
+      ? `COALESCE(${castAsInteger(radius, options.engine)}, ${DEFAULT_POINT_RADIUS})`
+      : DEFAULT_POINT_RADIUS))
+    .join(' <= ')
+  const idCond = geoA.type === geoTypes.POINT
+    ? `${geoA.long} = ${geoB.long} AND ${geoA.lat} = ${geoB.lat}`
+    : `${geoA.id} = ${geoB.id}`
   const ref = options.getRef()
   return `(
     SELECT
@@ -389,17 +378,11 @@ const getSameTypeIntersectionGeometry = (geoA, geoB, options) => {
     FROM (
       SELECT
         CASE
-          WHEN
-            ${geoA.radius !== undefined
-    ? castAsInteger(geoA.radius, options.engine) : DEFAULT_POINT_RADIUS}
-            <= ${geoB.radius !== undefined
-    ? castAsInteger(geoB.radius, options.engine) : DEFAULT_POINT_RADIUS}
+          WHEN ${radiusCond}
           THEN ${getGeometry(geoA, options)}
           ELSE ${getGeometry(geoB, options)}
         END AS geometry
-      WHERE
-        ${geoA.long} = ${geoB.long}
-        AND ${geoA.lat} = ${geoB.lat}
+      WHERE ${idCond}
     ) AS ${ref}
     WHERE ${ref}.geometry IS NOT NULL
   )`
@@ -416,28 +399,13 @@ const getIntersectionGeometryFromString = (geoStringA, geoStringB, options) => {
   const refA = options.getRef()
   const refB = options.getRef()
   const [casesA, casesB] = [refA, refB].map((ref) => {
-    const cases = [
-      // point with radius
-      [
-        `${ref}.type = '${geoTypes.POINT}' AND ${ref}.radius IS NOT NULL`,
-        { type: geoTypes.POINT, long: `${ref}.long`, lat: `${ref}.lat`, radius: `${ref}.radius` },
-      ],
-      // point
-      [
-        `${ref}.type = '${geoTypes.POINT}'`,
-        { type: geoTypes.POINT, long: `${ref}.long`, lat: `${ref}.lat` },
-      ],
-    ]
-    Object.entries(geoTables).forEach(([type, table]) => {
-      // latlong with radius
-      if (table.longColumn && table.latColumn) {
-        cases.push([
-          `${ref}.type = '${type}' AND ${ref}.radius IS NOT NULL`,
-          { type, id: `${ref}.id`, radius: `${ref}.radius` },
-        ])
-      }
-      cases.push([`${ref}.type = '${type}'`, { type, id: `${ref}.id` }])
-    })
+    const cases = Object.keys(geoTables)
+      .map(type => [`${ref}.type = '${type}'`, { type, id: `${ref}.id`, radius: `${ref}.radius` }])
+    // point
+    cases.push([
+      `${ref}.type = '${geoTypes.POINT}'`,
+      { type: geoTypes.POINT, long: `${ref}.long`, lat: `${ref}.lat`, radius: `${ref}.radius` },
+    ])
     return cases
   })
   const cases = casesA.map(([condA, geoA]) => `

@@ -95,7 +95,10 @@ const listViews = async ({ filter, inclMeta = true }) => {
 
 const getQueryView = async ({ whitelabel, customers }, viewID, queryColumns, engine) => {
   const { tableKey } = parseViewID(viewID)
-  const { schema, table, whitelabelColumn, customerColumn, idColumn } = GEO_TABLES[tableKey]
+  const {
+    schema, table, whitelabelColumn,
+    customerColumn, idColumn, publicColumn,
+  } = GEO_TABLES[tableKey]
 
   if (!schema || !table) {
     throw apiError('Invalid geo view', 400)
@@ -119,6 +122,9 @@ const getQueryView = async ({ whitelabel, customers }, viewID, queryColumns, eng
         OR "${table}"."${customerColumn}" = (ARRAY[${customers.join(', ')}])
       )`)
     }
+  }
+  if (publicColumn) {
+    where.push(`"${table}"."${publicColumn}" IS TRUE`)
   }
 
   const catalog = engine === 'trino' ? 'locus_place.' : ''
