@@ -7,6 +7,17 @@ operators['^'] = {
   },
 }
 
+operators['[]'] = {
+  pg: (node, options) => {
+    const [arr, ...ind] = node.operands.map(o => o.to('pg', options))
+    return `(${arr})${ind.map(e => `[${e}]`).join('')}`
+  },
+  trino: (node, options) => {
+    const [arr, ...ind] = node.operands.map(o => o.to('trino', options))
+    return `(${arr})${ind.map(e => `[${e}]`).join('')}`
+  },
+}
+
 operators.any = {
   pg: (node, options) => {
     const [left, right] = node.operands.map(o => o.to('pg', options))

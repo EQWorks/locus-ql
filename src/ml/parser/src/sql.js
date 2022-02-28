@@ -426,6 +426,13 @@ astParsers.A_ArrayExpr = ({ elements }, context) =>
 
 astParsers.A_Const = ({ val }, context) => parseASTNode(val, context)
 astParsers.A_Star = () => '*'
+astParsers.A_Indices = (exp, context) => {
+  const { is_slice, uidx } = exp
+  if (is_slice) {
+    throw sqlParserError({ message: 'Slice operation not supported', expression: exp })
+  }
+  return parseASTNode(uidx, context)
+}
 astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
   // kind: AEXPR_OP, AEXPR_AND, AEXPR_OR, AEXPR_NOT,
   // AEXPR_OP_ANY, AEXPR_OP_ALL, AEXPR_DISTINCT, AEXPR_NULLIF,
@@ -485,6 +492,14 @@ astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
   return {
     type: expTypes.OPERATOR,
     values: left !== undefined ? [operator, left, right] : [operator, right],
+  }
+}
+
+astParsers.A_Indirection = (exp, context) => {
+  const { arg, indirection } = exp
+  return {
+    type: expTypes.OPERATOR,
+    values: ['[]', parseASTNode(arg, context), ...indirection.map(e => parseASTNode(e, context))],
   }
 }
 

@@ -25,6 +25,15 @@ const operators = {
   // string operators
   '||': { minOpsLength: 2 },
 
+  // array operators
+  '[]': { // subscript operator
+    minOpsLength: 2,
+    toSQL: (node, options) => {
+      const [arr, ...ind] = node.operands.map(o => o.toSQL(options))
+      return `(${arr})${ind.map(e => `[${e}]`).join('')}`
+    },
+  },
+
   // arithmatic operators
   '+': { minOpsLength: 2 },
   '-': { minOpsLength: 2 },
