@@ -122,7 +122,7 @@ const parameterParser = engine => withOptions((node, options) => {
 const primitiveParser = engine => withOptions((node) => {
   if (typeof node.value === 'string') {
     // trino has no escape character
-    return engine === 'trino' ? node.value.replace(/'/g, "''") : escapeLiteral(node.value)
+    return engine === 'trino' ? `'${node.value.replace(/'/g, "''")}'` : escapeLiteral(node.value)
   }
   return String(node.value)
 }, { engine })

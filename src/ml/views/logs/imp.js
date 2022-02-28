@@ -566,7 +566,7 @@ module.exports = {
     _geo_cohort_item: {
       category: CAT_STRING,
       access: ACCESS_PRIVATE,
-      pgType: 'varchar(10)', // to support US DDDDD-DDDD
+      pgType: 'varchar(100)',
       expression: 'geo_cohort_item',
       inFastViews: [pgViews.LOCUS_GEO_COHORT_ITEMS, pgViews.ATOM_CH_GEOCOHORT_ID_ITEM],
     },

@@ -122,14 +122,10 @@ functions.geometry = {
 }
 
 functions.geo = functions.geometry
-
 functions.geo_intersects = { // geo_intersect(geoA, geoB)
   argsLength: 2,
 }
 functions.geo_intersection_area = { // geo_intersection_area(geoA, geoB)
-  argsLength: 2,
-}
-functions.geo_intersection_area_ratio = { // geo_intersection_area(geoA, geoB)
   argsLength: 2,
 }
 functions.geo_area = { // geo_area(geoA)

@@ -33,7 +33,7 @@ const insertGeoIntersects = (viewColumns, exp) => {
   // look for geo intersections
   // if not object, return copy
   if (typeof exp !== 'object' || exp === null) {
-    return { expressions: exp, inserted: false }
+    return { expression: exp, inserted: false }
   }
   let argA
   let argB

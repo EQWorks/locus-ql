@@ -61,7 +61,7 @@ const parseQueryTreeToEngine = (
   }
   return `
     WITH ${Object.entries(views).map(([name, query]) => `"${name}" AS (${query})`).join(', ')}
-    SELECT * FROM (${query}) q
+    SELECT * FROM (${query}) AS __query
     ${limit !== undefined ? `LIMIT ${limit}` : ''}
   `
 }
