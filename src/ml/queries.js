@@ -5,7 +5,7 @@ const { getView, getQueryViews } = require('./views')
 const { validateQuery } = require('./engine')
 const { updateExecution, queueExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
-const { QL_SCHEMA } = require('./constants')
+const { QL_SCHEMA, MAX_LENGTH_QUERY_DESCRIPTION, MAX_LENGTH_QUERY_NAME } = require('./constants')
 const { parseQueryToTree, ParserError } = require('./parser')
 const { isInternalUser } = require('./utils')
 
@@ -159,9 +159,10 @@ const createQuery = async (
     isInternal,
   ]
 
+  const safeName = name.slice(0, MAX_LENGTH_QUERY_NAME)
   if (description) {
     cols.push('description')
-    values.push(description)
+    values.push(description.slice(0, MAX_LENGTH_QUERY_DESCRIPTION))
   }
 
   // rewrite name when duplicate
@@ -179,7 +180,7 @@ const createQuery = async (
       ELSE ? END
     `,
   ]
-  const expressionValues = [customerID, name, name, name]
+  const expressionValues = [customerID, safeName, safeName, safeName]
 
   const { rows: [{ queryID }] } = await knexClient.raw(`
     WITH access AS (
@@ -211,7 +212,7 @@ const createQuery = async (
  * formatted as [name, pgTypeOID]
  * @param {boolean} [updates.isInternal] Whether or not the query accesses views restricted to
  * internal users
- * @param {string} [updates.description] Query description
+ * @param {string|null} [updates.description] Query description or null to remove
  * @param {boolean} [updates.isActive] Active status
  * @param {Knex} [knexClient=knex] Knex client to use to run the SQL query. Defaults to the
  * global client
@@ -234,6 +235,7 @@ const updateQuery = async (
     values.push(columnHash)
   }
   if (name) {
+    const safeName = name.slice(0, MAX_LENGTH_QUERY_NAME)
     expressions.push(`
       name = CASE WHEN EXISTS (
         SELECT query_id FROM ${QL_SCHEMA}.queries
@@ -243,7 +245,7 @@ const updateQuery = async (
           AND name = ?
       ) THEN ? || ' - ' || query_id ELSE ? END
     `)
-    expressionValues.push(name, name, name)
+    expressionValues.push(safeName, safeName, safeName)
   }
   if (query) {
     cols.push('query')
@@ -261,9 +263,9 @@ const updateQuery = async (
     cols.push('is_internal')
     values.push(isInternal)
   }
-  if (description) {
+  if (description !== undefined) {
     cols.push('description')
-    values.push(description)
+    values.push(description || 'NULL')
   }
   if (isActive !== undefined) {
     cols.push('is_active')
@@ -282,7 +284,7 @@ const updateQuery = async (
 
 const postQuery = async (req, res, next) => {
   try {
-    const { name, description = '' } = req.body
+    const { name, description } = req.body
     const {
       access: { whitelabel, customers },
       ql: { views, tree },
@@ -291,8 +293,24 @@ const postQuery = async (req, res, next) => {
       mlQueryColumns,
     } = req
     const { executionID, queryID: executionQueryID, isOrphaned } = req.ql.execution || {}
-    if (!name) {
-      throw apiError('Query name cannot be empty')
+    if (typeof name !== 'string') {
+      throw apiError(`Query name must be a string of maximum length ${MAX_LENGTH_QUERY_NAME}`)
+    }
+    const safeName = name.trim()
+    if (!safeName || safeName.length > MAX_LENGTH_QUERY_NAME) {
+      throw apiError(`Query name must be a string of maximum length ${MAX_LENGTH_QUERY_NAME}`)
+    }
+    let safeDescription
+    if (description !== undefined) {
+      if (typeof description !== 'string') {
+        throw apiError(`Query description must be a string of\
+maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
+      }
+      safeDescription = description.trim()
+      if (!safeDescription || safeDescription.length > MAX_LENGTH_QUERY_DESCRIPTION) {
+        throw apiError(`Query description must be a string of\
+maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
+      }
     }
     const query = tree.toQL({ keepParamRefs: !tree.hasParameterValues() })
     // determine whether or not query uses internal-only views
@@ -305,12 +323,12 @@ const postQuery = async (req, res, next) => {
         customers[0],
         mlQueryHash,
         mlQueryColumnHash,
-        name.trim(),
+        safeName,
         query,
         Object.keys(views),
         mlQueryColumns,
         isInternal,
-        description.trim(),
+        safeDescription,
         trx,
       )
       getContext(req, ERROR_QL_CTX).queryID = queryID
@@ -333,24 +351,43 @@ const postQuery = async (req, res, next) => {
 const putQuery = async (req, res, next) => {
   try {
     const { queryID } = req.ql.query
-    const { name, description = '' } = req.body
+    const { name, description } = req.body
     const { views, tree } = req.ql
     const { mlQueryHash, mlQueryColumnHash, mlQueryColumns } = req
     if (!name) {
       throw apiError('Query name cannot be empty')
     }
+    if (typeof name !== 'string') {
+      throw apiError(`Query name must be a string of maximum length ${MAX_LENGTH_QUERY_NAME}`)
+    }
+    const safeName = name.trim()
+    if (!safeName || safeName.length > MAX_LENGTH_QUERY_NAME) {
+      throw apiError(`Query name must be a string of maximum length ${MAX_LENGTH_QUERY_NAME}`)
+    }
+    let safeDescription = null
+    if (description !== undefined && description !== null) {
+      if (typeof description !== 'string') {
+        throw apiError(`Query description must be a string of\
+maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
+      }
+      safeDescription = description.trim()
+      if (!safeDescription || safeDescription.length > MAX_LENGTH_QUERY_DESCRIPTION) {
+        throw apiError(`Query description must be a string of\
+maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
+      }
+    }
     const query = tree.toQL({ keepParamRefs: !tree.hasParameterValues() })
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(views).some(v => v.isInternal)
     await updateQuery(queryID, {
-      name: name.trim(),
+      name: safeName,
       queryHash: mlQueryHash,
       columnHash: mlQueryColumnHash,
       query,
       viewIDs: Object.keys(views),
       columns: mlQueryColumns,
       isInternal,
-      description: description.trim(),
+      description: safeDescription,
     })
     res.json({ queryID })
   } catch (err) {
@@ -375,7 +412,7 @@ const deleteQuery = async (req, res, next) => {
  * Queues an execution for a query given its ID
  * @param {number} queryID Query ID
  * @param {number} [scheduleJobID] The ID of the schedule job which triggered the execution, if any
- * @returns {number} Execution ID or undefined
+ * @returns {number} Execution ID
  */
 const queueQueryExecution = async (queryID, scheduleJobID, engine = 'pg') => {
   try {

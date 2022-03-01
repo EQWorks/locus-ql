@@ -22,6 +22,8 @@ const {
   STATUS_FAILED,
   RESULTS_PART_SIZE,
   RESULTS_PART_SIZE_FIRST,
+  MAX_LENGTH_EXECUTION_TOKEN,
+  MAX_LENGTH_STATUS_REASON,
 } = require('./constants')
 
 
@@ -39,6 +41,7 @@ const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' 
  * @param {string} [filters.status] Status of interest
  * @param {number} [filters.start] Unix timestamp (in seconds) from which to consider records
  * @param {number} [filters.end] Unix timestamp (in seconds) up to which to consider records
+ * @param {string} [filters.clientToken] Client supplied execution ID (unique at WL/CU level)
  * @param {boolean} [filters.hideInternal=false] Whether or not to filter out queries
  * using internal fields
  * @param {number} [filters.limit] The max number of executions to return (sorted by date DESC)
@@ -54,6 +57,7 @@ const getExecutionMetas = async ({
   status,
   start,
   end,
+  clientToken,
   hideInternal = false,
   limit,
 } = {}) => {
@@ -107,6 +111,7 @@ const getExecutionMetas = async ({
       ${status ? 'AND e.status = :status' : ''}
       ${start ? 'AND e.status_ts >= to_timestamp(:start)' : ''}
       ${end ? 'AND e.status_ts <= to_timestamp(:end)' : ''}
+      ${clientToken ? 'AND e.client_token = :clientToken' : ''}
       ${hideInternal ? 'AND e.is_internal <> TRUE' : ''}
     ORDER BY 1 DESC
     ${limit ? 'LIMIT :limit' : ''}
@@ -120,6 +125,7 @@ const getExecutionMetas = async ({
     status,
     start,
     end,
+    clientToken,
     limit,
   })
   return rows
@@ -261,11 +267,14 @@ const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part } = {
  * @param {Object} [options] Optional args
  * @param {number} [options.queryID] If the execution is tied to a saved query, the id of such query
  * @param {string} [options.status] Initial status
+ * @param {number} [options.scheduleJobID] The ID of the schedule job which triggered the
+ * execution, if any
+ * @param {string} [options.clientToken] A client supplied token unique at the WL/CU level
  * @param {Knex} [options.knexClient=knex] Knex client to use to run the SQL query. Defaults to the
  * global client
- * @param {Date} [options.scheduleJobID] The ID of the schedule job which triggered the
- * execution, if any
- * @returns {Promise<number>} The execution ID or undefined when a SQL conflict is encountered
+ * @returns {Promise<{executionID:number, isCreated:boolean}>} The execution ID along with a boolean
+ * indicating whether or not the returned id is that of an existing execution (in the event
+ * of a duplicate idempotent submission)
  */
 const createExecution = async (
   whitelabelID,
@@ -277,65 +286,107 @@ const createExecution = async (
   columns,
   isInternal,
   dependencies,
-  { queryID, status, knexClient = knex, scheduleJobID } = {},
+  { queryID, status, scheduleJobID, clientToken, knexClient = knex } = {},
 ) => {
   const cols = [
-    'customer_id',
-    'query_hash',
-    'column_hash',
-    'query',
-    'view_ids',
-    'columns',
-    'is_internal',
+    ['customer_id', ':customerID'],
+    ['query_hash', ':queryHash'],
+    ['column_hash', ':columnHash'],
+    ['query', ':query'],
+    ['view_ids', ':viewIDs'],
+    ['columns', ':columns'],
+    ['is_internal', ':isInternal'],
   ]
-  const values = [
+  const values = {
     whitelabelID,
-    customerID,
     customerID,
     queryHash,
     columnHash,
-    JSON.stringify(query),
-    JSON.stringify(viewIDs),
-    JSON.stringify(columns),
+    query: JSON.stringify(query),
+    viewIDs: JSON.stringify(viewIDs),
+    columns: JSON.stringify(columns),
     isInternal,
-  ]
+  }
 
   if (dependencies && Object.keys(dependencies).length) {
-    cols.push('dependencies')
-    values.push(JSON.stringify(dependencies))
+    cols.push(['dependencies', ':dependencies'])
+    values.dependencies = JSON.stringify(dependencies)
   }
 
   if (queryID) {
-    cols.push('query_id')
-    values.push(queryID)
+    cols.push(['query_id', ':queryID'])
+    values.queryID = queryID
   }
 
   if (status) {
-    cols.push('status')
-    values.push(status)
+    cols.push(['status', ':status'])
+    values.status = status
   }
 
   if (scheduleJobID) {
-    cols.push('schedule_job_id')
-    values.push(scheduleJobID)
+    cols.push(['schedule_job_id', ':scheduleJobID'])
+    values.scheduleJobID = scheduleJobID
   }
 
-  const { rows: [{ executionID } = {}] } = await knexClient.raw(`
-    WITH access AS (
-      SELECT customerid FROM public.customers
+  if (clientToken) {
+    cols.push(['client_token', ':clientToken'])
+    values.clientToken = clientToken.slice(0, MAX_LENGTH_EXECUTION_TOKEN)
+  }
+
+  // unique constraints:
+  // - customerID, clientToken
+  // - queryID, scheduleJobID
+  const existingFilters = []
+  if (clientToken) {
+    existingFilters.push('client_token = :clientToken')
+  }
+  if (queryID && scheduleJobID) {
+    existingFilters.push('(query_id = :queryID AND schedule_job_id = :scheduleJobID)')
+  }
+  const existing = existingFilters.length ? `
+    existing AS (
+      SELECT
+        execution_id AS "executionID",
+        query_hash = :queryHash AS "isIdempotent",
+        FALSE AS "isCreated"
+      FROM ${QL_SCHEMA}.executions
       WHERE
-        whitelabelid = ?
-        AND customerid = ?
+        EXISTS (SELECT * FROM access)
+        AND customer_id = :customerID
+        AND (${existingFilters.join(' OR ')})
+    ),
+  ` : ''
+
+  const { rows: [{ executionID, isIdempotent, isCreated } = {}] } = await knexClient.raw(`
+    WITH access AS (
+      SELECT 1 FROM public.customers
+      WHERE
+        whitelabelid = :whitelabelID
+        AND customerid = :customerID
+    ),
+    ${existing}
+    new AS (
+      INSERT INTO ${QL_SCHEMA}.executions
+        (${cols.map(([col]) => col).join(', ')})
+        SELECT ${cols.map(([, val]) => val).join(', ')}
+        WHERE
+          EXISTS (SELECT * FROM access)
+          ${existing ? 'AND NOT EXISTS (SELECT * FROM existing)' : ''}
+      ON CONFLICT DO NOTHING
+      RETURNING
+        execution_id AS "executionID",
+        TRUE AS "isIdempotent",
+        TRUE AS "isCreated"
     )
-    INSERT INTO ${QL_SCHEMA}.executions
-      (${cols.join(', ')})
-      SELECT ${cols.map(() => '?').join(', ')}
-      WHERE EXISTS (SELECT * FROM access)
-    ON CONFLICT DO NOTHING
-    RETURNING execution_id AS "executionID"
+    ${existing ? 'SELECT * FROM existing UNION' : ''}
+    SELECT * FROM new
   `, values)
 
-  return executionID
+  if (!isIdempotent) {
+    throw apiError('Execution is non-idempotent', 400)
+  }
+
+  return { executionID, isCreated }
 }
 
 /**
@@ -343,6 +394,8 @@ const createExecution = async (
  * @param {number} executionID Execution ID
  * @param {Object} updates
  * @param {string} [updates.status] New status
+ * @param {string} [updates.statusReason] Reason for status update. Will be disregarded when
+ * no value is supplied for status
  * @param {Object} [updates.queryID] New query ID to attach the execution to
  * @param {number[]} [updates.resultsParts] Array of part end indexes (relative
  * to the full result set - e.g. [10000, 20000, 30000])
@@ -353,15 +406,15 @@ const createExecution = async (
  */
 const updateExecution = async (
   executionID,
-  { status, queryID, resultsParts },
+  { status, statusReason, queryID, resultsParts },
   { optOutStatuses, knexClient = knex } = {},
 ) => {
   const columns = []
   const values = []
   const expressions = []
   if (status) {
-    columns.push('status')
-    values.push(status)
+    columns.push('status', 'status_reason')
+    values.push(status, statusReason ? statusReason.slice(0, MAX_LENGTH_STATUS_REASON) : 'NULL')
     expressions.push('status_ts = now()')
   }
   if (queryID) {
@@ -408,7 +461,7 @@ const triggerExecution = async (executionID) => {
     console.log('Failed to invoke ML executor', err.message)
     await updateExecution(
       executionID,
-      { status: STATUS_RETRYING },
+      { status: STATUS_RETRYING, statusReason: `Executor error: ${err.message || ''}` },
       { optOutStatuses: [STATUS_CANCELLED] },
     )
   }
@@ -426,9 +479,10 @@ const triggerExecution = async (executionID) => {
  * @param {[string, number][]} columns List of the query columns formatted as [name, pgTypeOID]
  * @param {Object} [options] Optional args
  * @param {number} [options.queryID] If the execution is tied to a saved query, the ID of such query
- * @param {Date} [options.scheduleJobID] The ID of the schedule job which triggered the
+ * @param {number} [options.scheduleJobID] The ID of the schedule job which triggered the
  * execution, if any
- * @returns {Promise<number>} The execution ID or undefined
+ * @param {string} [options.clientToken] A client supplied token unique at the WL/CU level
+ * @returns {Promise<number>} The execution ID
  */
 const queueExecution = async (
   whitelabelID,
@@ -438,7 +492,7 @@ const queueExecution = async (
   query,
   views,
   columns,
-  { queryID, scheduleJobID } = {},
+  { queryID, scheduleJobID, clientToken } = {},
 ) => {
   const viewIDs = Object.keys(views)
   const dependencies = sortViewDependencies(views)
@@ -447,7 +501,7 @@ const queueExecution = async (
   // determine whether or not query uses internal-only views
   const isInternal = Object.values(views).some(v => v.isInternal)
   // insert into executions
-  const executionID = await createExecution(
+  const { executionID, isCreated } = await createExecution(
     whitelabelID,
     customerID,
     queryHash,
@@ -457,10 +511,10 @@ const queueExecution = async (
     columns,
     isInternal,
     dependencies,
-    { queryID, status, scheduleJobID },
+    { queryID, status, scheduleJobID, clientToken },
   )
   // trigger execution when no deps
-  if (executionID && status === STATUS_RUNNING) {
+  if (isCreated && status === STATUS_RUNNING) {
     await triggerExecution(executionID)
   }
   return executionID
@@ -472,11 +526,22 @@ const queueExecutionMW = async (req, res, next) => {
     const { queryID } = req.ql.query || req.ql.execution || {}
     const {
       access,
+      body: { clientToken },
       ql: { views, tree },
       mlQueryHash,
       mlQueryColumnHash,
       mlQueryColumns,
     } = req
+    if (
+      clientToken !== undefined
+      && (
+        typeof clientToken !== 'string'
+        || !clientToken
+        || clientToken.length > MAX_LENGTH_EXECUTION_TOKEN
+      )
+    ) {
+      throw apiError('Invalid client token', 400)
+    }
     const query = tree.toQL({ keepParamRefs: false })
     const executionID = await queueExecution(
       access.whitelabel[0],
@@ -486,11 +551,8 @@ const queueExecutionMW = async (req, res, next) => {
       query,
       views,
       mlQueryColumns,
-      { queryID },
+      { queryID, clientToken },
     )
-    if (!executionID) {
-      throw apiError('Execution already exists', 400)
-    }
     res.json({ executionID })
   } catch (err) {
     if (err instanceof ParserError) {
@@ -616,7 +678,7 @@ const runExecution = async (executionID, engine = 'pg') => {
     // let the listeners know that the function might be retried
     await updateExecution(
       executionID,
-      { status: STATUS_RETRYING },
+      { status: STATUS_RETRYING, statusReason: err.message },
       { optOutStatuses: [STATUS_CANCELLED] },
     )
     throw err
@@ -758,7 +820,7 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
 
 const listExecutions = async (req, res, next) => {
   try {
-    const { query, results, limit, qhash, chash, status, start, end } = req.query
+    const { query, results, limit, qhash, chash, status, start, end, token } = req.query
     // sanitize query params
     let queryID
     if (query) {
@@ -818,6 +880,7 @@ const listExecutions = async (req, res, next) => {
       status: safeStatus,
       start: safeStart,
       end: safeEnd,
+      clientToken: token,
       limit: safeLimit,
     })
     if (

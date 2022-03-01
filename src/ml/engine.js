@@ -89,7 +89,6 @@ const validateQuery = async (whitelabelID, customerID, views, tree, engine = 'pg
     tree,
     { engine, viewQueries, whitelabelID, customerID, limit: 0 },
   )
-  console.log(query)
 
   const pgClient = await mlPool.connect()
   let fields
