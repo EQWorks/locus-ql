@@ -852,7 +852,7 @@ const listExecutions = async (req, res, next) => {
       queryHash: qhash,
       columnHash: chash,
       status: safeStatus,
-      stat: safeStart,
+      start: safeStart,
       end: safeEnd,
       limit: safeLimit,
     })
