@@ -56,11 +56,11 @@ const parseQueryTreeToEngine = (
     return acc
   }, {})
   const query = tree.to(engine, { whitelabelID, customerID, getRef: makeRefSeq() })
-  if (!Object.keys(views).length) {
-    return query
-  }
+  const viewCTEs = Object.keys(views).length
+    ? `WITH ${Object.entries(views).map(([name, query]) => `"${name}" AS (${query})`).join(', ')}`
+    : ''
   return `
-    WITH ${Object.entries(views).map(([name, query]) => `"${name}" AS (${query})`).join(', ')}
+    ${viewCTEs}
     SELECT * FROM (${query}) AS __query
     ${limit !== undefined ? `LIMIT ${limit}` : ''}
   `

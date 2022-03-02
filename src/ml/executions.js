@@ -414,7 +414,7 @@ const updateExecution = async (
   const expressions = []
   if (status) {
     columns.push('status', 'status_reason')
-    values.push(status, statusReason ? statusReason.slice(0, MAX_LENGTH_STATUS_REASON) : 'NULL')
+    values.push(status, statusReason ? statusReason.slice(0, MAX_LENGTH_STATUS_REASON) : null)
     expressions.push('status_ts = now()')
   }
   if (queryID) {

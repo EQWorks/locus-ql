@@ -80,7 +80,7 @@ router.get('/taxonomies/categories', getViewCategoryTreeMW)
  * @apiGroup ml
  * @apiParam (query) {string} [category] View category
  * @apiParam (query) {string} [type] View type
- * @apiParam (query) {string} [inclMeta] '1' or 'true' to include columns and other meta data
+ * @apiParam (query) {number|string} [inclMeta] '1' or 'true' to include columns and other meta data
  * in the response
  * @apiParam (query) {number} [report] ID of the report of interest. Use with report type
  * and/or category
@@ -107,7 +107,7 @@ router.get('/views/:viewID', getViewMW)
  * @apiDescription Returns an execution object based on id
  * @apiGroup ml
  * @apiParam (params) {number} id ID of the execution to return
- * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned
+ * @apiParam (query) {number|string} [results] '1' or 'true' if results need to be returned
 */
 router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
 
@@ -118,7 +118,7 @@ router.get('/executions/:id(\\d+)', loadExecution(true), respondWithExecution)
  * @apiGroup ml
  * @apiParam (params) {number} id ID of the execution
  * @apiParam (params) {number} [part] Part number (1-based). Required for multi-part results.
- * @apiParam (query) {string} [redirect] '1' or 'true' to redirect to the results URL
+ * @apiParam (query) {number|string} [redirect] '1' or 'true' to redirect to the results URL
 */
 router.get(
   '/executions/:id(\\d+)/results(/:part(\\d+))?',
@@ -142,13 +142,14 @@ router.put('/executions/:id(\\d+)', loadExecution(true), cancelExecution)
  * @apiGroup ml
  * @apiParam (query) {number} [query] ID of the saved query for which executions should be returned
  * @apiParam (query) {number} [limit] Max # of executions to return
- * @apiParam (query) {string} [results] '1' or 'true' if results need to be returned (use along
- * with limit=1)
+ * @apiParam (query) {number|string} [results] '1' or 'true' if results need to be returned (use
+ * along with limit=1)
  * @apiParam (query) {string} [qhash] Query hash
  * @apiParam (query) {string} [chash] Column hash
  * @apiParam (query) {string} [status] Status of the executions
  * @apiParam (query) {number} [start] Start Unix timestamp in seconds
  * @apiParam (query) {number} [end] End Unix timestamp in seconds
+ * @apiParam (query) {string} [token] Client token
 */
 router.get('/executions/', listExecutions)
 
@@ -161,15 +162,17 @@ router.get('/executions/', listExecutions)
  * @apiParam (query) {number} [query] ID of the saved query to execute
  * @apiParam (query) {number} [execution] ID of a previous execution to use as template (i.e.
  * rerun). Ignored when `query` has a value
- * @apiParam (query) {number} [preview] '1' or 'true' if the execution only needs to be evaluated
- * but not submitted (e.g. generate query hash or price execution)
+ * @apiParam (query) {number|string} [preview] '1' or 'true' if the execution only needs to be
+ * evaluated but not submitted (e.g. generate query hash or price execution)
  * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
- * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of query's `query`
+ * @apiParam (Req body) {string} [sql] SQL query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
- * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.
+ * @apiParam (Req body) {Object} [parameters] Parameter values that the query depends on.
+ * @apiParam (Req body) {string} [clientToken] A client supplied token (identifier) unique at
+ * the WL/CU level.
 */
 router.post(
   '/executions/',
@@ -208,9 +211,9 @@ router.get('/queries/:id(\\d+)', loadQuery(true), respondWithQuery)
  * @apiParam (Req body) {string} [description] Query description
  * @apiParam (Req body) {Object} [query] JSON query. When both `query` and `sql` are supplied,
  * `query` takes precedence
- * @apiParam (Req body) {Object} [sql] SQL query. When both `query` and `sql` are supplied,
+ * @apiParam (Req body) {string} [sql] SQL query. When both `query` and `sql` are supplied,
  * `query` takes precedence
- * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.
+ * @apiParam (Req body) {Object} [parameters] Parameter values that the query depends on.
 */
 router.put(
   '/queries/:id(\\d+)',
@@ -260,10 +263,10 @@ router.get('/queries/', listQueries)
  * @apiParam (Req body) {Object} [query] JSON query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
- * @apiParam (Req body) {Object} [sql] SQL query. Need only be sent when none of query's `query`
+ * @apiParam (Req body) {string} [sql] SQL query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
- * @apiParam (Req body) {Array} [parameters] Parameter values that the query depends on.
+ * @apiParam (Req body) {Object} [parameters] Parameter values that the query depends on.
 
 */
 router.post(

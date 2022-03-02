@@ -265,7 +265,7 @@ const updateQuery = async (
   }
   if (description !== undefined) {
     cols.push('description')
-    values.push(description || 'NULL')
+    values.push(description || null)
   }
   if (isActive !== undefined) {
     cols.push('is_active')
