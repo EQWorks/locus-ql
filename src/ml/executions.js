@@ -5,7 +5,8 @@ const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
 const { insertGeoIntersectsInTree } = require('./geo-intersects')
 const { parseQueryToTree, ParserError } = require('./parser')
-const { executeQuery } = require('./engine')
+const { executeQueryInStreamMode } = require('./engine')
+// const { executeQuery } = require('./engine')
 const { putToS3Cache, getFromS3Cache, getS3CacheURL, queryWithCache } = require('../util/cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
 const { isInternalUser, sortViewDependencies } = require('./utils')
@@ -20,8 +21,8 @@ const {
   STATUS_SUCCEEDED,
   STATUS_CANCELLED,
   STATUS_FAILED,
-  RESULTS_PART_SIZE,
-  RESULTS_PART_SIZE_FIRST,
+  // RESULTS_PART_SIZE,
+  // RESULTS_PART_SIZE_FIRST,
   MAX_LENGTH_EXECUTION_TOKEN,
   MAX_LENGTH_STATUS_REASON,
 } = require('./constants')
@@ -220,6 +221,10 @@ const getAllExecutionResults = (
 ) => {
   // multi-part
   if (resultsParts) {
+    // too large
+    if (resultsParts.length > 3) {
+      return
+    }
     return resultsParts.length
       ? getExecutionResultsParts(
         customerID,
@@ -616,30 +621,30 @@ const previewExecutionMW = async (req, res, next) => {
   }
 }
 
-const writeExecutionResults = async (
-  customerID, executionID, results,
-  { partSize = RESULTS_PART_SIZE, firtPartSize = RESULTS_PART_SIZE_FIRST } = {},
-) => {
-  // split results into parts
-  const resultsParts = []
-  const cacheParts = []
-  let partStart = 0
-  while (partStart < results.length) {
-    const size = resultsParts.length ? partSize : firtPartSize
-    const partEnd = Math.min(partStart + size, results.length) - 1
-    // part will be referred to by its end index relative to the result set
-    resultsParts.push(partEnd)
-    // persist part to S3
-    cacheParts.push(putToS3Cache(
-      getExecutionResultsKey(customerID, executionID, resultsParts.length),
-      results.slice(partStart, partEnd + 1),
-      { gzip: true, json: true, bucket: EXECUTION_BUCKET },
-    ))
-    partStart = partEnd + 1
-  }
-  await Promise.all(cacheParts)
-  return resultsParts
-}
+// const writeExecutionResults = async (
+//   customerID, executionID, results,
+//   { partSize = RESULTS_PART_SIZE, firtPartSize = RESULTS_PART_SIZE_FIRST } = {},
+// ) => {
+//   // split results into parts
+//   const resultsParts = []
+//   const cacheParts = []
+//   let partStart = 0
+//   while (partStart < results.length) {
+//     const size = resultsParts.length ? partSize : firtPartSize
+//     const partEnd = Math.min(partStart + size, results.length) - 1
+//     // part will be referred to by its end index relative to the result set
+//     resultsParts.push(partEnd)
+//     // persist part to S3
+//     cacheParts.push(putToS3Cache(
+//       getExecutionResultsKey(customerID, executionID, resultsParts.length),
+//       results.slice(partStart, partEnd + 1),
+//       { gzip: true, json: true, bucket: EXECUTION_BUCKET },
+//     ))
+//     partStart = partEnd + 1
+//   }
+//   await Promise.all(cacheParts)
+//   return resultsParts
+// }
 
 // let errors bubble up so the query can be retried
 const runExecution = async (executionID, engine = 'pg') => {
@@ -648,7 +653,7 @@ const runExecution = async (executionID, engine = 'pg') => {
     if (!execution) {
       throw apiError('Invalid execution ID')
     }
-    const { whitelabelID, customerID, query, isInternal, status } = execution
+    const { whitelabelID, customerID, query, columns, isInternal, status } = execution
     if (status !== STATUS_RUNNING) {
       // don't run unless the status was set to running beforehand
       return
@@ -664,10 +669,37 @@ const runExecution = async (executionID, engine = 'pg') => {
     const views = await getQueryViews(access, tree.viewColumns, engine)
     // to support legacy geo joins (i.e. strict equality b/w two geo columns)
     tree = insertGeoIntersectsInTree(views, tree)
-    // run query
-    const res = await executeQuery(whitelabelID, customerID, views, tree, { engine, executionID })
-    // split results into parts
-    const resultsParts = await writeExecutionResults(customerID, executionID, res)
+    // // run query
+    // eslint-disable-next-line max-len
+    // const res = await executeQuery(whitelabelID, customerID, views, tree, { engine, executionID })
+    // // split results into parts
+    // const resultsParts = await writeExecutionResults(customerID, executionID, res)
+
+    const partLengths = {}
+    await executeQueryInStreamMode(
+      whitelabelID,
+      customerID,
+      views,
+      tree,
+      columns,
+      (rows, i) => {
+        partLengths[i] = rows.length
+        return putToS3Cache(
+          getExecutionResultsKey(customerID, executionID, i + 1),
+          rows,
+          { gzip: true, json: true, bucket: EXECUTION_BUCKET },
+        )
+      },
+      { engine, executionID },
+    )
+    const resultsParts = Object.entries(partLengths)
+      .sort(([a], [b]) => a - b)
+      .reduce((acc, [, partLength]) => {
+        const partStart = acc.slice(-1)[0] || 0
+        acc.push(partStart + partLength)
+        return acc
+      }, [])
+
     // update status to succeeded + breakdown of parts
     await updateExecution(
       executionID,

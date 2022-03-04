@@ -1,8 +1,17 @@
+/* eslint-disable no-await-in-loop */
+const Cursor = require('pg-cursor')
+
 const { mlPool, fdwConnectByName, newPGClientFromPoolConfig } = require('../util/db')
 const { parseQueryTreeToEngine } = require('./parser')
-const { QUERY_BUCKET } = require('./constants')
+const { QUERY_BUCKET, RESULTS_PART_SIZE, RESULTS_PART_SIZE_FIRST } = require('./constants')
 const { useAPIErrorOptions } = require('../util/api-error')
-const { queryWithCache, cacheTypes, pgWithCache } = require('../util/cache')
+const {
+  queryWithCache,
+  cacheTypes,
+  pgWithCache,
+  getFromS3Cache,
+  putToS3Cache,
+} = require('../util/cache')
 const { getObjectHash } = require('./utils')
 
 
@@ -30,6 +39,7 @@ const establishFdwConnections = (pgConnection, fdwConnections, timeout) => {
 }
 
 // runs query with cache
+// returns entire results
 const executeQuery = async (
   whitelabelID, customerID, views, tree,
   { engine = 'pg', executionID, maxAge },
@@ -62,6 +72,92 @@ const executeQuery = async (
     return await pgWithCache(query, [], pgClient, cacheOptions)
   } finally {
     pgClient.end()
+  }
+}
+
+const readRowsFromCursor = (cursor, rowCount) => new Promise((resolve, reject) => {
+  cursor.read(rowCount, (err, rows) => {
+    if (err) {
+      return reject(err)
+    }
+    resolve(rows)
+  })
+})
+
+// runs query with cache
+// calls cb with each results part
+const executeQueryInStreamMode = async (
+  whitelabelID, customerID, views, tree, columns, callback,
+  { engine = 'pg', executionID, maxAge },
+) => {
+  if (engine !== 'pg') {
+    throw apiError('Failed to execute the query', 500)
+  }
+  // get view queries
+  const { viewQueries, fdwConnections } = Object.entries(views)
+    .reduce((acc, [id, { query, fdwConnections }]) => {
+      acc.viewQueries[id] = query
+      acc.fdwConnections[id] = fdwConnections
+      return acc
+    }, { viewQueries: {}, fdwConnections: {} })
+  const query = parseQueryTreeToEngine(tree, { engine, viewQueries, whitelabelID, customerID })
+  const promises = []
+  let isCached = true
+  // instantiate PG connection to use for fdw + query (must be same)
+  // client's application name must be specific to this execution so the pg pid can be
+  // readily identified
+  const pgClientName = `ql-executor-${process.env.STAGE}-${executionID ? `-${executionID}` : ''}`
+  const pgClient = newPGClientFromPoolConfig(mlPool, { application_name: pgClientName })
+  let cursor
+  try {
+    for (let i = 0; ; i += 1) {
+      let rows
+      if (isCached) {
+        rows = await getFromS3Cache([query, i], { maxAge, bucket: QUERY_BUCKET })
+        // first part is undefined
+        if (!i && !rows) {
+          // nothing in cache
+          isCached = false
+        }
+      }
+      if (!isCached) {
+        // init
+        if (!cursor) {
+          await pgClient.connect()
+          // establish fdw connections
+          await establishFdwConnections(pgClient, fdwConnections)
+          // init cursor
+          cursor = pgClient.query(new Cursor(query))
+        }
+        const partSize = Math.floor((i ? RESULTS_PART_SIZE : RESULTS_PART_SIZE_FIRST)
+          / columns.length)
+        rows = await readRowsFromCursor(cursor, partSize)
+        // push to cache (has rows or first part)
+        if (rows.length || !i) {
+          promises.push(putToS3Cache([query, i], rows, { bucket: QUERY_BUCKET }))
+        }
+      }
+      if (!rows || !rows.length) {
+        // no more rows (or no rows at all)
+        break
+      }
+      // send rows to cb
+      const res = callback(rows, i)
+      if (res instanceof Promise) {
+        promises.push(res)
+      }
+    }
+  } finally {
+    try {
+      if (cursor) {
+        await cursor.close()
+      }
+    } finally {
+      pgClient.end()
+    }
+  }
+  if (promises.length) {
+    await Promise.all(promises)
   }
 }
 
@@ -134,6 +230,7 @@ const validateQueryMW = async (req, _, next) => {
 
 module.exports = {
   executeQuery,
+  executeQueryInStreamMode,
   validateQuery,
   validateQueryMW,
   establishFdwConnections,

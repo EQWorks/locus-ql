@@ -45,6 +45,7 @@
     "moment": "^2.24.0",
     "morgan": "^1.9.0",
     "pg": "^8.0.0",
+    "pg-cursor": "^2.7.3",
     "pgsql-parser": "^13.1.13",
     "redis": "^2.8.0",
     "serverless-http": "^1.5.5"
