@@ -464,9 +464,15 @@ const triggerExecution = async (executionID) => {
   } catch (err) {
     // don't bubble up the error; Airflow will take over from here
     console.log('Failed to invoke ML executor', err.message)
+    const statusReason = [err.message, err.originalError].reduce((acc, msg) => {
+      if (msg) {
+        return `${acc} - ${msg}`
+      }
+      return acc
+    }, 'Executor invocation error')
     await updateExecution(
       executionID,
-      { status: STATUS_RETRYING, statusReason: `Executor error: ${err.message || ''}` },
+      { status: STATUS_RETRYING, statusReason },
       { optOutStatuses: [STATUS_CANCELLED] },
     )
   }
@@ -708,9 +714,15 @@ const runExecution = async (executionID, engine = 'pg') => {
     )
   } catch (err) {
     // let the listeners know that the function might be retried
+    const statusReason = [err.message, err.originalError].reduce((acc, msg) => {
+      if (msg) {
+        return `${acc} - ${msg}`
+      }
+      return acc
+    }, 'Executor error')
     await updateExecution(
       executionID,
-      { status: STATUS_RETRYING, statusReason: err.message },
+      { status: STATUS_RETRYING, statusReason },
       { optOutStatuses: [STATUS_CANCELLED] },
     )
     throw err

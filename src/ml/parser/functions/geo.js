@@ -262,7 +262,7 @@ const getGeometryFromString = (geoString, options) => {
 
 // const isValidGeometryFromString = (geoString, options) => {
 //   const res = resolveStringToGeo(geoString, isValidGeometry, options)
-//   return `(SELECT EXISTS ${res} AS is_valid_geometry)`
+//   return `(SELECT COALESCE(${res}, FALSE) AS is_valid_geometry)`
 // }
 
 const getKnownIntersectionGeometry = (geoA, geoB, { engine, getRef }) => {
@@ -403,7 +403,7 @@ const ggidGeosHaveIntersection = (geoA, geoB, options) => {
   if (!res) {
     return
   }
-  return `(SELECT EXISTS ${res} AS intersects)`
+  return `(SELECT COALESCE(${res}, FALSE) AS intersects)`
 }
 
 const reduceSameTypeGeosToSingleGeo = (geoA, geoB, callback, options) => {
@@ -448,7 +448,7 @@ const sameTypeGeosHaveIntersection = (geoA, geoB, options) => {
   if (!res) {
     return
   }
-  return `(SELECT ${res} AS intersects)`
+  return `(SELECT COALESCE(${res}, FALSE) AS intersects)`
 }
 
 const getIntersectionGeometry = (geoA, geoB, options) =>
@@ -507,7 +507,7 @@ const getIntersectionGeometryFromString = (geoStringA, geoStringB, options) => {
 
 const geosHaveIntersectionFromString = (geoStringA, geoStringB, options) => {
   const res = resolveStringsToGeos(geoStringA, geoStringB, geosHaveIntersection, options)
-  return `(SELECT ${res} AS intersects)`
+  return `(SELECT COALESCE(${res}, FALSE) AS intersects)`
 }
 
 const parseGeoStringLiteral = (sql, engine) => {

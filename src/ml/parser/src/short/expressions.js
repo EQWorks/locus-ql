@@ -1,4 +1,4 @@
-const { expressionTypes, geometryTypes } = require('../types')
+const { expressionTypes, geometryTypes, castTypes } = require('../types')
 const { parserError, isArray, isString, isNull, isNonNull } = require('../utils')
 
 
@@ -43,7 +43,15 @@ shortExpressions.geo = {
 shortExpressions.ggid = {
   template: ['id', 'as'],
   parser: ({ id, as }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.GGID, id], as }),
+    ({
+      type: expressionTypes.FUNCTION,
+      values: [
+        'geometry',
+        geometryTypes.GGID,
+        { type: expressionTypes.CAST, value: id, cast: castTypes.STRING },
+      ],
+      as,
+    }),
 }
 
 shortExpressions.fsa = {
@@ -85,9 +93,13 @@ shortExpressions.city = {
 }
 
 shortExpressions.poi = {
-  template: ['poi', 'radius', 'as'],
-  parser: ({ poi, radius, as }) => {
-    const values = ['geometry', geometryTypes.POI, poi]
+  template: ['id', 'radius', 'as'],
+  parser: ({ id, radius, as }) => {
+    const values = [
+      'geometry',
+      geometryTypes.POI,
+      { type: expressionTypes.CAST, value: id, cast: castTypes.STRING },
+    ]
     if (isNonNull(radius)) {
       values.push(radius)
     }
