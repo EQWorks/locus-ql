@@ -1,4 +1,3 @@
-const jwt = require('jsonwebtoken')
 const axios = require('axios')
 const { get } = require('lodash')
 
@@ -22,33 +21,38 @@ const loadUserAccess = async (req, _, next) => {
       throw apiError('Invalid JWT', 401)
     }
 
-    const {
+    let {
       email = '',
       api_access = {},
       prefix,
       product: tokenProduct,
-    } = req.authorizerAccess || jwt.decode(token)
+    } = req.authorizerAccess || {}
 
     // it is the route's responsibility to validate whether or not it accepts product <> locus
     const _product = req.get('X-EQ-Product')
     const product = _product && ['atom', 'locus'].includes(_product) ? _product : 'locus'
-    if (tokenProduct !== product) {
-      throw apiError('Invalid JWT', 401)
-    }
 
     // if bypassed the lambda authorizer (e.g. local), validate token
     if (!req.authorizerAccess) {
-      // TODO: extract access (api_access) from return payload instead of from above jwt
-      await queryWithCache( // cache access for 5 minutes (same as authorizer)
-        ['user-access', email],
+      // cache access for 5 minutes (same as authorizer)
+      const confirmedAccess = await queryWithCache(
+        ['user-access', token],
         () => axios({
           url: `${KEY_WARDEN_BASE}/confirm`,
           method: 'get',
           headers: { 'eq-api-jwt': token },
-          params: { product, light: prefix === 'mobilesdk' },
+          params: { product },
         }).then(res => res.data),
         { ttl: 900, maxAge: 900, gzip: false },
       )
+      email = confirmedAccess.user
+      api_access = confirmedAccess.access
+      prefix = confirmedAccess.access.prefix
+      tokenProduct = confirmedAccess.product
+    }
+
+    if (tokenProduct !== product) {
+      throw apiError('Invalid JWT', 401)
     }
 
     const { write = 0, read = 0 } = api_access
