@@ -2,7 +2,6 @@
 /* eslint-disable no-continue */
 const { useAPIErrorOptions } = require('../../../util/api-error')
 const { geometryTypes: geoTypes, geometryTypeValues } = require('../src/types')
-// const { geometryTypes: geoTypes } = require('../src/types')
 const geoTables = require('../../geo-tables')
 const { escapeLiteral } = require('../src/utils')
 

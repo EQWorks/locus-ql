@@ -72,11 +72,6 @@ const functionParser = engine => withOptions((node, options) => {
   return cast ? `CAST(${sql} AS ${castMapping[engine][cast]})` : sql
 }, { engine, cast: false })
 
-const geometryParser = engine => withOptions((node, options) => {
-  const args = node.args.map(e => `UPPER(${e.to(engine, options)})`).join(" || ':' || ")
-  return `'geo:${node.type}:' || ${args}`
-}, { engine })
-
 const joinParser = engine => withOptions((node, options) => {
   const view = node.view.to(engine, options)
   if (node.joinType === 'lateral') {
@@ -221,7 +216,6 @@ module.exports = {
   castParser,
   columnParser,
   functionParser,
-  geometryParser,
   joinParser,
   listParser,
   operatorParser,

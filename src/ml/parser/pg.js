@@ -4,7 +4,6 @@ const {
   castParser,
   columnParser,
   functionParser,
-  geometryParser,
   joinParser,
   listParser,
   operatorParser,
@@ -25,7 +24,6 @@ const {
     CastNode,
     ColumnReferenceNode,
     FunctionNode,
-    GeometryNode,
     JoinNode,
     ListNode,
     OperatorNode,
@@ -50,7 +48,6 @@ CaseNode.registerParser(PG, caseParser(PG))
 CastNode.registerParser(PG, castParser(PG))
 ColumnReferenceNode.registerParser(PG, columnParser(PG))
 FunctionNode.registerParser(PG, functionParser(PG))
-GeometryNode.registerParser(PG, geometryParser(PG))
 JoinNode.registerParser(PG, joinParser(PG))
 ListNode.registerParser(PG, listParser(PG))
 OperatorNode.registerParser(PG, operatorParser(PG))

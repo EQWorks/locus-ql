@@ -40,33 +40,8 @@ class SQLParserError extends Error {
     this.location = location !== undefined ? location : findApproxLocation(expression)
   }
 }
+// factory function
 const sqlParserError = args => new SQLParserError(args)
-
-// const parseShortArgs = args => args.map((a) => {
-//   // primitive or short
-//   if (typeof a !== 'object' || a === null) {
-//     return typeof a !== 'string' || a.startsWith('@') ? a : `'${a}'`
-//   }
-//   // array
-//   if (isArray(a)) {
-//     return `[${parseShortArgs(a)}]`
-//   }
-//   // json
-//   if (a.type === 'primitive' && ['json', 'jsonb'].includes(a.cast)) {
-//     return a.value
-//   }
-//   // named arg
-//   if (
-//     a.type === 'operator'
-//     && a.values[0] === '='
-//     && isObjectExpression(a.values[1], expTypes.COLUMN)
-//   ) {
-//     const name = a.values[1].column
-//     const value = parseShortArgs([a.values[2]])
-//     return `${name}=${value}`
-//   }
-//   throw parserError('Invalid argument in short expression')
-// }).join(',')
 
 const astParsers = {}
 astParsers.String = ({ str }) => str
@@ -444,15 +419,6 @@ astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
 
   switch (safeKind) {
     case 'op':
-      // // short expression
-      // if (
-      //   operator === '@'
-      //   && isObjectExpression(right, expTypes.FUNCTION)
-      //   && right.values[0].startsWith('_')
-      // ) {
-      //   const name = right.values[0].slice(1)
-      //   return `@${name}(${parseShortArgs(right.values.slice(1))})`
-      // }
       break
 
     case 'nullif':

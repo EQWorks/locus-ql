@@ -1,7 +1,4 @@
-// const { parserError, sanitizeString } = require('./utils')
 const { castTypes } = require('./types')
-// const { geometries } = require('./geometries')
-// const PrimitiveNode = require('./tree/primitive')
 
 
 const functions = {
@@ -96,29 +93,6 @@ functions.timedelta = { argsLength: 2 }
 functions.geometry = {
   minArgsLength: 2,
   maxArgsLength: 4,
-  // validate: (node) => {
-  //   const [type, ...args] = node.args
-  //   // geo type must be known at parsing time
-  //   if (!(type instanceof PrimitiveNode)) {
-  //     throw parserError("Geometry type must be a string in function 'geometry'")
-  //   }
-  //   type.value = sanitizeString(type.value)
-  //   const geometry = geometries[type.value]
-  //   if (!geometry) {
-  //     throw parserError(`Invalid geometry type: ${type.value}`)
-  //   }
-  //   const { argsLength, minArgsLength, maxArgsLength } = geometry
-  //   if (
-  //     argsLength !== undefined
-  //       ? args.length !== argsLength
-  //       : (
-  //         (minArgsLength && args.length < minArgsLength)
-  //         || (maxArgsLength !== undefined && args.length > maxArgsLength)
-  //       )
-  //   ) {
-  //     throw parserError(`Too few or too many arguments in geometry: ${type.value}`)
-  //   }
-  // },
 }
 
 functions.geo = functions.geometry
