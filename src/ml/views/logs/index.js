@@ -67,7 +67,7 @@ const getQueryColumns = (viewColumns, queryColumns, accessType = ACCESS_CUSTOMER
     const { dependsOn } = viewColumns[aliasFor || col]
     // check access
     if (access && access > accessType) {
-      throw apiError(`Invalid column: ${col}`, 500)
+      throw apiError(`Invalid column: ${col}`, 400)
     }
     minAccess = Math.max(access || 0, minAccess)
     // add dependents

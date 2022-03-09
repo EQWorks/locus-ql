@@ -72,6 +72,7 @@ const getReportLayers = (wl, cu, { layerID, reportID, reportType = reportTypes.W
     'layer.layer_id',
     'layer.customer',
     'layer.whitelabel',
+    { layer_type_name: 'layer_type.name' },
     'layer.report_id',
     'report.type',
     { report_name: 'report.name' },
@@ -112,6 +113,7 @@ const getReportLayers = (wl, cu, { layerID, reportID, reportType = reportTypes.W
 
   layerQuery.leftJoin('public.customers', 'layer.customer', 'customers.customerid')
   layerQuery.leftJoin('public.report', 'layer.report_id', 'report.report_id')
+  layerQuery.leftJoin('public.layer_type', 'layer.layer_type_id', 'layer_type.layer_type_id')
   layerQuery.innerJoin(
     { rt: `public.${reportTables[reportType]}` },
     'report.report_id',
@@ -178,6 +180,7 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
     dates,
     vendors,
     camps,
+    layer_type_name,
     report_name,
     whitelabel: wl,
     customer,
@@ -188,7 +191,7 @@ const listViews = async ({ access, filter, inclMeta = true }) => {
     poi_list_id,
   }) => {
     const view = {
-      name,
+      name: `${name} (${layer_type_name})`,
       view: {
         id: `${reportViewTypes[report_type]}_${layer_id}_${report_id}`,
         type: reportViewTypes[report_type],
@@ -242,6 +245,7 @@ const getView = async (access, viewID) => {
     dates,
     vendors,
     camps,
+    layer_type_name,
     report_name,
     whitelabel: wl,
     customer,
@@ -256,7 +260,7 @@ const getView = async (access, viewID) => {
   const { columns } = reportModules[reportType]
 
   const view = {
-    name,
+    name: `${name} (${layer_type_name})`,
     view: {
       id: `${reportViewTypes[reportType]}_${layerID}_${reportID}`,
       type: reportViewTypes[reportType],
