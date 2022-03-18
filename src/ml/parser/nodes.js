@@ -78,7 +78,7 @@ const joinParser = engine => withOptions((node, options) => {
     return `CROSS JOIN LATERAL ${view}`
   }
   const joinType = node.joinType.toUpperCase()
-  const on = node.on !== undefined ? `ON ${node.on.to(engine, options)}` : ''
+  const on = node.on !== undefined ? ` ON ${node.on.to(engine, options)}` : ''
   return `${joinType} JOIN ${view}${on}`
 }, { engine })
 

@@ -92,7 +92,7 @@ const insertGeoIntersects = (viewColumns, exp) => {
 
 const insertGeoIntersectsInTree = (views, tree) => {
   const { parameters } = tree._context.options
-  const ql = tree.toQL({ keepShorts: false, keepParamRefs: false })
+  const ql = tree.toQL({ keepShorts: false, keepParamRefs: !tree.hasParameterValues() })
   const viewColumns = Object.entries(views).reduce((acc, [id, { columns }]) => {
     acc[id] = columns
     return acc

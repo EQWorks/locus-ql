@@ -31,7 +31,7 @@ class JoinNode extends BaseNode {
       return `CROSS JOIN LATERAL ${view}`
     }
     const joinType = this.joinType.toUpperCase()
-    return `${joinType} JOIN ${view}${this.on !== undefined ? `ON ${this.on.toSQL(options)}` : ''}`
+    return `${joinType} JOIN ${view}${this.on !== undefined ? ` ON ${this.on.toSQL(options)}` : ''}`
   }
 
   _toQL(options) {

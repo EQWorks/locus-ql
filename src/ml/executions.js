@@ -788,7 +788,7 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
 
 const respondWithExecution = async (req, res, next) => {
   try {
-    const { execution, tree } = req.ql
+    const { execution } = req.ql
     const { executionID, customerID, status, viewIDs, query, columns, resultsParts } = execution
     const { results } = req.query
     // attach results
@@ -801,20 +801,20 @@ const respondWithExecution = async (req, res, next) => {
         { resultsParts },
       )
     }
-    // attach sql
-    execution.sql = (tree || parseQueryToTree(query)).toSQL()
     // convert columns from array to object
     execution.columns = columns.map(([name, pgType]) => ({
       name,
       category: typeToCatMap.get(pgType) || CAT_STRING,
     }))
-
     // populate views
     delete execution.viewIDs
-    execution.views = execution.views || []
-    await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
+    execution.views = []
+    const viewColumns = {}
+    let hasAllViews = true
+    await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view, columns }) => {
       view.name = name
       execution.views.push(view)
+      viewColumns[id] = { columns }
     }).catch((err) => {
       // edge case when view has been unsubscribed or is no longer available
       // soft fail
@@ -822,7 +822,19 @@ const respondWithExecution = async (req, res, next) => {
         id,
         error: (err instanceof APIError && err.message) || 'View could not be retrieved',
       })
+      hasAllViews = false
     })))
+    // parse to query tree
+    let tree = parseQueryToTree(query, { type: 'ql' })
+    // replace legacy geo joins with geo_intersects
+    if (hasAllViews) {
+      tree = insertGeoIntersectsInTree(viewColumns, tree)
+    }
+    // rewrite query
+    execution.query = tree.toQL({ keepParamRefs: false })
+    // attach sql
+    execution.sql = tree.toSQL({ keepParamRefs: false })
+
     res.json(execution)
   } catch (err) {
     next(getSetAPIError(err, 'Failed to retrieve the execution', 500))

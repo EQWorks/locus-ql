@@ -1,6 +1,7 @@
 const { knex } = require('../util/db')
 const { APIError, useAPIErrorOptions } = require('../util/api-error')
 const { getContext, ERROR_QL_CTX } = require('../util/context')
+const { insertGeoIntersectsInTree } = require('./geo-intersects')
 const { getView, getQueryViews } = require('./views')
 const { validateQuery } = require('./engine')
 const { updateExecution, queueExecution } = require('./executions')
@@ -350,7 +351,7 @@ maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
 
 const putQuery = async (req, res, next) => {
   try {
-    const { queryID } = req.ql.query
+    const { queryID, schedules } = req.ql.query
     const { name, description } = req.body
     const { views, tree } = req.ql
     const { mlQueryHash, mlQueryColumnHash, mlQueryColumns } = req
@@ -375,6 +376,9 @@ maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
         throw apiError(`Query description must be a string of\
 maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
       }
+    }
+    if (schedules.length && tree.parameters.size > 0) {
+      throw apiError('Parameterized queries may not be scheduled')
     }
     const query = tree.toQL({ keepParamRefs: !tree.hasParameterValues() })
     // determine whether or not query uses internal-only views
@@ -501,31 +505,46 @@ const loadQuery = (isRequired = true) => async (req, _, next) => {
 
 const respondWithQuery = async (req, res, next) => {
   try {
-    const { query } = req.ql
-    const { viewIDs, columns } = query
+    const { query: loadedQuery } = req.ql
+    const { viewIDs, columns, query } = loadedQuery
 
     // convert columns from array to object
-    query.columns = columns.map(([name, pgType]) => ({
+    loadedQuery.columns = columns.map(([name, pgType]) => ({
       name,
       category: typeToCatMap.get(pgType) || CAT_STRING,
     }))
 
     // populate views (instead of viewIDs)
-    delete query.viewIDs
-    query.views = query.views || []
-    await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view }) => {
-      // query.views = query.views || []
+    delete loadedQuery.viewIDs
+    loadedQuery.views = []
+    const viewColumns = {}
+    let hasAllViews = true
+    await Promise.all(viewIDs.map(id => getView(req.access, id).then(({ name, view, columns }) => {
       view.name = name
-      query.views.push(view)
+      loadedQuery.views.push(view)
+      viewColumns[id] = { columns }
     }).catch((err) => {
       // edge case when view has been unsubscribed or is no longer available
       // soft fail
-      query.views.push({
+      loadedQuery.views.push({
         id,
         error: (err instanceof APIError && err.message) || 'View could not be retrieved',
       })
+      hasAllViews = false
     })))
-    res.json(query)
+
+    // parse to query tree
+    let tree = parseQueryToTree(query, { type: 'ql' })
+    // replace legacy geo joins with geo_intersects
+    if (hasAllViews) {
+      tree = insertGeoIntersectsInTree(viewColumns, tree)
+    }
+    // rewrite query
+    loadedQuery.query = tree.toQL({ keepParamRefs: true })
+    // attach sql
+    loadedQuery.sql = tree.toSQL({ keepParamRefs: true })
+
+    res.json(loadedQuery)
   } catch (err) {
     next(getSetAPIError(err, 'Failed to retrieve the query', 500))
   }
