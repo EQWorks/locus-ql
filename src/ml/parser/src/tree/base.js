@@ -87,10 +87,6 @@ class BaseNode {
     return new Set(Object.keys(this._context.params))
   }
 
-  hasParameterValues() {
-    return this._context.options.parameters && this.parameters.size > 0
-  }
-
   isRoot() {
     // parent context only contains 'options' when root node
     return Object.keys(this._parentContext).length === 1
@@ -277,13 +273,13 @@ class BaseNode {
       : options
     let ql = this._toQL(safeOptions)
     if (this.constructor.castable && this.cast) {
-      if (typeof ql === 'string') {
+      if (!isObjectExpression(ql)) {
         ql = { type: expressionTypes.PRIMITIVE, value: ql }
       }
       ql.cast = this.cast
     }
     if (this.constructor.aliasable && this.as) {
-      if (typeof ql === 'string') {
+      if (!isObjectExpression(ql)) {
         ql = { type: expressionTypes.PRIMITIVE, value: ql }
       }
       ql.as = this.as
@@ -313,7 +309,7 @@ class BaseNode {
       }
       return acc
     }, [])
-    return `@${name}(${namedArgs.join(',')})`
+    return `@${name}(${namedArgs.join(', ')})`
   }
 
   // return value is immutable

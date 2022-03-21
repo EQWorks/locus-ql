@@ -27,9 +27,9 @@ class SelectNode extends BaseNode {
   constructor(exp, context) {
     super(exp, context)
     const {
+      with: ctes,
       operator, // union, intersect, except
       operands,
-      with: ctes,
       from,
       joins,
       distinct,
@@ -41,6 +41,15 @@ class SelectNode extends BaseNode {
       limit,
       offset,
     } = exp
+
+    // WITH
+    this.with = []
+    if (isNonNull(ctes) && !isEmptyOrNullArray(ctes)) {
+      if (!isArray(ctes)) {
+        throw parserError(`Invalid with syntax: ${ctes}`)
+      }
+      this.with = ctes.map(e => parseCTEExpression(e, this._context))
+    }
 
     // OPERATOR
     this.operator = undefined
@@ -64,15 +73,6 @@ class SelectNode extends BaseNode {
       }
       return parseExpression(e, this._context)
     })
-
-    // WITH
-    this.with = []
-    if (isNonNull(ctes) && !isEmptyOrNullArray(ctes)) {
-      if (this.operator || !isArray(ctes)) {
-        throw parserError(`Invalid with syntax: ${ctes}`)
-      }
-      this.with = ctes.map(e => parseCTEExpression(e, this._context))
-    }
 
     // FROM
     // string, select object or undefined/null (e.g. select true)
@@ -199,6 +199,9 @@ class SelectNode extends BaseNode {
   }
 
   _toSQL(options) {
+    const ctes = this.with.length
+      ? `WITH ${this.with.map(e => e.toSQL(options)).join(', ')}`
+      : ''
     const orderBy = this.orderBy.length
       ? `ORDER BY ${this.orderBy.map(e => e.toSQL(options)).join(', ')}`
       : ''
@@ -209,6 +212,7 @@ class SelectNode extends BaseNode {
     if (this.operator) {
       const operator = ` ${this.operator.toUpperCase()} ${!this.distinct ? 'ALL ' : ''}`
       const sql = `
+        ${ctes}
         ${this.operands.map(e => e.toSQL(options)).join(operator)}
         ${orderBy}
         ${limit}
@@ -218,27 +222,18 @@ class SelectNode extends BaseNode {
     }
 
     // no operator
-    const ctes = this.with.length
-      ? `WITH ${this.with.map(e => e.toSQL(options)).join(', ')}`
-      : ''
-
     const distinct = this.distinct ? ' DISTINCT' : ''
     const columns = this.columns.map(e => e.toSQL(options)).join(', ')
-
     const from = this.from ? `FROM ${this.from.toSQL(options)}` : ''
-
     const joins = this.joins.length
       ? this.joins.map(e => e.toSQL(options)).join(' ')
       : ''
-
     const where = this.where.length ?
       `WHERE ${this.where.map(e => e.toSQL(options)).join(' AND ')}`
       : ''
-
     const having = this.having.length
       ? `HAVING ${this.having.map(e => e.toSQL(options)).join(' AND ')}`
       : ''
-
     const groupBy = this.groupBy.length
       ? `GROUP BY ${this.groupBy.map(e => e.toSQL(options)).join(', ')}`
       : ''

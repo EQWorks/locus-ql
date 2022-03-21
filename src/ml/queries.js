@@ -313,7 +313,7 @@ maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
 maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
       }
     }
-    const query = tree.toQL({ keepParamRefs: !tree.hasParameterValues() })
+    const query = tree.toQL({ keepParamRefs: true })
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(views).some(v => v.isInternal)
 
@@ -380,7 +380,7 @@ maximum length ${MAX_LENGTH_QUERY_DESCRIPTION}`)
     if (schedules.length && tree.parameters.size > 0) {
       throw apiError('Parameterized queries may not be scheduled')
     }
-    const query = tree.toQL({ keepParamRefs: !tree.hasParameterValues() })
+    const query = tree.toQL({ keepParamRefs: true })
     // determine whether or not query uses internal-only views
     const isInternal = Object.values(views).some(v => v.isInternal)
     await updateQuery(queryID, {

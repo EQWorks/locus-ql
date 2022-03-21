@@ -40,10 +40,11 @@ class ShortNode extends BaseNode {
   }
 
   _toShort(options) {
+    // alias/cast must be inside short (if supported)
+    if (this.as || this.cast) {
+      throw parserError('Cannot push cast and alias values into short expression')
+    }
     if (!options.keepParamRefs && this.parameters.size > 0) {
-      if (this.as || this.cast) {
-        throw parserError('Cannot push cast and alias values into short expression')
-      }
       return this.value.toShort(options)
     }
     return this.short

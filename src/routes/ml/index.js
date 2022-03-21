@@ -213,12 +213,11 @@ router.get('/queries/:id(\\d+)', loadQuery(true), respondWithQuery)
  * `query` takes precedence
  * @apiParam (Req body) {string} [sql] SQL query. When both `query` and `sql` are supplied,
  * `query` takes precedence
- * @apiParam (Req body) {Object} [parameters] Parameter values that the query depends on.
 */
 router.put(
   '/queries/:id(\\d+)',
   loadQuery(true),
-  parseQueryToTreeMW({ onlyUseBodyQuery: true }),
+  parseQueryToTreeMW({ onlyUseBodyQuery: true, useBodyParameters: false }),
   loadQueryViews,
   insertGeoIntersectsInTreeMW,
   validateQueryMW,
@@ -266,15 +265,13 @@ router.get('/queries/', listQueries)
  * @apiParam (Req body) {string} [sql] SQL query. Need only be sent when none of query's `query`
  * and `execution` have a value. When both `query` and `sql` are supplied, `query` takes
  * precedence
- * @apiParam (Req body) {Object} [parameters] Parameter values that the query depends on.
-
 */
 router.post(
   '/queries/',
   loadQuery(false), // use saved query as template
   loadExecution(false), // use execution as template (superseded by saved query)
   accessHasSingleCustomer,
-  parseQueryToTreeMW(),
+  parseQueryToTreeMW({ useBodyParameters: false }),
   loadQueryViews,
   insertGeoIntersectsInTreeMW,
   validateQueryMW,

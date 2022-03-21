@@ -205,7 +205,7 @@ const validateQuery = async (whitelabelID, customerID, views, tree, engine = 'pg
   const columns = fields.map(({ name, dataTypeID }) => [name, dataTypeID])
 
   return {
-    mlQueryHash: getObjectHash(tree.toQL({ keepParamRefs: !tree.hasParameterValues() })),
+    mlQueryHash: getObjectHash(tree.toQL({ keepParamRefs: false })),
     mlQueryColumnHash: getObjectHash(columns),
     mlQueryColumns: columns,
   }

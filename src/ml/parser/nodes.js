@@ -108,10 +108,8 @@ const operatorParser = engine => withOptions((node, options) => {
 }, { engine })
 
 const parameterParser = engine => withOptions((node, options) => {
-  if (node.value === undefined) {
-    throw apiError('Missing parameter value', 400)
-  }
-  return node.value.to(engine, options)
+  const value = node.value !== undefined ? node.value : node.defaultValue
+  return value.to(engine, options)
 }, { engine })
 
 const primitiveParser = engine => withOptions((node) => {
@@ -124,10 +122,12 @@ const primitiveParser = engine => withOptions((node) => {
 
 
 const baseSelectParser = engine => (node, options) => {
+  const ctes = node.with.length
+    ? `WITH ${node.with.map(e => e.to(engine, options)).join(', ')}`
+    : ''
   const orderBy = node.orderBy.length
     ? `ORDER BY ${node.orderBy.map(e => e.to(engine, options)).join(', ')}`
     : ''
-
   const limit = node.limit !== undefined ? `LIMIT ${node.limit}` : ''
   const offset = node.offset !== undefined ? `OFFSET ${node.offset}` : ''
 
@@ -135,6 +135,7 @@ const baseSelectParser = engine => (node, options) => {
   if (node.operator) {
     const operator = ` ${node.operator} ${!node.distinct ? 'ALL ' : ''}`
     const sql = `
+      ${ctes}
       ${node.operands.map(e => e.to(engine, options)).join(operator)}
       ${orderBy}
       ${limit}
@@ -144,27 +145,18 @@ const baseSelectParser = engine => (node, options) => {
   }
 
   // no operator
-  const ctes = node.with.length
-    ? `WITH ${node.with.map(e => e.to(engine, options)).join(', ')}`
-    : ''
-
   const distinct = node.distinct ? ' DISTINCT' : ''
   const columns = node.columns.map(e => e.to(engine, options)).join(', ')
-
   const from = node.from ? `FROM ${node.from.to(engine, options)}` : ''
-
   const joins = node.joins.length
     ? node.joins.map(e => e.to(engine, options)).join(' ')
     : ''
-
   const where = node.where.length ?
     `WHERE ${node.where.map(e => e.to(engine, options)).join(' AND ')}`
     : ''
-
   const having = node.having.length
     ? `HAVING ${node.having.map(e => e.to(engine, options)).join(' AND ')}`
     : ''
-
   const groupBy = node.groupBy.length
     ? `GROUP BY ${node.groupBy.map(e => e.to(engine, options)).join(', ')}`
     : ''

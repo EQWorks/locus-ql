@@ -173,7 +173,7 @@ const sanitizeShortExpression = (exp) => {
     throw parserError(`Invalid short expression: ${name}`)
   }
   const parsedArgs = splitCSV(exp.slice(split + 1, -1)).map(sanitizeShortArgument)
-  return `@${name}(${parsedArgs.join(',')})`
+  return `@${name}(${parsedArgs.join(', ')})`
 }
 
 const parseShortExpression = (exp) => {

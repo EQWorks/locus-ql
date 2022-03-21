@@ -75,6 +75,7 @@ const parseQueryTreeToTrino = (tree, { viewQueries, whitelabelID, customerID } =
 const parseQueryToTreeMW = ({
   onlyUseBodyQuery = false,
   paramsMustHaveValues = false,
+  useBodyParameters = true,
 } = {}) => async (req, _, next) => {
   try {
     // if a saved query or execution have been attached to req, use it
@@ -85,10 +86,11 @@ const parseQueryToTreeMW = ({
     if (!query && !sql) {
       throw apiError('Missing field(s): query and/or sql')
     }
-    req.ql.tree = parseQueryToTree(
-      query || sql,
-      { type: query ? 'ql' : 'sql', parameters, paramsMustHaveValues },
-    )
+    req.ql.tree = parseQueryToTree(query || sql, {
+      type: query ? 'ql' : 'sql',
+      parameters: useBodyParameters ? parameters : undefined,
+      paramsMustHaveValues,
+    })
     next()
   } catch (err) {
     if (err instanceof ParserError) {

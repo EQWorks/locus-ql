@@ -5,8 +5,14 @@ const { parserError, isArray, isString, isNull, isNonNull } = require('../utils'
 const shortExpressions = {}
 
 shortExpressions.param = {
-  template: ['name', 'as', 'cast'],
-  parser: ({ name, as, cast }) => ({ type: expressionTypes.PARAMETER, value: name, as, cast }),
+  template: ['name', 'default_value', 'as', 'cast'],
+  parser: ({ name, default_value: defaultValue, as, cast }) => ({
+    type: expressionTypes.PARAMETER,
+    name,
+    defaultValue,
+    as,
+    cast,
+  }),
 }
 
 shortExpressions.view = {
@@ -101,7 +107,7 @@ shortExpressions.poi = {
       { type: expressionTypes.CAST, value: id, cast: castTypes.STRING },
     ]
     if (isNonNull(radius)) {
-      values.push(radius)
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
     }
     return { type: expressionTypes.FUNCTION, values, as }
   },
@@ -110,9 +116,14 @@ shortExpressions.poi = {
 shortExpressions.point = {
   template: ['long', 'lat', 'radius', 'as'],
   parser: ({ long, lat, radius, as }) => {
-    const values = ['geometry', geometryTypes.POINT, long, lat]
+    const values = [
+      'geometry',
+      geometryTypes.POINT,
+      { type: expressionTypes.CAST, value: long, cast: castTypes.STRING },
+      { type: expressionTypes.CAST, value: lat, cast: castTypes.STRING },
+    ]
     if (isNonNull(radius)) {
-      values.push(radius)
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
     }
     return { type: expressionTypes.FUNCTION, values, as }
   },
@@ -139,8 +150,8 @@ shortExpressions.list = {
 }
 
 shortExpressions.cast = {
-  template: ['value', 'as'],
-  parser: ({ value, as }) => ({ type: expressionTypes.CAST, value, as }),
+  template: ['value', 'cast', 'as'],
+  parser: ({ value, cast, as }) => ({ type: expressionTypes.CAST, value, cast, as }),
 }
 
 shortExpressions.primitive = {
