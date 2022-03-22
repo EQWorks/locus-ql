@@ -47,53 +47,74 @@ shortExpressions.geo = {
 }
 
 shortExpressions.ggid = {
-  template: ['id', 'as'],
-  parser: ({ id, as }) =>
-    ({
-      type: expressionTypes.FUNCTION,
-      values: [
-        'geometry',
-        geometryTypes.GGID,
-        { type: expressionTypes.CAST, value: id, cast: castTypes.STRING },
-      ],
-      as,
-    }),
+  template: ['id', 'radius', 'as'],
+  parser: ({ id, radius, as }) => {
+    const values = [
+      'geometry',
+      geometryTypes.GGID,
+      { type: expressionTypes.CAST, value: id, cast: castTypes.STRING },
+    ]
+    if (isNonNull(radius)) {
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
+    }
+    return { type: expressionTypes.FUNCTION, values, as }
+  },
 }
 
 shortExpressions.fsa = {
-  template: ['fsa', 'as'],
-  parser: ({ fsa, as }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_FSA, fsa], as }),
+  template: ['fsa', 'radius', 'as'],
+  parser: ({ fsa, radius, as }) => {
+    const values = ['geometry', geometryTypes.CA_FSA, fsa]
+    if (isNonNull(radius)) {
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
+    }
+    return { type: expressionTypes.FUNCTION, values, as }
+  },
 }
 
 shortExpressions.postalcode = {
-  template: ['pc', 'as'],
-  parser: ({ pc, as }) => ({
-    type: expressionTypes.FUNCTION,
-    values: ['geometry', geometryTypes.CA_POSTALCODE, pc],
-    as,
-  }),
+  template: ['pc', 'radius', 'as'],
+  parser: ({ pc, radius, as }) => {
+    const values = ['geometry', geometryTypes.CA_POSTALCODE, pc]
+    if (isNonNull(radius)) {
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
+    }
+    return { type: expressionTypes.FUNCTION, values, as }
+  },
 }
 
 shortExpressions.da = {
-  template: ['da', 'as'],
-  parser: ({ da, as }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_DA, da], as }),
+  template: ['da', 'radius', 'as'],
+  parser: ({ da, radius, as }) => {
+    const values = ['geometry', geometryTypes.CA_DA, da]
+    if (isNonNull(radius)) {
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
+    }
+    return { type: expressionTypes.FUNCTION, values, as }
+  },
 }
 
 shortExpressions.ct = {
-  template: ['ct', 'as'],
-  parser: ({ ct, as }) =>
-    ({ type: expressionTypes.FUNCTION, values: ['geometry', geometryTypes.CA_CT, ct], as }),
+  template: ['ct', 'radius', 'as'],
+  parser: ({ ct, radius, as }) => {
+    const values = ['geometry', geometryTypes.CA_CT, ct]
+    if (isNonNull(radius)) {
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
+    }
+    return { type: expressionTypes.FUNCTION, values, as }
+  },
 }
 
 shortExpressions.city = {
-  template: ['city', 'province', 'as'],
-  parser: ({ city, province, as }) => {
+  template: ['city', 'province', 'radius', 'as'],
+  parser: ({ city, province, radius, as }) => {
     const id = isNonNull(province)
       ? { type: expressionTypes.OPERATOR, values: ['||', 'CA$', province, '$', city] }
       : city
     const values = ['geometry', geometryTypes.CA_CITY, id]
+    if (isNonNull(radius)) {
+      values.push({ type: expressionTypes.CAST, value: radius, cast: castTypes.STRING })
+    }
     return { type: expressionTypes.FUNCTION, values, as }
   },
 }

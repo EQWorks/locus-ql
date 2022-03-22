@@ -69,7 +69,7 @@ const getGeoInfoFromString = (geoString, { engine, getRef }) => {
       END AS lat,
       CASE ${ref}[2]
         WHEN '${geoTypes.POINT}' THEN ${ref}[5]
-        WHEN '${geoTypes.POI}' THEN ${ref}[4]
+        ELSE ${ref}[4]
       END AS radius
     FROM ${engine === 'trino' ? 'split' : 'regexp_split_to_array'}(${geoString}, ':') AS ${ref}
     WHERE
@@ -106,15 +106,20 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine, getRef }) => 
   }
   const ref = getRef()
   const geometries = []
+  const safeRadius = geo.radius !== undefined ? castAsInteger(geo.radius, engine) : undefined
   if (type.geometryColumn) {
-    geometries.push(engine === 'trino'
+    let geometry = engine === 'trino'
       ? `ST_GeomFromBinary(${ref},${type.geometryColumn})`
-      : `ST_Transform(ST_MakeValid(${ref}.${type.geometryColumn}), 3347)`)
+      : `ST_Transform(${ref}.${type.geometryColumn}, 3347)`
+    if (safeRadius) {
+      geometry = `ST_Buffer(${geometry}, ${safeRadius})`
+    }
+    geometries.push(geometry)
   }
   if (type.longColumn && type.latColumn) {
     const radius = []
-    if (geo.radius !== undefined) {
-      radius.push(castAsInteger(geo.radius, engine))
+    if (safeRadius) {
+      radius.push(safeRadius)
     }
     if (type.radiusColumn) {
       radius.push(`${ref}.${type.radiusColumn}`)
@@ -142,6 +147,24 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine, getRef }) => 
   if (!geometries.length) {
     throw apiError('Geometry is not retrievable')
   }
+  const customerfilters = []
+  if (whitelabelID && type.whitelabelColumn) {
+    customerfilters.push(`
+      (${ref}.${type.whitelabelColumn} = ${whitelabelID} OR ${ref}.${type.whitelabelColumn} IS NULL)
+    `)
+  }
+  if (customerID && type.customerColumn) {
+    customerfilters.push(`
+      (${ref}.${type.customerColumn} = ${customerID} OR ${ref}.${type.customerColumn} IS NULL)
+    `)
+  }
+  const accessFilters = []
+  if (customerfilters.length) {
+    accessFilters.push(`(${customerfilters.join(' AND ')})`)
+  }
+  if (type.publicColumn) {
+    accessFilters.push(`${ref}.${type.publicColumn} IS TRUE`)
+  }
   return `(
     SELECT
       COALESCE(${geometries.join(', ')}) AS geometry
@@ -149,15 +172,7 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine, getRef }) => 
     WHERE
       ${ref}.${type.idColumn} = ${type.idType === 'Numeric'
   ? castAsInteger(geo.id, engine) : geo.id}
-      ${whitelabelID && type.whitelabelColumn
-    ? `AND ${ref}.${type.whitelabelColumn} = ${whitelabelID}`
-    : ''}
-      ${customerID && type.customerColumn
-    ? `AND (
-      ${ref}.${type.customerColumn} = ${customerID}
-      OR ${ref}.${type.customerColumn} IS NULL
-    )` : ''}
-      ${type.publicColumn ? `AND ${ref}.${type.publicColumn} IS TRUE` : ''}
+      ${accessFilters.length ? `AND (${accessFilters.join(' OR ')})` : ''}
   )`
 }
 
@@ -409,21 +424,25 @@ const reduceSameTypeGeosToSingleGeo = (geoA, geoB, callback, options) => {
   if (geoA.type !== geoB.type) {
     return
   }
-  const radiusCond = [geoA, geoB]
+  const radiuses = [geoA, geoB]
     .map(({ radius }) => (radius !== undefined
       ? `COALESCE(${castAsInteger(radius, options.engine)}, ${DEFAULT_POINT_RADIUS})`
       : DEFAULT_POINT_RADIUS))
-    .join(' <= ')
+  const result = radiuses[0] !== radiuses[1]
+    ? `
+      CASE
+        WHEN ${radiuses.join(' <= ')}
+        THEN ${callback(geoA, options)}
+        ELSE ${callback(geoB, options)}
+      END
+    `
+    : callback(geoA, options)
   const idCond = geoA.type === geoTypes.POINT
     ? `${geoA.long} = ${geoB.long} AND ${geoA.lat} = ${geoB.lat}`
     : `${geoA.id} = ${geoB.id}`
   return `(
     SELECT
-      CASE
-        WHEN ${radiusCond}
-        THEN ${callback(geoA, options)}
-        ELSE ${callback(geoB, options)}
-      END AS result
+      ${result} AS result
     WHERE
       ${idCond}
   )`
@@ -634,18 +653,12 @@ const parseGeoString = (sql) => {
   if (!(type in geometryTypeValues)) {
     throw apiError('Invalid geometry', 400)
   }
-  if (type === geoTypes.POI) {
+  // geo with id
+  if (type in geoTables || type === geoTypes.GGID) {
     if (args.length !== 1 && args.length !== 2) {
       throw apiError(`Invalid ${type} geometry`, 400)
     }
     return { type, id: args[0], radius: args[1] }
-  }
-  // geo with id
-  if (type in geoTables || type === geoTypes.GGID) {
-    if (args.length !== 1) {
-      throw apiError(`Invalid ${type} geometry`, 400)
-    }
-    return { type, id: args[0] }
   }
   // point
   if (args.length !== 2 && args.length !== 3) {
