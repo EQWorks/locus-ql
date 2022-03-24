@@ -69,12 +69,12 @@ astParsers.SubLink = ({ testexpr, subselect, subLinkType, operName, location }, 
     return subquery
   }
   if (type === 'exists') {
-    return { type: expTypes.FUNCTION, values: [type, subquery] }
+    return { type: expTypes.OPERATOR, values: [type, subquery] }
   }
   if (['any', 'all'].includes(type)) {
     return {
       type: expTypes.OPERATOR,
-      values: [operator || '=', value, { type: expTypes.FUNCTION, values: [type, subquery] }],
+      values: [[operator || '=', type], value, subquery],
     }
   }
   throw sqlParserError({ message: 'Subselect query not supported', location })
@@ -279,7 +279,7 @@ astParsers.CaseExpr = ({ args, defresult }, context) => {
   const cases = args.map(e => parseASTNode(e, context))
   return {
     type: expTypes.CASE,
-    values: defaultRes ? [defaultRes, ...cases] : cases,
+    values: defaultRes !== undefined ? [defaultRes, ...cases] : cases,
   }
 }
 
@@ -427,6 +427,7 @@ astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
     case 'and':
     case 'or':
     case 'not':
+    case 'like':
       operator = safeKind
       break
 

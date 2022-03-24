@@ -96,16 +96,19 @@ functions.geometry = {
 }
 
 functions.geo = functions.geometry
-functions.geo_intersects = { // geo_intersect(geoA, geoB)
+functions.geo_intersects = { // geo_intersect(geoStringA, geoStringB)
   argsLength: 2,
 }
-functions.geo_intersection_area = { // geo_intersection_area(geoA, geoB)
+functions.geo_intersection_area = { // geo_intersection_area(geoStringA, geoStringB)
   argsLength: 2,
 }
-functions.geo_area = { // geo_area(geoA)
+functions.geo_area = { // geo_area(geoStringA)
   argsLength: 1,
 }
-functions.geo_distance = { // geo_distance(geoA, geoB)
+functions.geo_json = { // geo_json(geoStringA)
+  argsLength: 1,
+}
+functions.geo_distance = { // geo_distance(geoStringA, geoStringB)
   argsLength: 2,
 }
 

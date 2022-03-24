@@ -109,6 +109,8 @@ const getKnownGeometry = (geo, { whitelabelID, customerID, engine, getRef }) => 
   const safeRadius = geo.radius !== undefined ? castAsInteger(geo.radius, engine) : undefined
   if (type.geometryColumn) {
     let geometry = engine === 'trino'
+      // TODO: test if trino needs wrapping with 'from_hex' if
+      // pg user-defined -> trino varchar (vs. varbinary)
       ? `ST_GeomFromBinary(${ref},${type.geometryColumn})`
       : `ST_Transform(${ref}.${type.geometryColumn}, 3347)`
     if (safeRadius) {
@@ -740,6 +742,18 @@ const geoAreaParser = engine => (node, options) => {
   return `(SELECT ST_Area(${geometry}) AS geo_area)`
 }
 
+const geoJSONParser = engine => (node, options) => {
+  const [geoString] = node.args.map(e => e.to(engine, options))
+  const geo = parseGeoString(geoString)
+  const geometry = geo
+    ? getGeometry(geo, { engine, ...options })
+    : getGeometryFromString(geoString, { engine, ...options })
+  const geoJSON = engine === 'trino'
+    ? `CAST(to_geojson_geometry(${geometry}) AS json)` // from varchar
+    : `CAST(ST_AsGeoJSON(ST_Transform(${geometry}, 4326)) AS jsonb)` // from text
+  return `(SELECT ${geoJSON} AS geo_json)`
+}
+
 const geoDistanceParser = engine => (node, options) => {
   const [geoStringA, geoStringB] = node.args.map(e => e.to(engine, options))
   const [geoA, geoB] = [geoStringA, geoStringB].map(geo => parseGeoString(geo))
@@ -757,5 +771,6 @@ module.exports = {
   geoIntersectsParser,
   geoIntersectionAreaParser,
   geoAreaParser,
+  geoJSONParser,
   geoDistanceParser,
 }

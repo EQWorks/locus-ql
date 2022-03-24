@@ -3,6 +3,7 @@ const {
   geoIntersectsParser,
   geoIntersectionAreaParser,
   geoAreaParser,
+  geoJSONParser,
   geoDistanceParser,
 } = require('./geo')
 const castMapping = require('../cast')
@@ -119,6 +120,11 @@ functions.geo_intersection_area = {
 functions.geo_area = {
   pg: geoAreaParser('pg'),
   trino: geoAreaParser('trino'),
+}
+
+functions.geo_json = {
+  pg: geoJSONParser('pg'),
+  trino: geoJSONParser('trino'),
 }
 
 functions.geo_distance = {

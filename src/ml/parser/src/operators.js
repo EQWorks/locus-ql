@@ -21,6 +21,7 @@ const operators = {
   'is not': { opsLength: 2 },
   'is of': { opsLength: 2 },
   'is not of': { opsLength: 2 },
+  exists: { opsLength: 1 },
 
   // string operators
   '||': { minOpsLength: 2 },

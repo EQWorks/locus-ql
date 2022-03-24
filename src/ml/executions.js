@@ -701,8 +701,9 @@ const runExecution = async (executionID, engine = 'pg') => {
     const resultsParts = Object.entries(partLengths)
       .sort(([a], [b]) => a - b)
       .reduce((acc, [, partLength]) => {
-        const partStart = acc.slice(-1)[0] || 0
-        acc.push(partStart + partLength)
+        // end index relative to the entire result set
+        const previousPartEnd = acc.slice(-1)[0] || -1
+        acc.push(previousPartEnd + partLength)
         return acc
       }, [])
 
