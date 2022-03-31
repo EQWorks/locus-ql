@@ -55,7 +55,7 @@ const loadUserAccess = async (req, _, next) => {
       throw apiError('Invalid JWT', 401)
     }
 
-    const { write = 0, read = 0 } = api_access
+    const { write = 0, read = 0, policies } = api_access
     const { wl: whitelabel = [], customers = [] } = api_access
 
     // payer wl/cu
@@ -66,7 +66,18 @@ const loadUserAccess = async (req, _, next) => {
     }
 
     // append access to req
-    req.access = { whitelabel, customers, write, read, email, prefix, token, product, payer }
+    req.access = {
+      whitelabel,
+      customers,
+      write,
+      read,
+      email,
+      prefix,
+      token,
+      product,
+      payer,
+      ...(policies ? { policies } : {}),
+    }
     next()
   } catch (err) {
     next(getSetAPIError(err, 'Failed to authenticate user', 401))
