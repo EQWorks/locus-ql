@@ -55,7 +55,7 @@ const loadUserAccess = async (req, _, next) => {
       throw apiError('Invalid JWT', 401)
     }
 
-    const { write = 0, read = 0, policies } = api_access
+    const { write = 0, read = 0, version, policies } = api_access
     const { wl: whitelabel = [], customers = [] } = api_access
 
     // payer wl/cu
@@ -76,6 +76,7 @@ const loadUserAccess = async (req, _, next) => {
       token,
       product,
       payer,
+      version,
       ...(policies ? { policies } : {}),
     }
     next()

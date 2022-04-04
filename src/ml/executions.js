@@ -1027,4 +1027,5 @@ module.exports = {
   cancelExecution,
   getExecutionMetas,
   getAllExecutionResults,
+  getExecutionResultsURL,
 }
