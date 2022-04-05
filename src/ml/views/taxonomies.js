@@ -3,7 +3,7 @@ const { useAPIErrorOptions } = require('../../util/api-error')
 
 const { getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
 
-// one module = one type
+// one type = one module (but a single module may handle multiple types)
 /**
  * @enum
  */
@@ -13,7 +13,9 @@ const viewTypes = {
   LAYER: 'layer',
   LOGS: 'logs',
   REPORT_VWI: 'reportvwi',
+  REPORT_VWI_AOI: 'reportvwiaoi',
   REPORT_WI: 'reportwi',
+  REPORT_WI_AOI: 'reportwiaoi',
   REPORT_XWI: 'reportxwi',
   WEATHER: 'weather',
 }
@@ -86,15 +88,15 @@ const viewCategoryDesc = {
   },
   [viewCategories.ATOM_CAMPAIGNS]: {
     name: 'ATOM Campaigns',
-    type: viewTypes.LOGS,
+    types: [viewTypes.LOGS],
   },
   [viewCategories.ATOM_VAST_EVENTS]: {
     name: 'ATOM Vast Events',
-    type: viewTypes.LOGS,
+    types: [viewTypes.LOGS],
   },
   [viewCategories.LOCUS_BEACONS]: {
     name: 'LOCUS Beacons',
-    type: viewTypes.LOGS,
+    types: [viewTypes.LOGS],
   },
   [viewCategories.REPORT]: {
     name: 'Reports',
@@ -106,15 +108,15 @@ const viewCategoryDesc = {
   },
   [viewCategories.REPORT_WI]: {
     name: 'Walk-in Reports',
-    type: viewTypes.REPORT_WI,
+    types: [viewTypes.REPORT_WI, viewTypes.REPORT_WI_AOI],
   },
   [viewCategories.REPORT_VWI]: {
     name: 'Verified Walk-in Reports',
-    type: viewTypes.REPORT_VWI,
+    types: [viewTypes.REPORT_VWI, viewTypes.REPORT_VWI_AOI],
   },
   [viewCategories.REPORT_XWI]: {
     name: 'Cross Walk-in Reports',
-    type: viewTypes.REPORT_XWI,
+    types: [viewTypes.REPORT_XWI],
   },
   // legacy, alias for EXT - not attached to tree root
   [viewCategories.CUSTOMER_DATA]: {
@@ -138,43 +140,43 @@ const viewCategoryDesc = {
   },
   [viewCategories.EXT_AZURE_BLOB]: {
     name: 'Azure Blob Storage',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.EXT_DIRECT]: {
     name: 'Direct Upload',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.EXT_GOOGLE_ANALYTICS]: {
     name: 'Google Analytics',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.EXT_GOOGLE_GCP_CS]: {
     name: 'Google Cloud Storage',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.EXT_GOOGLE_SHEET]: {
     name: 'Google Sheets',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   // [viewCategories.EXT_HUBSPOT]: {
   //   name: 'HubSpot',
-  //   type: viewTypes.EXT,
+  //   types: [viewTypes.EXT],
   // },
   [viewCategories.EXT_OTHER]: {
     name: 'Other',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.EXT_S3]: {
     name: 'AWS S3',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.EXT_SHOPIFY]: {
     name: 'Shopify',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.EXT_STRIPE]: {
     name: 'Stripe',
-    type: viewTypes.EXT,
+    types: [viewTypes.EXT],
   },
   [viewCategories.MARKETPLACE_DATA]: {
     name: 'Marketplace Data',
@@ -191,19 +193,19 @@ const viewCategoryDesc = {
   },
   [viewCategories.LAYER_DEMOGRAPHIC]: {
     name: 'Demographic',
-    type: viewTypes.LAYER,
+    types: [viewTypes.LAYER],
   },
   [viewCategories.LAYER_PROPENSITY]: {
     name: 'Propensity',
-    type: viewTypes.LAYER,
+    types: [viewTypes.LAYER],
   },
   [viewCategories.WEATHER]: {
     name: 'Weather',
-    type: viewTypes.WEATHER,
+    types: [viewTypes.WEATHER],
   },
   [viewCategories.GEO]: {
     name: 'Geographic',
-    type: viewTypes.GEO,
+    types: [viewTypes.GEO],
   },
 }
 
@@ -250,11 +252,11 @@ const reduceViewCategoryTree = (cb, initAcc, root) => {
 
 const getViewCategoryTree = root => reduceViewCategoryTree(
   (nodeKey, currentAcc) => {
-    const { name, type } = viewCategoryDesc[nodeKey] || {}
+    const { name, types } = viewCategoryDesc[nodeKey] || {}
     const node = {
       id: nodeKey,
       name,
-      type,
+      types,
       children: [],
     }
     // root case
@@ -282,10 +284,12 @@ const listViewCategories = root => reduceViewCategoryTree(
 // to use in SQL filter as 'WHERE type = ANY(<array>)
 const listViewCategoriesByViewType = root => reduceViewCategoryTree(
   (nodeKey, currentAcc) => {
-    if (nodeKey !== 'root' && viewCategoryDesc[nodeKey].type) {
-      const { type } = viewCategoryDesc[nodeKey]
-      currentAcc[type] = currentAcc[type] || []
-      currentAcc[type].push(nodeKey)
+    if (nodeKey !== 'root' && viewCategoryDesc[nodeKey].types) {
+      const { types } = viewCategoryDesc[nodeKey]
+      types.forEach((t) => {
+        currentAcc[t] = currentAcc[t] || []
+        currentAcc[t].push(nodeKey)
+      })
     }
     return [currentAcc, currentAcc]
   },

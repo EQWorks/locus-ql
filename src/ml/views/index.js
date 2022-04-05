@@ -18,7 +18,9 @@ const viewTypesToModules = {
   [viewTypes.LAYER]: require('./layer'),
   [viewTypes.LOGS]: require('./logs'),
   [viewTypes.REPORT_VWI]: require('./reports'),
+  [viewTypes.REPORT_VWI_AOI]: require('./reports'),
   [viewTypes.REPORT_WI]: require('./reports'),
+  [viewTypes.REPORT_WI_AOI]: require('./reports'),
   [viewTypes.REPORT_XWI]: require('./reports'),
   [viewTypes.WEATHER]: require('./weather'),
 }
@@ -51,7 +53,7 @@ const listViews = async (
     viewTypesToModules[type].listViews({
       access,
       inclMeta,
-      filter: { ...filter, categories },
+      filter: { ...filter, type, categories },
     })))
   return views.flat()
 }

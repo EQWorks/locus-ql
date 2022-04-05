@@ -267,14 +267,16 @@ const columns = {
 }
 Object.entries(columns).forEach(([key, column]) => { column.key = key })
 
-const aoi = {
-  aoi_type: { category: CAT_STRING },
-  aoi_id: { category: CAT_STRING },
-  aoi_category: { category: CAT_STRING },
-  inflator: { category: CAT_NUMERIC },
+const aoiColumns = {
+  aoi_type: { category: CAT_STRING, expression: 'wi.aoi_type' },
+  aoi_id: { category: CAT_STRING, expression: 'wi.aoi_id' },
+  aoi_category: { category: CAT_STRING, expression: 'wi.aoi_category' },
+  inflator: { category: CAT_NUMERIC, expression: 'wi.inflator' },
 }
+Object.entries(aoiColumns).forEach(([key, column]) => { column.key = key })
+
 
 module.exports = {
   columns,
-  aoi,
+  aoiColumns,
 }
