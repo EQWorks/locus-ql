@@ -11,6 +11,21 @@ const castMapping = require('../cast')
 
 const functions = {}
 
+// math functions
+functions.log = {
+  trino: (node, options) => {
+    const [baseOrValue, value] = node.args.map(e => e.to('trino', options))
+    if (value === undefined) {
+      return `(SELECT log(10, ${baseOrValue}) AS log)`
+    }
+    return `(SELECT log(${baseOrValue}, ${value}) AS log)`
+  },
+}
+functions.pow = { pg: 'power' }
+functions.rand = { pg: 'random' }
+functions.trunc = { trino: 'truncate' }
+functions.truncate = { pg: 'trunc' }
+
 // json functions
 functions.json_extract_path = {
   pg: 'jsonb_extract_path',

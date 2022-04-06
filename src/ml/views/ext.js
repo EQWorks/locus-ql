@@ -1,5 +1,5 @@
 const { pool } = require('../../util/db')
-const { typeToCatMap } = require('../type')
+const { typeToCatMap, CAT_JSON } = require('../type')
 const { filterViewColumns } = require('./utils')
 const { useAPIErrorOptions } = require('../../util/api-error')
 const { pgWithCache } = require('../../util/cache')
@@ -220,11 +220,15 @@ const getQueryView = async (access, viewID, queryColumns, engine) => {
   // }
 
   const catalog = engine === 'trino' ? 'locus_place.' : ''
+  const columnExp = Object.values(columns)
+    .map(({ key, category }) =>
+      `"${key}"${category === CAT_JSON && engine === 'pg' ? '::jsonb' : ''}`)
+    .join(', ')
 
   // inject view
   const query = `
     SELECT
-      ${Object.keys(columns).map(col => `"${col}"`).join(', ')}
+      ${columnExp}
     FROM ${catalog}${schema}."${table}"
   `
   const dependencies = [['ext', conn_id]]

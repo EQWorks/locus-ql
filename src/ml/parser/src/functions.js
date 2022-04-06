@@ -7,23 +7,19 @@ const functions = {
 
   // aggregation functions
   sum: {
-    // category: CAT_NUMERIC,
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
   count: { argsLength: 1 },
   avg: {
-    // category: CAT_NUMERIC,
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
   min: {
-    // category: CAT_NUMERIC,
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
   max: {
-    // category: CAT_NUMERIC,
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
   },
@@ -37,30 +33,41 @@ const functions = {
   //   category: CAT_NUMERIC,
   //   defaultCast: 'date',
   // },
+}
 
-  round: {
-    // category: CAT_NUMERIC,
-    minArgsLength: 1,
-    maxArgsLength: 2,
-  },
+// math functions
+functions.abs = { argsLength: 1 }
+functions.cbrt = { argsLength: 1 }
+functions.ceil = { argsLength: 1 }
+functions.ceiling = { argsLength: 1 }
+functions.exp = { argsLength: 1 }
+functions.floor = { argsLength: 1 }
+functions.ln = { argsLength: 1 }
+functions.log = { // log(val) or log(base, val)
+  minArgsLength: 1,
+  maxArgsLength: 2,
+}
+functions.mod = { argsLength: 2 }
+functions.pi = { argsLength: 0 }
+functions.pow = { argsLength: 2 }
+functions.power = { argsLength: 2 }
+functions.rand = { argsLength: 0 }
+functions.random = { argsLength: 0 }
+functions.round = { // round(val) or round(val, decimal places)
+  minArgsLength: 1,
+  maxArgsLength: 2,
+}
+functions.sign = { argsLength: 1 }
+functions.sqrt = { argsLength: 1 }
+functions.trunc = { argsLength: 1 }
+functions.truncate = { argsLength: 1 }
 
-  // date_part: { // date_part(field, timestamp)
-  //   argsLength: 2,
-  //   // category: CAT_NUMERIC,
-  // },
-  // date_trunc: { // date_trunc(field, timestamp)
-  //   argsLength: 2,
-  //   // category: CAT_DATE,
-  // },
-
-  // JSON functions
-  json_extract_path: { // json_extract_path(field, ...keys)
-    // category: CAT_JSON,
-    minArgsLength: 2,
-  },
-  json_extract_path_text: { // json_extract_path_text(field, ...keys)
-    minArgsLength: 2,
-  },
+// JSON functions
+functions.json_extract_path = { // json_extract_path(field, ...path)
+  minArgsLength: 2,
+}
+functions.json_extract_path_text = { // json_extract_path_text(field, ...path)
+  minArgsLength: 2,
 }
 
 // type cast functions

@@ -222,19 +222,23 @@ const columns = {
   },
   converted_visits_hod: {
     category: CAT_JSON,
-    expression: 'wi.converted_visits_hod',
+    pg: 'wi.converted_visits_hod::jsonb',
+    trino: 'wi.converted_visits_hod',
   },
   converted_visits_dow: {
     category: CAT_JSON,
-    expression: 'wi.converted_visits_dow',
+    pg: 'wi.converted_visits_dow::jsonb',
+    trino: 'wi.converted_visits_dow',
   },
   converted_unique_visitors_hod: {
     category: CAT_JSON,
-    expression: 'wi.converted_unique_visitors_hod',
+    pg: 'wi.converted_unique_visitors_hod::jsonb',
+    trino: 'wi.converted_unique_visitors_hod',
   },
   converted_unique_visitors_dow: {
     category: CAT_JSON,
-    expression: 'wi.converted_unique_visitors_dow',
+    pg: 'wi.converted_unique_visitors_dow::jsonb',
+    trino: 'wi.converted_unique_visitors_dow',
   },
   timeto_conversion: {
     category: CAT_NUMERIC,

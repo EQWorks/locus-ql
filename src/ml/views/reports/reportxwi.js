@@ -159,19 +159,23 @@ const columns = {
   },
   xvisit_visits_hod: {
     category: CAT_JSON,
-    expression: 'wi.xvisit_visits_hod',
+    pg: 'wi.xvisit_visits_hod::jsonb',
+    trino: 'wi.xvisit_visits_hod',
   },
   xvisit_visits_dow: {
     category: CAT_JSON,
-    expression: 'wi.xvisit_visits_dow',
+    pg: 'wi.xvisit_visits_dow::jsonb',
+    trino: 'wi.xvisit_visits_dow',
   },
   xvisit_unique_visitors_hod: {
     category: CAT_JSON,
-    expression: 'wi.xvisit_unique_visitors_hod',
+    pg: 'wi.xvisit_unique_visitors_hod::jsonb',
+    trino: 'wi.xvisit_unique_visitors_hod',
   },
   xvisit_unique_visitors_dow: {
     category: CAT_JSON,
-    expression: 'wi.xvisit_unique_visitors_dow',
+    pg: 'wi.xvisit_unique_visitors_dow::jsonb',
+    trino: 'wi.xvisit_unique_visitors_dow',
   },
   timeto_xvisit: {
     category: CAT_NUMERIC,

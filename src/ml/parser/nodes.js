@@ -13,7 +13,7 @@ const applyCast = (sql, cast, engine) => {
   if (cast === castTypes.JSON && engine === 'trino') {
     return `json_parse(CAST(${sql} AS VARCHAR))`
   }
-  return `CAST(${sql} AS ${castMapping[engine][sql]})`
+  return `CAST(${sql} AS ${castMapping[engine][cast]})`
 }
 
 const withOptions = (parser, { alias = true, cast = true, trim = true, engine } = {}) =>
@@ -73,7 +73,7 @@ const functionParser = engine => withOptions((node, options) => {
     sql = `${name}(${node.args.map(e => e.to(engine, options)).join(', ')})`
     // return as subquery to hide underlying implementation (column name)
     if (name !== node.name && !node.as) {
-      sql = `(SELECT ${sql} AS ${name})`
+      sql = `(SELECT ${sql} AS ${node.name})`
     }
   }
   const cast = node.cast || node.defaultCast
