@@ -18,6 +18,5 @@ module.exports = {
     [castTypes.STRING]: 'varchar',
     [castTypes.TEXT]: 'varchar',
     [castTypes.BOOLEAN]: 'boolean',
-    [castTypes.JSON]: 'json',
   },
 }

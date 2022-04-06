@@ -4,16 +4,24 @@ const functions = require('./functions')
 const operators = require('./operators')
 const { escapeIdentifier, escapeLiteral, trimSQL, ParserError } = require('./src/utils')
 const castMapping = require('./cast')
+const { castTypes } = require('./src/types')
 
 
 const { apiError } = useAPIErrorOptions({ tags: { service: 'ql', module: 'parser' } })
+
+const applyCast = (sql, cast, engine) => {
+  if (cast === castTypes.JSON && engine === 'trino') {
+    return `json_parse(CAST(${sql} AS VARCHAR))`
+  }
+  return `CAST(${sql} AS ${castMapping[engine][sql]})`
+}
 
 const withOptions = (parser, { alias = true, cast = true, trim = true, engine } = {}) =>
   (node, options) => {
     try {
       let sql = parser(node, options)
       if (cast && node.cast) {
-        sql = `CAST(${sql} AS ${castMapping[engine][node.cast]})`
+        sql = applyCast(sql, node.cast, engine)
       }
       if (alias && node.as) {
         sql = `${sql} AS ${escapeIdentifier(node.as)}`
@@ -69,7 +77,7 @@ const functionParser = engine => withOptions((node, options) => {
     }
   }
   const cast = node.cast || node.defaultCast
-  return cast ? `CAST(${sql} AS ${castMapping[engine][cast]})` : sql
+  return cast ? applyCast(sql, cast, engine) : sql
 }, { engine, cast: false })
 
 const joinParser = engine => withOptions((node, options) => {

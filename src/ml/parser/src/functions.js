@@ -54,15 +54,18 @@ const functions = {
   // },
 
   // JSON functions
-  json_extract_path: { // json_extract_path(field, keys)
+  json_extract_path: { // json_extract_path(field, ...keys)
     // category: CAT_JSON,
+    minArgsLength: 2,
+  },
+  json_extract_path_text: { // json_extract_path_text(field, ...keys)
     minArgsLength: 2,
   },
 }
 
 // type cast functions
 Object.values(castTypes).forEach((cast) => {
-  functions[cast] = {
+  functions[`cast_${cast}`] = {
     argsLength: 1,
     validate: (node) => {
       node.args[0]._validateCastAndAliasLayer(cast)

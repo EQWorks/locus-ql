@@ -10,7 +10,7 @@ const {
   parserError,
   extractShortExpressionsFromSQL,
 } = require('./utils')
-const { expressionTypes: expTypes } = require('./types')
+const { expressionTypes: expTypes, castTypes } = require('./types')
 
 
 const intervalLiteralRE =
@@ -300,28 +300,64 @@ astParsers.CoalesceExpr = ({ args }, context) => ({
   values: ['coalesce', ...args.map(e => parseASTNode(e, context))],
 })
 
+const sqlCastTypes = {
+  // numeric/float
+  numeric: castTypes.NUMERIC,
+  real: castTypes.FLOAT,
+  float4: castTypes.FLOAT,
+  float8: castTypes.FLOAT,
+  decimal: castTypes.FLOAT,
+  double: castTypes.FLOAT,
+  'double precision': castTypes.FLOAT,
+  // integer
+  integer: castTypes.INTEGER,
+  int2: castTypes.INTEGER,
+  smallint: castTypes.INTEGER,
+  int4: castTypes.INTEGER,
+  int: castTypes.INTEGER,
+  int8: castTypes.INTEGER,
+  bigint: castTypes.INTEGER,
+  // string/text
+  string: castTypes.STRING,
+  text: castTypes.TEXT,
+  varchar: castTypes.TEXT,
+  'character varying': castTypes.TEXT,
+  char: castTypes.TEXT,
+  character: castTypes.TEXT,
+  // bool
+  boolean: castTypes.BOOLEAN,
+  bool: castTypes.BOOLEAN,
+  // json
+  json: castTypes.JSON,
+  jsonb: castTypes.JSON,
+}
+
 astParsers.TypeCast = (exp, context) => {
   const { arg, typeName } = exp
   const value = parseASTNode(arg, context)
-  const cast = parseASTNode(typeName.names.slice(-1)[0], context).toLowerCase()
-  // boolean
-  if (cast === 'bool' && ['t', 'f'].includes(value)) {
-    return value === 't'
+  let cast = parseASTNode(typeName.names.slice(-1)[0], context).toLowerCase()
+  // substitute with QL cast value
+  if (cast in sqlCastTypes) {
+    cast = sqlCastTypes[cast]
   }
-  if (cast === 'date') {
+  // boolean
+  if (cast === castTypes.BOOLEAN && ['t', 'f'].includes(value)) {
+    return value === 't'
+  // date literal
+  } else if (cast === 'date') {
     return {
       type: expTypes.FUNCTION,
       values: ['date', value],
     }
-  }
-  if (cast === 'timestamp' || cast === 'timestamptz') {
+  // timestamp literal
+  } else if (cast === 'timestamp' || cast === 'timestamptz') {
     return {
       type: expTypes.FUNCTION,
       values: ['datetime', value],
     }
-  }
+  // interval literal
   // interval - 'int quantity unit(s)'
-  if (cast === 'interval' && isString(value, true)) {
+  } else if (cast === 'interval' && isString(value, true)) {
     const safeValue = value.toLowerCase()
     if (!intervalLiteralRE.test(safeValue)) {
       throw sqlParserError({ message: 'Interval syntax not supported', expression: exp })
@@ -346,9 +382,9 @@ astParsers.TypeCast = (exp, context) => {
       type: expTypes.OPERATOR,
       values: ['+', ...intervals],
     }
-  }
+  // geometry literal
   // geometry - '<type> (arg arg arg)'
-  if (cast === 'geometry' && isString(value, true)) {
+  } else if (cast === 'geometry' && isString(value, true)) {
     const safeValue = value.toLowerCase()
     if (!geometryLiteralRE.test(safeValue)) {
       throw sqlParserError({ message: 'Geometry syntax not supported', expression: exp })
