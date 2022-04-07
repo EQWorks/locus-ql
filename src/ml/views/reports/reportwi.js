@@ -1,405 +1,219 @@
-const { knex } = require('../../../util/db')
-const { listLayers } = require('../../../routes/layer/interface')
 const {
   CAT_STRING,
   CAT_NUMERIC,
   CAT_DATE,
-  CAT_JSON,
   CAT_BOOL,
+  CAT_JSON,
 } = require('../../type')
-const { geoTypes } = require('../../geo')
-const { useAPIErrorOptions } = require('../../../util/api-error')
-const { useCacheOptions } = require('../../../util/cache')
-const { viewTypes, viewCategories } = require('../taxonomies')
+const { geometryTypes } = require('../../parser/src')
 
 
-const { apiError } = useAPIErrorOptions({ tags: { service: 'ql' } })
-const { knexWithCache } = useCacheOptions({ ttl: 600 }) // 10 minutes
-
-const options = {
-  columns: {
-    time_zone: { category: CAT_STRING },
-    poi_id: {
-      category: CAT_NUMERIC,
-      geo_type: geoTypes.POI,
-    },
-    poi_name: { category: CAT_STRING },
-    chain_id: { category: CAT_NUMERIC },
-    type: { category: CAT_NUMERIC },
-    category: { category: CAT_NUMERIC },
-    lat: { category: CAT_NUMERIC },
-    lon: { category: CAT_NUMERIC },
-    address_label: { category: CAT_STRING },
-    address_line1: { category: CAT_STRING },
-    address_line2: { category: CAT_STRING },
-    address_unit: { category: CAT_STRING },
-    address_city: { category: CAT_STRING },
-    address_region: { category: CAT_STRING },
-    address_postalcode: { category: CAT_STRING },
-    address_country: { category: CAT_STRING },
-    geo_ca_fsa: {
-      category: CAT_STRING,
-      geo_type: geoTypes.CA_FSA,
-    },
-    geo_us_postalcode: {
-      category: CAT_NUMERIC,
-      // geo_type: 'us-postalcode',
-    },
-
-    wi_factor: { category: CAT_NUMERIC },
-    name: { category: CAT_STRING },
-
-    report_id: { category: CAT_NUMERIC },
-    date_type: { category: CAT_NUMERIC },
-    start_date: { category: CAT_DATE },
-    end_date: { category: CAT_DATE },
-    repeat_type: { category: CAT_NUMERIC },
-    visits: { category: CAT_NUMERIC },
-    unique_visitors: { category: CAT_NUMERIC },
-    repeat_visits: { category: CAT_NUMERIC },
-    repeat_visitors: { category: CAT_NUMERIC },
-    repeat_visitor_rate: { category: CAT_NUMERIC },
-    visits_hod: { category: CAT_JSON },
-    visits_dow: { category: CAT_JSON },
-    unique_visitors_hod: { category: CAT_JSON },
-    unique_visitors_dow: { category: CAT_JSON },
-    unique_visitors_single_visit: { category: CAT_NUMERIC },
-    unique_visitors_multi_visit: { category: CAT_NUMERIC },
-    unique_xdevice: { category: CAT_NUMERIC },
-    unique_hh: { category: CAT_NUMERIC },
-    repeat_visitors_hh: { category: CAT_NUMERIC },
-    outlier: { category: CAT_BOOL },
-  },
-  aoi: {
-    aoi_type: { category: CAT_STRING },
-    aoi_id: { category: CAT_STRING },
-    aoi_category: { category: CAT_STRING },
-    inflator: { category: CAT_NUMERIC },
+// optional joins
+const queryJoins = {
+  tz: {
+    pg: `
+      LEFT JOIN public.tz_world AS tz ON ST_Contains(
+        tz.geom,
+        ST_SetSRID(ST_MakePoint(poi.lon, poi.lat), 4326)
+      )
+    `,
+    trino: `
+      LEFT JOIN public.tz_world AS tz ON ST_Contains(
+        tz.geom,
+        ST_Point(poi.lon, poi.lat)
+      )
+    `,
   },
 }
 
-const getReportLayers = (wl, cu, { layerID, reportID }) => {
-  const whereFilters = { 'report.type': 1 } // wi
-  if (reportID) {
-    whereFilters['report_wi.report_id'] = reportID
-  }
-  if (layerID) {
-    whereFilters.layer_id = layerID
-  }
-  const groupByCols = [
-    'layer.name',
-    'layer.layer_id',
-    'layer.customer',
-    'layer.whitelabel',
-    'layer.report_id',
-    'report.type',
-    { report_name: 'report.name' },
-    { report_created: 'report.created' },
-    { report_updated: 'report.updated' },
-    { report_description: 'report.description' },
-    'report.tld',
-    'report.poi_list_id',
-  ]
-  const layerQuery = knex('layer')
-  layerQuery.column(groupByCols)
-  layerQuery.select(knex.raw(`
-    COALESCE(
-      ARRAY_AGG(DISTINCT ARRAY[
-        report_wi.start_date::varchar,
-        report_wi.end_date::varchar,
-        report_wi.date_type::varchar
-      ])
-      FILTER (WHERE report_wi.start_date IS NOT null),
-      '{}'
-    ) AS dates
-  `))
-  layerQuery.leftJoin('customers', 'layer.customer', 'customers.customerid')
-  layerQuery.leftJoin('report', 'layer.report_id', 'report.report_id')
-  layerQuery.innerJoin('report_wi', 'report.report_id', 'report_wi.report_id')
-  layerQuery.where(whereFilters)
-  layerQuery.whereNull('layer.parent_layer')
-  if (wl !== -1) {
-    layerQuery.whereRaw('layer.whitelabel = ANY (?)', [wl])
-    if (cu !== -1) {
-      layerQuery.whereRaw('(layer.customer = ANY (?) OR customers.agencyid = ANY (?))', [cu, cu])
-    }
-  }
-  layerQuery.groupByRaw(groupByCols.map((_, i) => i + 1).join(', '))
-  return knexWithCache(layerQuery)
+const columns = {
+  time_zone: {
+    category: CAT_STRING,
+    expression: "coalesce(tz.tzid, 'UTC')",
+    join: queryJoins.tz,
+  },
+  poi_id: {
+    category: CAT_NUMERIC,
+    geo_type: geometryTypes.POI,
+    expression: 'poi.poi_id',
+  },
+  poi_name: {
+    category: CAT_STRING,
+    expression: 'poi.name',
+  },
+  chain_id: {
+    category: CAT_NUMERIC,
+    expression: 'poi.chain_id',
+  },
+  type: {
+    category: CAT_NUMERIC,
+    expression: 'poi.type',
+  },
+  category: {
+    category: CAT_NUMERIC,
+    expression: 'poi.category',
+  },
+  lat: {
+    category: CAT_NUMERIC,
+    expression: 'poi.lat',
+  },
+  lon: {
+    category: CAT_NUMERIC,
+    expression: 'poi.lon',
+  },
+  address_label: {
+    category: CAT_STRING,
+    expression: 'poi.address_label',
+  },
+  address_line1: {
+    category: CAT_STRING,
+    expression: 'poi.address_line1',
+  },
+  address_line2: {
+    category: CAT_STRING,
+    expression: 'poi.address_line2',
+  },
+  address_unit: {
+    category: CAT_STRING,
+    expression: 'poi.address_unit',
+  },
+  address_city: {
+    category: CAT_STRING,
+    expression: 'poi.address_city',
+  },
+  address_region: {
+    category: CAT_STRING,
+    expression: 'poi.address_region',
+  },
+  address_postalcode: {
+    category: CAT_STRING,
+    expression: 'poi.address_postalcode',
+  },
+  address_country: {
+    category: CAT_STRING,
+    expression: 'poi.address_country',
+  },
+  geo_ca_fsa: {
+    category: CAT_STRING,
+    geo_type: geometryTypes.CA_FSA,
+    pg: "upper(substring(poi.address_postalcode from '^[A-Z]\\d[A-Z]'))",
+    trino: "upper(regexp_extract(poi.address_postalcode, '^[A-Z]\\d[A-Z]'))",
+  },
+  geo_us_postalcode: {
+    category: CAT_STRING,
+    // geo_type: 'us-postalcode',
+    pg: "substring(poi.address_postalcode from '^\\d{5}$')",
+    trino: "regexp_extract(poi.address_postalcode, '^\\d{5}$')",
+  },
+  wi_factor: {
+    category: CAT_NUMERIC,
+    expression: 'layer.wi_factor',
+  },
+  name: {
+    category: CAT_STRING,
+    expression: 'layer.name',
+  },
+  report_id: {
+    category: CAT_NUMERIC,
+    expression: 'wi.report_id',
+  },
+  date_type: {
+    category: CAT_NUMERIC,
+    expression: 'wi.date_type',
+  },
+  start_date: {
+    category: CAT_DATE,
+    expression: 'wi.start_date',
+  },
+  end_date: {
+    category: CAT_DATE,
+    expression: 'wi.end_date',
+  },
+  repeat_type: {
+    category: CAT_NUMERIC,
+    expression: 'wi.repeat_type',
+  },
+  visits: {
+    category: CAT_NUMERIC,
+    expression: 'wi.visits * layer.wi_factor',
+  },
+  unique_visitors: {
+    category: CAT_NUMERIC,
+    expression: 'wi.unique_visitors * layer.wi_factor',
+  },
+  repeat_visits: {
+    category: CAT_NUMERIC,
+    expression: 'wi.repeat_visits * layer.wi_factor',
+  },
+  repeat_visitors: {
+    category: CAT_NUMERIC,
+    expression: 'wi.repeat_visitors * layer.wi_factor',
+  },
+  repeat_visitor_rate: {
+    category: CAT_NUMERIC,
+    expression: `
+    CASE
+      WHEN wi.unique_visitors in (null, 0) THEN 0
+      ELSE wi.repeat_visitors / CAST(wi.unique_visitors AS double precision)
+    END
+    `,
+  },
+  visits_hod: {
+    category: CAT_JSON,
+    pg: 'wi.visits_hod::jsonb',
+    trino: 'wi.visits_hod',
+  },
+  visits_dow: {
+    category: CAT_JSON,
+    pg: 'wi.visits_dow::jsonb',
+    trino: 'wi.visits_dow',
+  },
+  unique_visitors_hod: {
+    category: CAT_JSON,
+    pg: 'wi.unique_visitors_hod::jsonb',
+    trino: 'wi.unique_visitors_hod',
+  },
+  unique_visitors_dow: {
+    category: CAT_JSON,
+    pg: 'wi.unique_visitors_dow::jsonb',
+    trino: 'wi.unique_visitors_dow',
+  },
+  unique_visitors_single_visit: {
+    category: CAT_NUMERIC,
+    expression: 'wi.unique_visitors_single_visit * layer.wi_factor',
+  },
+  unique_visitors_multi_visit: {
+    category: CAT_NUMERIC,
+    expression: 'wi.unique_visitors_multi_visit * layer.wi_factor',
+  },
+  unique_xdevice: {
+    category: CAT_NUMERIC,
+    expression: 'wi.unique_xdevice * layer.wi_factor',
+  },
+  unique_hh: {
+    category: CAT_NUMERIC,
+    expression: 'wi.unique_hh * layer.wi_factor',
+  },
+  repeat_visitors_hh: {
+    category: CAT_NUMERIC,
+    expression: 'wi.repeat_visitors_hh * layer.wi_factor',
+  },
+  outlier: {
+    category: CAT_BOOL,
+    expression: 'wi.outlier',
+  },
 }
+Object.entries(columns).forEach(([key, column]) => { column.key = key })
 
-const getLayerIDs = (wl, cu, reportID) => {
-  const layerIDQuery = knex('layer')
-  layerIDQuery.column('layer_id')
-  layerIDQuery.where({ report_id: reportID })
-  layerIDQuery.whereNull('parent_layer')
-  if (wl !== -1) {
-    layerIDQuery.whereRaw('whitelabel = ANY (?)', [wl])
-    if (cu !== -1) {
-      layerIDQuery.whereRaw('customer = ANY (?)', [cu])
-    }
-  }
-  return knexWithCache(layerIDQuery)
+const aoiColumns = {
+  aoi_type: { category: CAT_STRING, expression: 'wi.aoi_type' },
+  aoi_id: { category: CAT_STRING, expression: 'wi.aoi_id' },
+  aoi_category: { category: CAT_STRING, expression: 'wi.aoi_category' },
+  inflator: { category: CAT_NUMERIC, expression: 'wi.inflator' },
 }
-
-// TODO: fetch aoi data using another endpoint
-const hasAOIData = async (wl, layerID, reportID) => {
-  const whereFilters = ['wi_aoi.report_id = ?', 'l.layer_id = ?']
-  const whereValues = [reportID, layerID]
-  if (wl !== -1) {
-    whereFilters.push('l.whitelabel = ANY (?)')
-    whereValues.push(wl)
-  }
-  const [{ exists } = {}] = await knexWithCache(knex.raw(`
-    SELECT EXISTS (SELECT
-      l.layer_id,
-      wi_aoi.aoi_id
-    FROM layer l
-      JOIN report_wi_aoi wi_aoi ON wi_aoi.report_id = l.report_id
-    WHERE ${whereFilters.join(' AND ')}
-    )
-  `, whereValues))
-  return exists
-}
-
-const listViews = async ({ access, filter = {}, inclMeta = true }) => {
-  const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
-  const reportLayers = await getReportLayers(whitelabel, customers, filter)
-  return Promise.all(reportLayers.map(async ({
-    name,
-    layer_id,
-    report_id,
-    type,
-    dates,
-    report_name,
-    whitelabel: wl,
-    customer,
-    report_created,
-    report_updated,
-    report_description,
-    tld,
-    poi_list_id,
-  }) => {
-    const view = {
-      name,
-      view: {
-        id: `${viewTypes.REPORT_WI}_${layer_id}_${report_id}`,
-        type: viewTypes.REPORT_WI,
-        category: viewCategories.REPORT_WI,
-        report_id,
-        layer_id,
-      },
-    }
-    if (inclMeta) {
-      const hasAOI = await hasAOIData(whitelabel, layer_id, report_id)
-      // const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
-      const { columns } = options
-      Object.entries(columns).forEach(([key, column]) => { column.key = key })
-      Object.assign(view, {
-        columns,
-        report_type: type,
-        report_name,
-        whitelabel: wl,
-        customer,
-        report_created,
-        report_updated,
-        report_description,
-        tld,
-        poi_list_id,
-        dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
-        hasAOI,
-      })
-    }
-    return view
-  }))
-}
-
-const getView = async (access, viewID) => {
-  const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
-  const [, layerIDStr, reportIDStr] = viewID.match(/^reportwi_(\d+|\w+)_(\d+)$/) || []
-  let layerIDs = []
-
-  // UNCOMMENT WHEN layer_id = 'any' is deprecated
-  // eslint-disable-next-line radix
-  // const layerID = parseInt(layerIDStr, 10)
-  // if (!layerID) {
-  //   throw apiError(`Invalid view: ${viewID}`, 403)
-  // }
-
-  // eslint-disable-next-line radix
-  const reportID = parseInt(reportIDStr, 10)
-  if (!reportID) {
-    throw apiError(`Invalid view: ${viewID}`, 403)
-  }
-  // TO BE DEPRECATED - Filtering by report now available via `report` query param
-  // optional layer_id param
-  if (layerIDStr === 'any') {
-    layerIDs = await getLayerIDs(whitelabel, customers, reportID)
-  } else {
-    // eslint-disable-next-line radix
-    layerIDs = [{ layer_id: parseInt(layerIDStr, 10) }]
-  }
-
-  const viewLayers = await Promise.all(layerIDs.map(async ({ layer_id }) => {
-    const [reportLayer] = await getReportLayers(
-      whitelabel,
-      customers,
-      { layerID: layer_id, reportID },
-    )
-    if (!reportLayer) {
-      return null
-    }
-    const {
-      name,
-      type,
-      dates,
-      report_name,
-      whitelabel: wl,
-      customer,
-      report_created,
-      report_updated,
-      report_description,
-      tld,
-      poi_list_id,
-    } = reportLayer
-    const hasAOI = await hasAOIData(whitelabel, layer_id, reportID)
-    // const columns = hasAOI ? { ...options.columns, ...options.aoi } : options.columns
-    const { columns } = options
-    Object.entries(columns).forEach(([key, column]) => { column.key = key })
-    return {
-      name,
-      view: {
-        id: `${viewTypes.REPORT_WI}_${layer_id}_${reportID}`,
-        type: viewTypes.REPORT_WI,
-        category: viewCategories.REPORT_WI,
-        report_id: reportID,
-        layer_id,
-      },
-      columns,
-      report_type: type,
-      report_name,
-      whitelabel: wl,
-      customer,
-      report_created,
-      report_updated,
-      report_description,
-      tld,
-      poi_list_id,
-      dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
-      hasAOI,
-    }
-  }))
-
-  const views = viewLayers.filter(v => v)
-  if (views.length === 0) {
-    throw apiError('Access to layer(s) not allowed', 403)
-  }
-  if (layerIDStr === 'any') {
-    return views
-  }
-  return views[0]
-}
-
-const getQueryView = async (access, { layer_id, report_id }) => {
-  const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
-  const viewID = `${viewTypes.REPORT_WI}_${layer_id}_${report_id}`
-  const [layer] = await listLayers(
-    whitelabel,
-    customers,
-    { layer_id, report_id },
-  )
-  if (!layer) {
-    throw apiError('Access to layer or report not allowed', 403)
-  }
-
-  // inject view columns
-  const viewMeta = await listViews({
-    access,
-    filter: { layer_id, 'report_wi.report_id': report_id },
-  })
-  const mlViewColumns = (viewMeta[0] || {}).columns
-
-  const whereFilters = ['r.type = 1', 'r.report_id = ?', 'layer.layer_id = ?']
-  const whereValues = [report_id, layer_id]
-  if (whitelabel !== -1) {
-    whereFilters.push('layer.whitelabel = ANY (?)')
-    whereValues.push(whitelabel)
-  }
-  // inject view
-  const mlView = knex.raw(`
-    SELECT coalesce(tz.tzid, 'UTC'::TEXT) AS time_zone,
-      poi.poi_id,
-      poi.name AS poi_name,
-      poi.chain_id,
-      poi.type,
-      poi.category,
-      poi.lat,
-      poi.lon,
-      poi.address_label,
-      poi.address_line1,
-      poi.address_line2,
-      poi.address_unit,
-      poi.address_city,
-      poi.address_region,
-      poi.address_postalcode,
-      poi.address_country,
-      upper(substring(poi.address_postalcode from '^[A-Z]\\d[A-Z]')) AS geo_ca_fsa,
-      substring(poi.address_postalcode from '^\\d{5}$')::int AS geo_us_postalcode,
-
-      layer.wi_factor,
-      layer.name,
-
-      wi.report_id,
-      wi.date_type,
-      wi.start_date,
-      wi.end_date,
-      wi.repeat_type,
-      wi.visits * layer.wi_factor as visits,
-      wi.unique_visitors * layer.wi_factor as unique_visitors,
-      wi.repeat_visits * layer.wi_factor as repeat_visits,
-      wi.repeat_visitors * layer.wi_factor as repeat_visitors,
-      CASE
-        WHEN wi.unique_visitors in (null, 0) THEN 0
-        ELSE wi.repeat_visitors / wi.unique_visitors::float
-      END as repeat_visitor_rate,
-      wi.visits_hod,
-      wi.visits_dow,
-      wi.unique_visitors_hod,
-      wi.unique_visitors_dow,
-      wi.unique_visitors_single_visit * layer.wi_factor as unique_visitors_single_visit,
-      wi.unique_visitors_multi_visit * layer.wi_factor as unique_visitors_multi_visit,
-      wi.unique_xdevice * layer.wi_factor as unique_xdevice,
-      wi.unique_hh * layer.wi_factor as unique_hh,
-      wi.repeat_visitors_hh * layer.wi_factor as repeat_visitors_hh,
-      wi.outlier
-    FROM poi
-    LEFT JOIN tz_world AS tz ON ST_Contains(
-      tz.geom,
-      ST_SetSRID(ST_MakePoint(poi.lon, poi.lat), 4326)
-    )
-    RIGHT JOIN poi_list_map ON poi.poi_id = poi_list_map.poi_id
-    RIGHT JOIN layer ON layer.poi_list_id = poi_list_map.poi_list_id
-    LEFT JOIN report AS r ON r.report_id = layer.report_id
-    INNER JOIN report_wi AS wi ON 
-      wi.report_id = r.report_id AND
-      wi.poi_id = poi.poi_id
-    WHERE ${whereFilters.join(' AND ')}
-  `, whereValues)
-
-  return { viewID, mlView, mlViewColumns }
-}
+Object.entries(aoiColumns).forEach(([key, column]) => { column.key = key })
 
 module.exports = {
-  listViews,
-  getView,
-  getQueryView,
+  columns,
+  aoiColumns,
 }

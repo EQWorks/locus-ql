@@ -2,7 +2,7 @@ const { knex, ATOM_READ_FDW_CONNECTION } = require('../../../../util/db')
 const { PG_CACHE_DAYS } = require('../constants')
 
 
-const getCampView = (_, advertiserID) => ({
+const getCampView = ({ advertiserID }) => ({
   view: knex.raw(`
     (
       SELECT * FROM dblink(:fdwConnection, '
@@ -70,7 +70,7 @@ const getBrowserView = () => ({
   fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
-const getBannerView = (_, advertiserID) => ({
+const getBannerView = ({ advertiserID }) => ({
   view: knex.raw(`
     (
       SELECT * FROM dblink(:fdwConnection, '
@@ -128,7 +128,7 @@ const getDomainView = () => ({
   fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
-const getSegmentView = agencyID => ({
+const getSegmentView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT * FROM dblink(:fdwConnection, '
@@ -186,7 +186,7 @@ const getNetworkView = () => ({
   fdwConnection: ATOM_READ_FDW_CONNECTION,
 })
 
-const getChViewabilityView = (_, advertiserID) => ({
+const getChViewabilityView = ({ advertiserID }) => ({
   view: knex.raw(`
     (
       SELECT * FROM dblink(:fdwConnection, '
@@ -284,7 +284,7 @@ const getChViewabilityView = (_, advertiserID) => ({
 })
 
 // features = [feature, viewColumn, viewPgType][]
-const makeChView = (features, advertiserID) => ({
+const makeChView = features => ({ advertiserID }) => ({
   view: knex.raw(`
     (
       SELECT * FROM dblink(:fdwConnection, '

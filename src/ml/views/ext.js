@@ -1,6 +1,6 @@
-/* eslint-disable no-use-before-define */
-const { knex, pool } = require('../../util/db')
-const { typeToCatMap } = require('../type')
+const { pool } = require('../../util/db')
+const { typeToCatMap, CAT_JSON } = require('../type')
+const { filterViewColumns } = require('./utils')
 const { useAPIErrorOptions } = require('../../util/api-error')
 const { pgWithCache } = require('../../util/cache')
 const { viewTypes, viewCategories } = require('./taxonomies')
@@ -26,6 +26,16 @@ const connTypeToViewCategory = Object.entries(viewCategoryToConnType).reduce((ac
   acc[v] = k
   return acc
 }, {})
+
+const parseViewID = (viewID) => {
+  const [, idStr] = viewID.match(/^ext_(\d+)$/) || []
+  // eslint-disable-next-line radix
+  const conn_id = parseInt(idStr, 10)
+  if (Number.isNaN(conn_id)) {
+    throw apiError(`Invalid view: ${viewID}`, 400)
+  }
+  return { conn_id }
+}
 
 const getConnections = ({ whitelabel, customers, conn_id, categories } = {}) => {
   const filters = []
@@ -140,8 +150,8 @@ const getViewObject = ({
       column.key = key
       column.category = typeToCatMap.get(column.type)
     })
-    view.columns = columns
     Object.assign(view, {
+      columns,
       whitelabel,
       customer,
       set_name,
@@ -154,59 +164,70 @@ const getViewObject = ({
   return view
 }
 
-const listViews = async ({ access, filter: { conn_id, categories } = {}, inclMeta = true }) => {
+const listViews = async ({ access, filter: { categories } = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
-  const connections = await getConnections({ whitelabel, customers, conn_id, categories })
+  const connections = await getConnections({ whitelabel, customers, categories })
   return connections.map(conn => getViewObject(conn, inclMeta))
 }
 
 const getView = async (access, viewID) => {
-  const [, idStr] = viewID.match(/^ext_(\d+)$/) || []
-  // eslint-disable-next-line radix
-  const conn_id = parseInt(idStr, 10)
-  if (!conn_id) {
-    throw apiError(`Invalid view ID: ${viewID}`, 403)
-  }
-  const [view] = await listViews({ access, filter: { conn_id }, inclMeta: true })
-  if (!view) {
+  const { whitelabel, customers } = access
+  const { conn_id } = parseViewID(viewID)
+  const [connection] = await getConnections({ whitelabel, customers, conn_id })
+  if (!connection) {
     throw apiError(`View not found: ${viewID}`, 404)
   }
-  return view
+  return getViewObject(connection, true)
 }
 
-const getQueryView = async (access, { conn_id }) => {
-  const viewID = `${viewTypes.EXT}_${conn_id}`
+const getQueryView = async (access, viewID, queryColumns, engine) => {
   const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
+  const { conn_id } = parseViewID(viewID)
 
   // check access to ext connection table and get table name
   const [connection] = await getConnections({ whitelabel, customers, conn_id })
   if (!connection) {
-    throw apiError(`View not found: ${viewID}`, 403)
+    throw apiError(`View not found: ${viewID}`, 404)
   }
 
-  const { columns, dest: { table, schema } } = connection
+  const { table, schema } = connection.dest
+  let { columns } = connection
 
+  columns = filterViewColumns(columns, queryColumns)
+  if (!Object.keys(columns).length) {
+    throw apiError(`No column selected from view: ${viewID}`, 400)
+  }
   // inject view columns
   Object.entries(columns).forEach(([key, column]) => {
     column.key = key
     column.category = typeToCatMap.get(column.type)
   })
-  const mlViewColumns = columns
+
+  // maybe this should be based in pg type instead
+  // const getColExp = (columns, column) => {
+  //   const { category } = columns[column]
+  //   // trino compatibility
+  //   // if (category === CAT_DATE) {
+  //   //   return `cast("${column}" AS timestamp) AS ${column}`
+  //   // }
+  //   return `"${column}"`
+  // }
+
+  const catalog = engine === 'trino' ? 'locus_place.' : ''
+  const columnExp = Object.values(columns)
+    .map(({ key, category }) =>
+      `"${key}"${category === CAT_JSON && engine === 'pg' ? '::jsonb' : ''}`)
+    .join(', ')
 
   // inject view
-  const mlView = knex.raw(`
-    SELECT *
-    FROM ${schema}."${table}"
-  `)
-  const mlViewDependencies = [['ext', conn_id]]
+  const query = `
+    SELECT
+      ${columnExp}
+    FROM ${catalog}${schema}."${table}"
+  `
+  const dependencies = [['ext', conn_id]]
 
-  return { viewID, mlView, mlViewColumns, mlViewDependencies }
+  return { viewID, query, columns, dependencies }
 }
 
 module.exports = {

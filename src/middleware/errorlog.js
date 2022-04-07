@@ -14,6 +14,13 @@ Sentry.init({
   release: API_VER,
   environment: STAGE,
   maxValueLength: 10000, // max size of value logged (default is 250)
+  beforeSend: (event) => {
+    // redact jwt from payload
+    if (event.request.headers['eq-api-jwt']) {
+      event.request.headers['eq-api-jwt'] = '*'
+    }
+    return event
+  },
 })
 
 const initRequestContext = Sentry.Handlers.requestHandler({

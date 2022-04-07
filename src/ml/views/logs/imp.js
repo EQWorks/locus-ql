@@ -1,5 +1,5 @@
 const { CAT_STRING, CAT_NUMERIC, CAT_DATE } = require('../../type')
-const { geoTypes } = require('../../geo')
+const { geometryTypes } = require('../../parser/src')
 const { CU_ADVERTISER, ACCESS_INTERNAL, ACCESS_PRIVATE } = require('./constants')
 const { pgViews } = require('./pg-views')
 const { viewCategories } = require('../taxonomies')
@@ -138,7 +138,7 @@ module.exports = {
     geo_ca_fsa: {
       category: CAT_STRING,
       dependsOn: ['_postal_code'],
-      geo_type: geoTypes.CA_FSA,
+      geo_type: geometryTypes.CA_FSA,
       viewExpression: "substring(log._postal_code from '^[A-Z]\\d[A-Z]$')",
     },
     geo_us_postalcode: {
@@ -193,7 +193,7 @@ module.exports = {
     household_fsa: {
       category: CAT_STRING,
       pgType: 'varchar(10)',
-      geo_type: geoTypes.CA_FSA,
+      geo_type: geometryTypes.CA_FSA,
       expression: 'hh_fsa',
     },
     os_id: {
@@ -248,7 +248,7 @@ module.exports = {
     },
     geo_ca_province: {
       category: CAT_STRING,
-      geo_type: geoTypes.CA_PROVINCE,
+      geo_type: geometryTypes.CA_PROVINCE,
       dependsOn: ['city'],
       viewExpression: "substring(log.city from '^CA\\$([A-Z]{2})')",
     },
@@ -260,15 +260,15 @@ module.exports = {
     },
     geo_ca_city: {
       category: CAT_STRING,
-      geo_type: geoTypes.CA_CITY,
+      geo_type: geometryTypes.CA_CITY,
       dependsOn: ['city'],
-      viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$(.*)$'))",
+      viewExpression: "upper(substring(log.city from '^CA\\$[A-Z]{2}\\$.+$'))",
     },
     geo_us_city: {
       category: CAT_STRING,
       // geo_type: 'us-city',
       dependsOn: ['city'],
-      viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$(.*)$'))",
+      viewExpression: "upper(substring(log.city from '^US\\$[A-Z]{2}\\$.+$'))",
     },
     banner_code: {
       category: CAT_NUMERIC,
@@ -394,7 +394,7 @@ module.exports = {
     locus_poi_id: {
       category: CAT_NUMERIC,
       pgType: 'int',
-      geo_type: geoTypes.POI,
+      geo_type: geometryTypes.POI,
       inFastViews: [pgViews.LOCUS_POI],
     },
     locus_poi_name: {
@@ -566,20 +566,20 @@ module.exports = {
     _geo_cohort_item: {
       category: CAT_STRING,
       access: ACCESS_PRIVATE,
-      pgType: 'varchar(10)', // to support US DDDDD-DDDD
+      pgType: 'varchar(100)',
       expression: 'geo_cohort_item',
       inFastViews: [pgViews.LOCUS_GEO_COHORT_ITEMS, pgViews.ATOM_CH_GEOCOHORT_ID_ITEM],
     },
     geo_cohort_fsa: {
       category: CAT_STRING,
       dependsOn: ['_geo_cohort_item'],
-      geo_type: geoTypes.CA_FSA,
+      geo_type: geometryTypes.CA_FSA,
       viewExpression: "substring(log._geo_cohort_item from '^[A-Z]\\d[A-Z]')",
     },
     geo_cohort_postalcode: {
       category: CAT_STRING,
       dependsOn: ['_geo_cohort_item'],
-      geo_type: geoTypes.CA_POSTALCODE,
+      geo_type: geometryTypes.CA_POSTALCODE,
       viewExpression: "substring(log._geo_cohort_item from '^[A-Z]\\d[A-Z]\\d[A-Z]\\d')",
     },
     iab_cat: {

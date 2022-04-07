@@ -16,11 +16,17 @@ module.exports = {
   QUERY_BUCKET: process.env.ML_QUERY_BUCKET,
   EXECUTION_BUCKET: process.env.ML_EXECUTION_BUCKET,
 
-  // size of execution result parts
-  RESULTS_PART_SIZE: 100000,
+  // size of execution result parts (rows of 1 column)
+  RESULTS_PART_SIZE: 500000,
   // first part is smaller to allow quick preview with minimal data transfer
-  RESULTS_PART_SIZE_FIRST: 1000,
+  RESULTS_PART_SIZE_FIRST: 50000,
 
   // query executor
   LAMBDA_EXECUTOR_ARN: process.env.ML_LAMBDA_EXECUTOR_ARN,
+
+  // max input sizes
+  MAX_LENGTH_QUERY_NAME: 42, // name + optional ' - <seq{5}>'
+  MAX_LENGTH_QUERY_DESCRIPTION: 255,
+  MAX_LENGTH_EXECUTION_TOKEN: 255,
+  MAX_LENGTH_STATUS_REASON: 255,
 }

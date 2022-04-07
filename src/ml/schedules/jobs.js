@@ -144,7 +144,7 @@ const getScheduleJobQueryIDs = async (jobID) => {
 
 // let errors bubble up so the job can be retried
 // timestamp is the airflow execution date
-const runScheduleJob = async (jobID) => {
+const runScheduleJob = async (jobID, engine = 'pg') => {
   try {
     const job = await getScheduleJob(jobID)
     if (!job) {
@@ -158,7 +158,8 @@ const runScheduleJob = async (jobID) => {
 
     const queryIDs = await getScheduleJobQueryIDs(jobID)
     // allSettled and then check for error
-    const results = await Promise.allSettled(queryIDs.map(id => queueQueryExecution(id, jobID)))
+    const results = await Promise.allSettled(queryIDs.map(id =>
+      queueQueryExecution(id, jobID, engine)))
     const { reason } = results.find(({ status }) => status === 'rejected') || {}
     if (reason) {
       throw reason
@@ -180,13 +181,16 @@ const runScheduleJob = async (jobID) => {
 }
 
 // lambda handler
-const scheduleJobHandler = ({ job_id }) => {
+const scheduleJobHandler = ({ job_id, engine = 'pg' }) => {
   // eslint-disable-next-line radix
   const id = parseInt(job_id, 10)
   if (Number.isNaN(id)) {
     throw apiError(`Invalid schedule job ID: ${job_id}`)
   }
-  return runScheduleJob(id)
+  if (engine !== 'pg' && engine !== 'trino') {
+    throw apiError(`Invalid engine: ${engine}`)
+  }
+  return runScheduleJob(id, engine)
 }
 
 module.exports = { scheduleJobHandler }

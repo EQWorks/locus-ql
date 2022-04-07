@@ -1,10 +1,10 @@
 const schedules = require('./schedules')
-const querySschedules = require('./queries')
+const querySchedules = require('./queries')
 const scheduleJobs = require('./jobs')
 
 
 module.exports = {
   schedules,
-  querySschedules,
+  querySchedules,
   scheduleJobs,
 }

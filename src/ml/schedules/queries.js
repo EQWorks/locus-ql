@@ -4,6 +4,7 @@ const { knex } = require('../../util/db')
 const { useAPIErrorOptions } = require('../../util/api-error')
 const { QL_SCHEMA } = require('../constants')
 const { getSetSchedule, getScheduleID } = require('./schedules')
+const { parseQueryToTree } = require('../parser')
 
 
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
@@ -113,7 +114,7 @@ const deleteQuerySchedule = async (scheduleID, queryID) => {
 
 const putQuerySchedule = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
+    const { queryID, query } = req.ql.query
     const { cron, startDate, endDate, isPaused } = req.body
     const { whitelabel, customers } = req.access
 
@@ -149,6 +150,12 @@ const putQuerySchedule = async (req, res, next) => {
       throw apiError(`Invalid isPaused flag: ${isPaused}`)
     }
 
+    // make sure it's not a query template
+    const tree = parseQueryToTree(query, { type: 'ql' })
+    if (tree.parameters.size > 0) {
+      throw apiError('Parameterized queries may not be scheduled')
+    }
+
     // get/set schedule for cron expression
     const scheduleID = await getSetSchedule(whitelabel[0], customers[0], safeCron)
     if (!scheduleID) {
@@ -169,7 +176,7 @@ const putQuerySchedule = async (req, res, next) => {
 
 const deleteQueryScheduleMW = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
+    const { queryID } = req.ql.query
     const { cron } = req.body
     const { whitelabel, customers } = req.access
 
@@ -199,7 +206,7 @@ const deleteQueryScheduleMW = async (req, res, next) => {
 
 const listQuerySchedules = async (req, res, next) => {
   try {
-    const { queryID } = req.mlQuery
+    const { queryID } = req.ql.query
 
     const schedules = await getQuerySchedules(queryID)
     res.json(schedules)

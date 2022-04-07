@@ -74,25 +74,21 @@ const pgViews = {
 
 const pgViewGetters = {
   // standard ch views
-  [pgViews.ATOM_CH_AD_POSITION]: (_, ad) => makeChView([['adposition', 'ad_position', 'int']], ad),
-  [pgViews.ATOM_CH_BROWSER_ID]: (_, ad) => makeChView([['browserid', 'browser_id', 'int']], ad),
-  [pgViews.ATOM_CH_OS_ID]: (_, ad) => makeChView([['osid', 'os_id', 'int']], ad),
-  [pgViews.ATOM_CH_LANGUAGE]: (_, ad) => makeChView([['language', 'language_code', 'text']], ad),
-  [pgViews.ATOM_CH_CITY]: (_, ad) => makeChView([['city', 'city', 'text']], ad),
-  [pgViews.ATOM_CH_BANNER_CODE]: (_, ad) => makeChView([['bannercode', 'banner_code', 'int']], ad),
-  [pgViews.ATOM_CH_DOMAIN_ID]: (_, ad) => makeChView([['domainid', 'domain_id', 'int']], ad),
-  [pgViews.ATOM_CH_IAB_CAT]: (_, ad) => makeChView([['iabcat', 'iab_cat', 'text']], ad),
-  [pgViews.ATOM_CH_NETWORK_ID]: (_, ad) => makeChView([['ntwrkid', 'network_id', 'int']], ad),
-  [pgViews.ATOM_CH_SESS_DEPTH]: (_, ad) => makeChView([
-    ['session_depth', 'session_depth', 'int'],
-  ], ad),
-  [pgViews.ATOM_CH_USER_SEG]: (_, ad) => makeChView([
-    ['user_segment', 'user_segment_id', 'int'],
-  ], ad),
-  [pgViews.ATOM_CH_GEOCOHORT_ID_ITEM]: (_, ad) => makeChView([
+  [pgViews.ATOM_CH_AD_POSITION]: makeChView([['adposition', 'ad_position', 'int']]),
+  [pgViews.ATOM_CH_BROWSER_ID]: makeChView([['browserid', 'browser_id', 'int']]),
+  [pgViews.ATOM_CH_OS_ID]: makeChView([['osid', 'os_id', 'int']]),
+  [pgViews.ATOM_CH_LANGUAGE]: makeChView([['language', 'language_code', 'text']]),
+  [pgViews.ATOM_CH_CITY]: makeChView([['city', 'city', 'text']]),
+  [pgViews.ATOM_CH_BANNER_CODE]: makeChView([['bannercode', 'banner_code', 'int']]),
+  [pgViews.ATOM_CH_DOMAIN_ID]: makeChView([['domainid', 'domain_id', 'int']]),
+  [pgViews.ATOM_CH_IAB_CAT]: makeChView([['iabcat', 'iab_cat', 'text']]),
+  [pgViews.ATOM_CH_NETWORK_ID]: makeChView([['ntwrkid', 'network_id', 'int']]),
+  [pgViews.ATOM_CH_SESS_DEPTH]: makeChView([['session_depth', 'session_depth', 'int']]),
+  [pgViews.ATOM_CH_USER_SEG]: makeChView([['user_segment', 'user_segment_id', 'int']]),
+  [pgViews.ATOM_CH_GEOCOHORT_ID_ITEM]: makeChView([
     ['geocohortlistid', 'geo_cohort_id', 'int'],
     ['geocohortitem', '_geo_cohort_item', 'text'],
-  ], ad),
+  ]),
   // insert here non-standard views (viewability + vast)
   [pgViews.ATOM_CH_VIEWABILITY]: getChViewabilityView,
 
@@ -120,7 +116,8 @@ const pgViewGetters = {
   [pgViews.IAB_CATS]: getIABCatView,
 }
 
-const getPgView = (view, agencyID, advertiserID) => pgViewGetters[view](agencyID, advertiserID)
+const getPgView = (view, agencyID, advertiserID, engine = 'pg') =>
+  pgViewGetters[view]({ agencyID, advertiserID, engine })
 
 module.exports = {
   pgViews,

@@ -2,7 +2,7 @@ const { knex } = require('../../../../util/db')
 const { PG_CACHE_DAYS } = require('../constants')
 
 
-const getCampView = agencyID => ({
+const getCampView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
@@ -14,7 +14,7 @@ const getCampView = agencyID => ({
   `, { agencyID }),
 })
 
-const getBeaconView = agencyID => ({
+const getBeaconView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
@@ -29,7 +29,7 @@ const getBeaconView = agencyID => ({
   `, { agencyID }),
 })
 
-const getBeaconHistoryView = agencyID => ({
+const getBeaconHistoryView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
@@ -50,7 +50,7 @@ const getBeaconHistoryView = agencyID => ({
   `, { agencyID }),
 })
 
-const getSegmentView = agencyID => ({
+const getSegmentView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
@@ -64,7 +64,7 @@ const getSegmentView = agencyID => ({
   `, { agencyID }),
 })
 
-const getPOIView = agencyID => ({
+const getPOIView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
@@ -89,7 +89,7 @@ const getPOIView = agencyID => ({
   `, { agencyID }),
 })
 
-const getPOIListView = agencyID => ({
+const getPOIListView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
@@ -104,7 +104,7 @@ const getPOIListView = agencyID => ({
 })
 
 
-const getGeoCohortView = agencyID => ({
+const getGeoCohortView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
@@ -118,7 +118,7 @@ const getGeoCohortView = agencyID => ({
   `, { agencyID }),
 })
 
-const getGeoCohortItemView = agencyID => ({
+const getGeoCohortItemView = ({ agencyID }) => ({
   view: knex.raw(`
     (
       SELECT
