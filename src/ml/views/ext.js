@@ -150,8 +150,8 @@ const getViewObject = ({
       column.key = key
       column.category = typeToCatMap.get(column.type)
     })
-    view.columns = columns
     Object.assign(view, {
+      columns,
       whitelabel,
       customer,
       set_name,
@@ -164,30 +164,24 @@ const getViewObject = ({
   return view
 }
 
-const listViews = async ({ access, filter: { conn_id, categories } = {}, inclMeta = true }) => {
+const listViews = async ({ access, filter: { categories } = {}, inclMeta = true }) => {
   const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
-  const connections = await getConnections({ whitelabel, customers, conn_id, categories })
+  const connections = await getConnections({ whitelabel, customers, categories })
   return connections.map(conn => getViewObject(conn, inclMeta))
 }
 
 const getView = async (access, viewID) => {
+  const { whitelabel, customers } = access
   const { conn_id } = parseViewID(viewID)
-  const [view] = await listViews({ access, filter: { conn_id }, inclMeta: true })
-  if (!view) {
+  const [connection] = await getConnections({ whitelabel, customers, conn_id })
+  if (!connection) {
     throw apiError(`View not found: ${viewID}`, 404)
   }
-  return view
+  return getViewObject(connection, true)
 }
 
 const getQueryView = async (access, viewID, queryColumns, engine) => {
   const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
-
   const { conn_id } = parseViewID(viewID)
 
   // check access to ext connection table and get table name

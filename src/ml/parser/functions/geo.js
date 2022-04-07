@@ -718,10 +718,10 @@ const geoParser = engine => (node, options) => {
 const geoIntersectsParser = engine => (node, options) => {
   const [geoStringA, geoStringB] = node.args.map(e => e.to(engine, options))
   const [geoA, geoB] = [geoStringA, geoStringB].map(geo => parseGeoString(geo))
-  const geometry = geoA && geoB
+  const hasIntersection = geoA && geoB
     ? geosHaveIntersection(geoA, geoB, { engine, ...options })
     : geosHaveIntersectionFromString(geoStringA, geoStringB, { engine, ...options })
-  return `(SELECT ${geometry} AS geo_intersects)`
+  return `(SELECT ${hasIntersection} AS geo_intersects)`
 }
 
 const geoIntersectionAreaParser = engine => (node, options) => {

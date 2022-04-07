@@ -90,9 +90,9 @@ const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, ha
   }
   const groupByCols = [
     'layer.name',
-    'layer.layer_id',
     'layer.customer',
     'layer.whitelabel',
+    'layer.layer_id',
     { layer_type_name: 'layer_type.name' },
     'layer.report_id',
     'report.type',
@@ -179,73 +179,76 @@ const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, ha
   return knexWithCache(reportQuery)
 }
 
+const getViewObject = ({
+  name,
+  customer,
+  whitelabel,
+  layer_id,
+  layer_type_name,
+  report_id,
+  type: report_type,
+  dates,
+  vendors,
+  camps,
+  report_name,
+  report_created,
+  report_updated,
+  report_description,
+  tld,
+  poi_list_id,
+  has_aoi: hasAOI,
+}, { inclMeta = true, isAOI = false }) => {
+  const type = (isAOI ? AOIViewTypes : reportViewTypes)[report_type]
+  const view = {
+    name: `${name} (${layer_type_name}${isAOI ? ' AOI' : ''})`,
+    view: {
+      id: `${type}_${layer_id}_${report_id}`,
+      type,
+      category: reportViewCategories[report_type],
+      report_id,
+      layer_id,
+    },
+  }
+  if (inclMeta) {
+    const columns = Object
+      .entries(isAOI
+        ? { ...reportModules[report_type].columns, ...reportModules[report_type].aoiColumns }
+        : reportModules[report_type].columns)
+      .reduce((acc, [key, { category, geo_type }]) => {
+        acc[key] = { key, category, geo_type }
+        return acc
+      }, {})
+    Object.assign(view, {
+      columns,
+      report_type,
+      report_name,
+      whitelabel,
+      customer,
+      report_created,
+      report_updated,
+      report_description,
+      tld,
+      poi_list_id,
+      dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
+      hasAOI,
+    })
+    if (report_type === reportTypes.VWI) {
+      Object.assign(view, {
+        vendors,
+        camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
+      })
+    }
+  }
+  return view
+}
+
 const listViews = async ({ access, filter: { type, ...filter }, inclMeta = true }) => {
   const { whitelabel, customers } = access
-  if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
-    throw apiError('Invalid access permissions', 403)
-  }
   const isAOI = type in AOIViewTypeValues
   const reportType = (isAOI ? AOIViewTypeValues : reportViewTypeValues)[type]
   const reports = await getReports(whitelabel, customers, { reportType, hasAOI: isAOI, ...filter })
-  return reports.reduce((acc, {
-    name,
-    layer_id,
-    report_id,
-    dates,
-    vendors,
-    camps,
-    layer_type_name,
-    report_name,
-    whitelabel: wl,
-    customer,
-    report_created,
-    report_updated,
-    report_description,
-    tld,
-    poi_list_id,
-    has_aoi: hasAOI,
-  }) => {
-    const view = {
-      name: `${name} (${layer_type_name}${isAOI ? ' AOI' : ''})`,
-      view: {
-        id: `${type}_${layer_id}_${report_id}`,
-        type,
-        category: reportViewCategories[reportType],
-        report_id,
-        layer_id,
-      },
-    }
-    if (inclMeta) {
-      const columns = Object
-        .entries(isAOI
-          ? { ...reportModules[reportType].columns, ...reportModules[reportType].aoiColumns }
-          : reportModules[reportType].columns)
-        .reduce((acc, [key, { category, geo_type }]) => {
-          acc[key] = { key, category, geo_type }
-          return acc
-        }, {})
-      Object.assign(view, {
-        columns,
-        report_type: reportType,
-        report_name,
-        whitelabel: wl,
-        customer,
-        report_created,
-        report_updated,
-        report_description,
-        tld,
-        poi_list_id,
-        dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
-        hasAOI,
-      })
-      if (reportType === reportTypes.VWI) {
-        Object.assign(view, {
-          vendors,
-          camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
-        })
-      }
-    }
-    acc.push(view)
+  return reports.reduce((acc, report) => {
+    acc.push(getViewObject(report, { inclMeta, isAOI }))
     return acc
   }, [])
 }
@@ -264,61 +267,7 @@ const getView = async (access, viewID) => {
   if (!report) {
     throw apiError('Report not found', 404)
   }
-  const {
-    name,
-    dates,
-    vendors,
-    camps,
-    layer_type_name,
-    report_name,
-    whitelabel: wl,
-    customer,
-    report_created,
-    report_updated,
-    report_description,
-    tld,
-    poi_list_id,
-    has_aoi: hasAOI,
-  } = report
-  const columns = Object
-    .entries(isAOI
-      ? { ...reportModules[reportType].columns, ...reportModules[reportType].aoiColumns }
-      : reportModules[reportType].columns)
-    .reduce((acc, [key, { category, geo_type }]) => {
-      acc[key] = { key, category, geo_type }
-      return acc
-    }, {})
-
-  const view = {
-    name: `${name} (${layer_type_name}${isAOI ? ' AOI' : ''})`,
-    view: {
-      id: `${(isAOI ? AOIViewTypes : reportViewTypes)[reportType]}_${layerID}_${reportID}`,
-      type: (isAOI ? AOIViewTypes : reportViewTypes)[reportType],
-      category: reportViewCategories[reportType],
-      report_id: reportID,
-      layer_id: layerID,
-    },
-    columns,
-    report_type: reportType,
-    report_name,
-    whitelabel: wl,
-    customer,
-    report_created,
-    report_updated,
-    report_description,
-    tld,
-    poi_list_id,
-    dates: dates.map(([start, end, dateType]) => ({ start, end, dateType: parseInt(dateType) })),
-    hasAOI,
-  }
-
-  if (reportType === reportTypes.VWI) {
-    Object.assign(view, {
-      vendors,
-      camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
-    })
-  }
-  return view
+  return getViewObject(report, { inclMeta: true, isAOI })
 }
 
 const getQueryView = async (access, viewID, queryColumns, engine) => {

@@ -56,41 +56,36 @@ const getTableColumns = async (schema, table) => {
   }, {})
 }
 
-const listViews = async ({ filter, inclMeta = true }) => {
-  let geoTableList = []
-  if (filter && filter.tableKey) {
-    geoTableList = [
-      [filter.tableKey, GEO_TABLES[filter.tableKey]],
-    ]
-  } else {
-    geoTableList = Object.entries(GEO_TABLES)
+const getViewObject = async (tableKey, inclMeta = true) => {
+  const { schema, table, idType, geoType } = GEO_TABLES[tableKey]
+  const view = {
+    name: tableKey,
+    view: {
+      id: `${viewTypes.GEO}_${tableKey}`,
+      type: viewTypes.GEO,
+      category: viewCategories.GEO,
+      tableKey,
+    },
   }
-
-  return Promise.all(geoTableList.map(async ([tableKey, { schema, table, idType, geoType }]) => {
-    const view = {
-      name: tableKey,
-      view: {
-        id: `${viewTypes.GEO}_${tableKey}`,
-        type: viewTypes.GEO,
-        category: viewCategories.GEO,
-        tableKey,
-      },
-    }
-    if (inclMeta) {
-      if (idType) {
-        view.columns = {
-          [`geo_${tableKey}`]: {
-            category: idType,
-            geo_type: geoType,
-            key: `geo_${tableKey}`,
-          },
-        }
-        return view
+  if (inclMeta) {
+    if (idType) {
+      view.columns = {
+        [`geo_${tableKey}`]: {
+          category: idType,
+          geo_type: geoType,
+          key: `geo_${tableKey}`,
+        },
       }
-      view.columns = await getTableColumns(schema, table)
+      return view
     }
-    return view
-  }))
+    view.columns = await getTableColumns(schema, table)
+  }
+  return view
+}
+
+const listViews = async ({ filter: { tableKey } = {}, inclMeta = true }) => {
+  const tableKeys = tableKey ? [tableKey] : Object.keys(GEO_TABLES)
+  return Promise.all(tableKeys.map(k => getViewObject(k, inclMeta)))
 }
 
 const getQueryView = async ({ whitelabel, customers }, viewID, queryColumns, engine) => {
@@ -141,31 +136,7 @@ const getQueryView = async ({ whitelabel, customers }, viewID, queryColumns, eng
 
 const getView = async (_, viewID) => {
   const { tableKey } = parseViewID(viewID)
-
-  const view = {
-    name: tableKey,
-    view: {
-      id: `${viewTypes.GEO}_${tableKey}`,
-      type: viewTypes.GEO,
-      category: viewCategories.GEO,
-      tableKey,
-    },
-  }
-
-  const { schema, table, idType, geoType } = GEO_TABLES[tableKey]
-
-  if (idType) {
-    view.columns = {
-      [`geo_${tableKey}`]: {
-        category: idType,
-        geo_type: geoType,
-        key: `geo_${tableKey}`,
-      },
-    }
-    return view
-  }
-  view.columns = await getTableColumns(schema, table)
-  return view
+  return getViewObject(tableKey, true)
 }
 
 module.exports = {
