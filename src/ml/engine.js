@@ -80,7 +80,7 @@ const executeQuery = async (
 const readRowsFromCursor = (cursor, rowCount) => new Promise((resolve, reject) =>
   cursor.read(rowCount, (err, rows) => (err ? reject(err) : resolve(rows))))
 
-const getGzipCompressionRatio = async (json) => {
+const getGzipCompressionRatio = (json) => {
   const raw = Buffer.from(json, 'utf8')
   return new Promise((resolve, reject) => gzip(raw, (err, compressed) => {
     if (err) {
@@ -106,7 +106,6 @@ const makeResultsPartIter = (cursor, { partSizeBytes = 10000, cursorSizeRows = 5
       buffer = await readRowsFromCursor(cursor, cursorSizeRows)
       const bufferJSON = JSON.stringify(buffer)
       const compressionRatio = await getGzipCompressionRatio(bufferJSON)
-      console.log('compression ratio', compressionRatio)
       rawPartSizeBytes = compressionRatio * partSizeBytes
       knownBufferSize = bufferJSON.length
       knownBufferNextIndex = buffer.length

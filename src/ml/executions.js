@@ -696,7 +696,7 @@ const runExecution = async (executionID, engine = 'pg') => {
           { gzip: true, json: true, bucket: EXECUTION_BUCKET },
         )
       },
-      { engine, executionID },
+      { engine, executionID, maxAge: 900 }, // 15 mins cache ttl
     )
     const resultsParts = Object.entries(partLengths)
       .sort(([a], [b]) => a - b)

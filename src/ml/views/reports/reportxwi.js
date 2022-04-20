@@ -17,11 +17,15 @@ const queryJoins = {
       )
     `,
     trino: `
-      LEFT JOIN public.tz_world AS tz ON ST_Contains(
+      LEFT JOIN locus_place.public.tz_world AS tz ON ST_Contains(
         tz.geom,
         ST_Point(poi.lon, poi.lat)
       )
     `,
+  },
+  targetPOI: {
+    pg: 'INNER JOIN public.poi AS tpoi ON tpoi.poi_id = wi.target_poi_id',
+    trino: 'INNER JOIN locus_place.public.poi AS tpoi ON tpoi.poi_id = wi.target_poi_id',
   },
 }
 
@@ -140,6 +144,76 @@ const columns = {
     category: CAT_NUMERIC,
     geo_type: geometryTypes.POI,
     expression: 'wi.target_poi_id',
+  },
+  target_poi_name: {
+    category: CAT_STRING,
+    expression: 'tpoi.name',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_chain_id: {
+    category: CAT_NUMERIC,
+    expression: 'tpoi.chain_id',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_type: {
+    category: CAT_NUMERIC,
+    expression: 'tpoi.type',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_category: {
+    category: CAT_NUMERIC,
+    expression: 'tpoi.category',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_lat: {
+    category: CAT_NUMERIC,
+    expression: 'tpoi.lat',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_lon: {
+    category: CAT_NUMERIC,
+    expression: 'tpoi.lon',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_label: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_label',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_line1: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_line1',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_line2: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_line2',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_unit: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_unit',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_city: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_city',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_region: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_region',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_postalcode: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_postalcode',
+    join: queryJoins.targetPOI,
+  },
+  target_poi_address_country: {
+    category: CAT_STRING,
+    expression: 'tpoi.address_country',
+    join: queryJoins.targetPOI,
   },
   xvisit_visits: {
     category: CAT_NUMERIC,
