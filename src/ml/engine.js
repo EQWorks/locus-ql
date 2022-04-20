@@ -1,9 +1,11 @@
 /* eslint-disable no-await-in-loop */
+const { gzip } = require('zlib')
+
 const Cursor = require('pg-cursor')
 
 const { mlPool, fdwConnectByName, newPGClientFromPoolConfig } = require('../util/db')
 const { parseQueryTreeToEngine } = require('./parser')
-const { QUERY_BUCKET, RESULTS_PART_SIZE, RESULTS_PART_SIZE_FIRST } = require('./constants')
+const { QUERY_BUCKET, RESULTS_PART_SIZE_MB } = require('./constants')
 const { useAPIErrorOptions } = require('../util/api-error')
 const {
   queryWithCache,
@@ -61,7 +63,7 @@ const executeQuery = async (
   // client's application name must be specific to this execution so the pg pid can be
   // readily identified
   const pgClient = newPGClientFromPoolConfig(mlPool, {
-    application_name: `ql-executor-${process.env.STAGE}-${executionID ? `-${executionID}` : ''}`,
+    application_name: `ql-executor-${process.env.STAGE}${executionID ? `-${executionID}` : ''}`,
   // eslint-disable-next-line object-curly-newline
   })
   await pgClient.connect()
@@ -75,14 +77,93 @@ const executeQuery = async (
   }
 }
 
-const readRowsFromCursor = (cursor, rowCount) => new Promise((resolve, reject) => {
-  cursor.read(rowCount, (err, rows) => {
+const readRowsFromCursor = (cursor, rowCount) => new Promise((resolve, reject) =>
+  cursor.read(rowCount, (err, rows) => (err ? reject(err) : resolve(rows))))
+
+const getGzipCompressionRatio = async (json) => {
+  const raw = Buffer.from(json, 'utf8')
+  return new Promise((resolve, reject) => gzip(raw, (err, compressed) => {
     if (err) {
       return reject(err)
     }
-    resolve(rows)
-  })
-})
+    resolve(raw.length / compressed.length)
+  }))
+}
+
+const makeResultsPartIter = (cursor, { partSizeBytes = 10000, cursorSizeRows = 50000 } = {}) => {
+  let rawPartSizeBytes = 0 // based on compression ratio of first `cursorSizeRows` rows
+  let buffer = []
+  // know buffer is the part of the overall buffer for which we know the byte size
+  let knownBufferSize = 0 // 1 char = 1 byte - assumes all ASCII chars
+  let knownBufferNextIndex = 0
+  let done = false
+  return async () => {
+    if (done) {
+      return { done }
+    }
+    // init
+    if (rawPartSizeBytes === 0) {
+      buffer = await readRowsFromCursor(cursor, cursorSizeRows)
+      const bufferJSON = JSON.stringify(buffer)
+      const compressionRatio = await getGzipCompressionRatio(bufferJSON)
+      console.log('compression ratio', compressionRatio)
+      rawPartSizeBytes = compressionRatio * partSizeBytes
+      knownBufferSize = bufferJSON.length
+      knownBufferNextIndex = buffer.length
+    }
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let currentSize = 0
+      // skip known buffer if too small to make part
+      if (knownBufferSize > rawPartSizeBytes) {
+        for (let i = 0; i < knownBufferNextIndex; i++) {
+          currentSize += JSON.stringify(buffer[i]).length + 1
+          if (currentSize >= rawPartSizeBytes) {
+            const rows = buffer.slice(0, i + 1)
+            buffer = buffer.slice(i + 1)
+            knownBufferSize -= currentSize
+            knownBufferNextIndex -= i + 1
+            return { rows, done }
+          }
+        }
+      } else {
+        currentSize = knownBufferSize
+      }
+      // explore unknown part of the buffer
+      for (let i = knownBufferNextIndex; i < buffer.length; i++) {
+        currentSize += JSON.stringify(buffer[i]).length + 1
+        if (currentSize >= rawPartSizeBytes) {
+          const rows = buffer.slice(0, i + 1)
+          buffer = buffer.slice(i + 1)
+          knownBufferSize = 0
+          knownBufferNextIndex = 0
+          return { rows, done }
+        }
+      }
+      // buffer is too small, read more rows from the pg cursor
+      const cursorRows = await readRowsFromCursor(cursor, cursorSizeRows)
+      for (let i = 0; i < cursorRows.length; i++) {
+        currentSize += JSON.stringify(cursorRows[i]).length + 1
+        if (currentSize >= rawPartSizeBytes) {
+          const rows = buffer.concat(cursorRows.slice(0, i + 1))
+          buffer = cursorRows.slice(i + 1)
+          knownBufferSize = 0
+          knownBufferNextIndex = 0
+          return { rows, done }
+        }
+      }
+      // no more rows
+      if (!cursorRows.length) {
+        done = true
+        return { rows: buffer, done: false }
+      }
+      // buffer + cursor rows too small -> becomes known buffer
+      buffer = buffer.concat(cursorRows)
+      knownBufferSize = currentSize
+      knownBufferNextIndex = buffer.length
+    }
+  }
+}
 
 // runs query with cache
 // calls cb with each results part
@@ -106,17 +187,21 @@ const executeQueryInStreamMode = async (
   // instantiate PG connection to use for fdw + query (must be same)
   // client's application name must be specific to this execution so the pg pid can be
   // readily identified
-  const pgClientName = `ql-executor-${process.env.STAGE}-${executionID ? `-${executionID}` : ''}`
+  const pgClientName = `ql-executor-${process.env.STAGE}${executionID ? `-${executionID}` : ''}`
   const pgClient = newPGClientFromPoolConfig(mlPool, { application_name: pgClientName })
   let cursor
+  let getNextPart
   try {
     for (let i = 0; ; i += 1) {
       let rows
       if (isCached) {
         rows = await getFromS3Cache([query, i], { maxAge, bucket: QUERY_BUCKET })
-        // first part is undefined
-        if (!i && !rows) {
-          // nothing in cache
+        if (!rows) {
+          if (i) {
+            // no more rows
+            break
+          }
+          // first part is undefined -> nothing in cache
           isCached = false
         }
       }
@@ -128,18 +213,24 @@ const executeQueryInStreamMode = async (
           await establishFdwConnections(pgClient, fdwConnections)
           // init cursor
           cursor = pgClient.query(new Cursor(query))
+          getNextPart = makeResultsPartIter(cursor, {
+            partSizeBytes: RESULTS_PART_SIZE_MB * (2 ** 20),
+            // to minimize memory footprint (buffer size), # rows fetched by cursor is
+            // inversely proportional to # columns
+            cursorSizeRows: Math.max(Math.ceil(50000 / (0.5 + (0.5 * columns.length))), 5000),
+          })
         }
-        const partSize = Math.floor((i ? RESULTS_PART_SIZE : RESULTS_PART_SIZE_FIRST)
-          / columns.length)
-        rows = await readRowsFromCursor(cursor, partSize)
-        // push to cache (has rows or first part)
-        if (rows.length || !i) {
-          promises.push(putToS3Cache([query, i], rows, { bucket: QUERY_BUCKET }))
+        // fetch next part
+        const part = await getNextPart()
+        if (part.done) {
+          break
         }
-      }
-      if (!rows || !rows.length) {
-        // no more rows (or no rows at all)
-        break
+        rows = part.rows
+        // push to cache
+        promises.push(putToS3Cache([query, i], rows, { bucket: QUERY_BUCKET }))
+        if (!rows.length) {
+          break
+        }
       }
       // send rows to cb
       const res = callback(rows, i)
