@@ -18,7 +18,7 @@ const queryJoins = {
       )
     `,
     trino: `
-      LEFT JOIN public.tz_world AS tz ON ST_Contains(
+      LEFT JOIN locus_place.public.tz_world AS tz ON ST_Contains(
         tz.geom,
         ST_Point(poi.lon, poi.lat)
       )

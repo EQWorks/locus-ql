@@ -18,15 +18,20 @@ const queryJoins = {
       )
     `,
     trino: `
-      LEFT JOIN public.tz_world AS tz ON ST_Contains(
+      LEFT JOIN locus_place.public.tz_world AS tz ON ST_Contains(
         tz.geom,
         ST_Point(poi.lon, poi.lat)
       )
     `,
   },
   beacons: {
-    expression: `
+    pg: `
       LEFT JOIN public.beacons AS b ON
+        b.camps = wi.campaign
+        AND b.vendors = wi.vendor
+    `,
+    trino: `
+      LEFT JOIN locus_place.public.beacons AS b ON
         b.camps = wi.campaign
         AND b.vendors = wi.vendor
     `,
