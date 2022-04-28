@@ -6,22 +6,30 @@ const functions = {
   coalesce: { minArgsLength: 1 },
 
   // aggregation functions
+  count: {
+    defaultCast: castTypes.INTEGER,
+    argsLength: 1,
+    isAggregate: true,
+  },
   sum: {
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
+    isAggregate: true,
   },
-  count: { argsLength: 1 },
   avg: {
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
+    isAggregate: true,
   },
   min: {
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
+    isAggregate: true,
   },
   max: {
     defaultCast: castTypes.FLOAT,
     argsLength: 1,
+    isAggregate: true,
   },
   // min_date: {
   //   value: 'min',

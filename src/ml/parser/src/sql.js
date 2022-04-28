@@ -3,7 +3,6 @@
 const sqlParser = require('pgsql-parser')
 
 const {
-  // isArray,
   isString,
   isNonArrayObject,
   isObjectExpression,
@@ -286,13 +285,13 @@ astParsers.CaseExpr = ({ args, defresult }, context) => {
 astParsers.CaseWhen = ({ expr, result }, context) =>
   [parseASTNode(expr, context), parseASTNode(result, context)]
 
-astParsers.FuncCall = ({ funcname, args, over, location }, context) => {
+astParsers.FuncCall = ({ funcname, args, over, agg_distinct, location }, context) => {
   if (over) {
     throw sqlParserError({ message: 'Window function not supported', location })
   }
   const name = parseASTNode(funcname[0], context).toLowerCase()
   const parsedArgs = args ? args.map(e => parseASTNode(e, context)) : []
-  return { type: expTypes.FUNCTION, values: [name, ...parsedArgs] }
+  return { type: expTypes.FUNCTION, values: [name, ...parsedArgs], distinct: agg_distinct }
 }
 
 astParsers.CoalesceExpr = ({ args }, context) => ({
