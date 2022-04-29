@@ -1,4 +1,4 @@
-const { isArray, sanitizeString, parserError } = require('../utils')
+const { isArray, isNonNull, sanitizeString, parserError } = require('../utils')
 const { expressionTypes } = require('../types')
 const functions = require('../functions')
 const { parseExpression } = require('./expression')
@@ -8,10 +8,13 @@ const BaseNode = require('./base')
 class FunctionNode extends BaseNode {
   constructor(exp, context) {
     super(exp, context)
-    if (!isArray(exp.values, { minLength: 1 })) {
+    if (
+      !isArray(exp.values, { minLength: 1 })
+      || (isNonNull(exp.distinct) && typeof exp.distinct !== 'boolean')
+    ) {
       throw parserError(`Invalid function syntax: ${JSON.stringify(exp)}`)
     }
-    const [name, ...args] = exp.values
+    const { distinct, values: [name, ...args] } = exp
     this.name = sanitizeString(name)
     const fn = functions[this.name]
     if (!fn) {
@@ -24,7 +27,11 @@ class FunctionNode extends BaseNode {
       }
       return arg
     })
-    const { argsLength, minArgsLength, maxArgsLength, defaultCast, validate } = fn
+    const { argsLength, minArgsLength, maxArgsLength, defaultCast, validate, isAggregate } = fn
+    if (distinct && !isAggregate) {
+      throw parserError(`Invalid use of distinct in function: ${this.name}`)
+    }
+    this.distinct = distinct || undefined
     if (
       argsLength !== undefined
         ? this.args.length !== argsLength
@@ -42,7 +49,9 @@ class FunctionNode extends BaseNode {
   }
 
   _toSQL(options) {
-    return `${this.name}(${this.args.map(e => e.toSQL(options)).join(', ')})`
+    return `${this.name}(\
+      ${this.distinct ? 'DISTINCT ' : ''}\
+      ${this.args.map(e => e.toSQL(options)).join(', ')})`
   }
 
   _applyCastToSQL(sql) {
@@ -54,6 +63,7 @@ class FunctionNode extends BaseNode {
     return {
       type: expressionTypes.FUNCTION,
       values: [this.name, ...this.args.map(e => e.toQL(options))],
+      distinct: this.distinct,
     }
   }
 
@@ -63,6 +73,7 @@ class FunctionNode extends BaseNode {
       args: {
         name: this.name,
         args: this.args.map(e => e.toShort(options)),
+        distinct: this.distinct,
         as: this.as,
         cast: this.cast,
       },

@@ -27,12 +27,12 @@ shortExpressions.column = {
 }
 
 shortExpressions.function = {
-  template: ['name', 'args', 'as', 'cast'],
-  parser: ({ name, args = [], as, cast }) => {
+  template: ['name', 'args', 'as', 'cast', 'distinct'],
+  parser: ({ name, args = [], as, cast, distinct }) => {
     if (!isArray(args)) {
       throw parserError('Invalid arguments supplied to @function')
     }
-    return { type: expressionTypes.FUNCTION, values: [name, ...args], as, cast }
+    return { type: expressionTypes.FUNCTION, values: [name, ...args], distinct, as, cast }
   },
 }
 

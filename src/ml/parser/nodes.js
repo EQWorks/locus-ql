@@ -70,7 +70,9 @@ const functionParser = engine => withOptions((node, options) => {
     name = functions[name][engine]
   }
   if (!sql) {
-    sql = `${name}(${node.args.map(e => e.to(engine, options)).join(', ')})`
+    sql = `${name}(\
+      ${node.distinct ? 'DISTINCT ' : ''}\
+      ${node.args.map(e => e.to(engine, options)).join(', ')})`
     // return as subquery to hide underlying implementation (column name)
     if (name !== node.name && !node.as) {
       sql = `(SELECT ${sql} AS ${node.name})`
