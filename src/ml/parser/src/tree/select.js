@@ -2,6 +2,7 @@ const {
   isNull,
   isNonNull,
   isArray,
+  isEmptyOrNullArray,
   isInt,
   isObjectExpression,
   sanitizeString,
@@ -18,10 +19,6 @@ const {
 } = require('./expression')
 const BaseNode = require('./base')
 
-
-// [] or [null]
-const isEmptyOrNullArray = val =>
-  isArray(val, { maxLength: 1 }) && [undefined, null].includes(val[0])
 
 class SelectNode extends BaseNode {
   constructor(exp, context) {

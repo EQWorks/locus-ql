@@ -285,13 +285,36 @@ astParsers.CaseExpr = ({ args, defresult }, context) => {
 astParsers.CaseWhen = ({ expr, result }, context) =>
   [parseASTNode(expr, context), parseASTNode(result, context)]
 
-astParsers.FuncCall = ({ funcname, args, over, agg_distinct, location }, context) => {
+astParsers.FuncCall = (
+  {
+    funcname, args, agg_distinct: distinct,
+    agg_filter, agg_order, agg_within_group, over, location,
+  },
+  context,
+) => {
+  // window
   if (over) {
     throw sqlParserError({ message: 'Window function not supported', location })
   }
+  // filter (where ...)
+  let where
+  if (agg_filter) {
+    const value = parseASTNode(agg_filter, context)
+    if (isObjectExpression(value, 'operator') && value.values[0] === 'and') {
+      where = value.values.slice(1)
+    } else {
+      where = [value]
+    }
+  }
+  // order by
+  if (agg_within_group) {
+    // within group (order by ...)
+    throw sqlParserError({ message: 'Within group not supported', location })
+  }
+  const orderBy = agg_order ? agg_order.map(e => parseASTNode(e, context)) : undefined
   const name = parseASTNode(funcname[0], context).toLowerCase()
   const parsedArgs = args ? args.map(e => parseASTNode(e, context)) : []
-  return { type: expTypes.FUNCTION, values: [name, ...parsedArgs], distinct: agg_distinct }
+  return { type: expTypes.FUNCTION, values: [name, ...parsedArgs], distinct, where, orderBy }
 }
 
 astParsers.CoalesceExpr = ({ args }, context) => ({

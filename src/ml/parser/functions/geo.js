@@ -71,7 +71,11 @@ const getGeoInfoFromString = (geoString, { engine, getRef }) => {
         WHEN '${geoTypes.POINT}' THEN ${ref}[5]
         ELSE ${ref}[4]
       END AS radius
-    FROM ${engine === 'trino' ? 'split' : 'regexp_split_to_array'}(${geoString}, ':') AS ${ref}
+    FROM (
+      VALUES (
+        ${engine === 'trino' ? 'split' : 'regexp_split_to_array'}(${geoString}, ':')
+      )
+    ) AS ${ref}
     WHERE
       ${ref}[1] = 'geo'
       AND ${ref}[2] IN (${Object.values(geoTypes).map(t => `'${t}'`).join(',')})

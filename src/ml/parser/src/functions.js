@@ -5,7 +5,7 @@ const functions = {
   nullif: { argsLength: 2 },
   coalesce: { minArgsLength: 1 },
 
-  // aggregation functions
+  // aggregate functions
   count: {
     defaultCast: castTypes.INTEGER,
     argsLength: 1,
@@ -28,6 +28,10 @@ const functions = {
   },
   max: {
     defaultCast: castTypes.FLOAT,
+    argsLength: 1,
+    isAggregate: true,
+  },
+  array_agg: {
     argsLength: 1,
     isAggregate: true,
   },

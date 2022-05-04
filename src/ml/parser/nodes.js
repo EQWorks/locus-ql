@@ -70,12 +70,21 @@ const functionParser = engine => withOptions((node, options) => {
     name = functions[name][engine]
   }
   if (!sql) {
-    sql = `${name}(\
-      ${node.distinct ? 'DISTINCT ' : ''}\
-      ${node.args.map(e => e.to(engine, options)).join(', ')})`
-    // return as subquery to hide underlying implementation (column name)
+    const args = node.args.map(e => e.to(engine, options)).join(', ')
+    const distinct = node.distinct ? 'DISTINCT ' : ''
+    const where = node.where.length ?
+      ` FILTER (WHERE ${node.where.map(e => e.to(engine, options)).join(' AND ')})`
+      : ''
+    const orderBy = node.orderBy.length
+      ? ` ORDER BY ${node.orderBy.map(e => e.to(engine, options)).join(', ')}`
+      : ''
+    sql = `${name}(${distinct}${args}${orderBy})${where}`
     if (name !== node.name && !node.as) {
+      // return as subquery to hide underlying implementation (column name)
       sql = `(SELECT ${sql} AS ${node.name})`
+    } else if (where && (!node.isRoot() || node.as || node.cast)) {
+      // wrap with parentheses when has `FILTER (WHERE...)` to produce block
+      sql = `(${sql})`
     }
   }
   const cast = node.cast || node.defaultCast
