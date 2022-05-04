@@ -1,3 +1,6 @@
+const { nodes: { SelectNode, SQLNode, ShortNode } } = require('./src')
+
+
 const operators = {}
 
 operators['^'] = {
@@ -25,7 +28,18 @@ operators.any = {
   },
   trino: (node, options) => {
     const [left, right] = node.operands.map(o => o.to('trino', options))
-    return `${left} ${node.qualifier} ${node.name} (${right})`
+    // check if subquery
+    if (
+      node.operands[1] instanceof SelectNode
+      || (
+        (node.operands[1] instanceof SQLNode || node.operands[1] instanceof ShortNode)
+        && node.operands[1].value instanceof SelectNode
+      )
+    ) {
+      return `${left} ${node.qualifier} ${node.name} ${right}`
+    }
+    // array
+    return `${left} ${node.qualifier} ${node.name} (SELECT * FROM unnest(${right}))`
   },
 }
 operators.some = operators.any
