@@ -544,8 +544,11 @@ astParsers.A_Expr = checkProps(
       case 'and':
       case 'or':
       case 'not':
-      case 'like':
         operator = safeKind
+        break
+
+      case 'like':
+        operator = operator === '!~~' ? ['not ', 'like'] : 'like'
         break
 
       case 'op_any':
@@ -565,9 +568,22 @@ astParsers.A_Expr = checkProps(
         break
 
       case 'distinct':
+      case 'not_distinct':
         // left is distinct from right
-        operator = 'is distinct from'
+        operator = `is${safeKind === 'not_distinct' ? ' not' : ''} distinct from`
         break
+
+      case 'between':
+      case 'not_between':
+        return {
+          type: expTypes.OPERATOR,
+          values: [
+            safeKind === 'not_between' ? ['not', 'between'] : 'between',
+            left,
+            right.values[0],
+            right.values[1],
+          ],
+        }
 
       default:
         throw sqlParserError({ message: 'Operation not supported', location })
