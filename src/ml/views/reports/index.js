@@ -42,7 +42,7 @@ const reportViewTypes = {
 }
 // reverse lookup
 const reportViewTypeValues = Object.entries(reportViewTypes).reduce((acc, [k, v]) => {
-  acc[v] = k
+  acc[v] = Number(k)
   return acc
 }, {})
 
@@ -52,7 +52,7 @@ const AOIViewTypes = {
 }
 // reverse lookup
 const AOIViewTypeValues = Object.entries(AOIViewTypes).reduce((acc, [k, v]) => {
-  acc[v] = k
+  acc[v] = Number(k)
   return acc
 }, {})
 
@@ -107,11 +107,11 @@ const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, ha
   reportQuery.column(groupByCols)
   reportQuery.select(knex.raw(`
     COALESCE(
-      ARRAY_AGG(DISTINCT ARRAY[
-        rt.start_date::varchar,
-        rt.end_date::varchar,
-        rt.date_type::varchar
-      ])
+      ARRAY_AGG(DISTINCT jsonb_build_object(
+        'start', rt.start_date::varchar,
+        'end', rt.end_date::varchar,
+        'dType', rt.date_type::int
+      ))
       FILTER (WHERE rt.start_date IS NOT null),
       '{}'
     ) AS dates
@@ -125,7 +125,7 @@ const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, ha
     `))
     reportQuery.select(knex.raw(`
       COALESCE(
-        ARRAY_AGG(DISTINCT ARRAY[rt.campaign, camps.name])
+        ARRAY_AGG(DISTINCT jsonb_build_object('campID', rt.campaign::int, 'name', camps.name))
         FILTER (WHERE rt.campaign != ''),
         '{}'
       ) AS camps
@@ -229,15 +229,11 @@ const getViewObject = ({
       report_description,
       tld,
       poi_list_id,
-      dates: dates.map(([start, end, dType]) => ({ start, end, dType: parseInt(dType) })),
+      dates,
       hasAOI,
+      vendors,
+      camps,
     })
-    if (report_type === reportTypes.VWI) {
-      Object.assign(view, {
-        vendors,
-        camps: camps.map(([campID, name]) => ({ campID: parseInt(campID), name })),
-      })
-    }
   }
   return view
 }
