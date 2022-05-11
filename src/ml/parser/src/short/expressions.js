@@ -27,12 +27,13 @@ shortExpressions.column = {
 }
 
 shortExpressions.function = {
-  template: ['name', 'args', 'as', 'cast', 'distinct'],
-  parser: ({ name, args = [], as, cast, distinct }) => {
+  template: ['name', 'args', 'as', 'cast', 'distinct', 'where', 'order_by'],
+  parser: ({ name, args = [], as, cast, distinct, where, order_by: orderBy }) => {
     if (!isArray(args)) {
       throw parserError('Invalid arguments supplied to @function')
     }
-    return { type: expressionTypes.FUNCTION, values: [name, ...args], distinct, as, cast }
+    const values = [name, ...args]
+    return { type: expressionTypes.FUNCTION, values, distinct, where, orderBy, as, cast }
   },
 }
 

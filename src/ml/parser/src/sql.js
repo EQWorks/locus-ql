@@ -33,6 +33,24 @@ const findApproxLocation = (exp) => {
   }
 }
 
+// throws on unhandled props
+const checkProps = (handledProps, cb) => {
+  const props = new Set(handledProps)
+  props.add('location')
+  return (expression, context) => {
+    if (Object.keys(expression).some(p => !props.has(p))) {
+      console.log(
+        '** Unsupported sytax **\nUnknown props:\n',
+        Object.keys(expression).filter(p => !props.has(p)),
+        '\nEXpression:\n',
+        expression,
+      )
+      throw sqlParserError({ expression, location: expression.location })
+    }
+    return cb(expression, context)
+  }
+}
+
 class SQLParserError extends Error {
   constructor({ location, message = 'Syntax not supported', expression }) {
     super(message)
@@ -43,45 +61,75 @@ class SQLParserError extends Error {
 const sqlParserError = args => new SQLParserError(args)
 
 const astParsers = {}
-astParsers.String = ({ str }) => str
-astParsers.Integer = ({ ival }) => ival
-astParsers.Float = ({ str }) => Number(str)
-astParsers.Null = () => null
-astParsers.RangeVar = ({ relname: view, alias: { aliasname: as } = {} }) =>
-  ({ type: expTypes.VIEW, view, as })
-astParsers.RangeSubselect = ({ subquery, lateral, alias: { aliasname: as } = {} }, context) => {
-  const select = parseASTNode(subquery, context)
-  if (lateral) {
-    select.type = expTypes.SELECT_RANGE_LATERAL
-  }
-  return Object.assign(select, { as })
-}
-
-astParsers.SubLink = ({ testexpr, subselect, subLinkType, operName, location }, context) => {
-  // subLinkType: EXISTS_SUBLINK, ALL_SUBLINK, ANY_SUBLINK, ROWCOMPARE_SUBLINK,
-  // EXPR_SUBLINK, ARRAY_SUBLINK, CTE_SUBLINK
-  const type = subLinkType.slice(0, -8).toLowerCase()
-  const operator = operName ? parseASTNode(operName[0], context) : undefined
-  const value = testexpr ? parseASTNode(testexpr, context) : undefined
-  const subquery = parseASTNode(subselect, context)
-  if (type === 'expr') {
-    return subquery
-  }
-  if (type === 'exists') {
-    return { type: expTypes.OPERATOR, values: [type, subquery] }
-  }
-  if (['any', 'all'].includes(type)) {
-    return {
-      type: expTypes.OPERATOR,
-      values: [[operator || '=', type], value, subquery],
+astParsers.String = checkProps(['str'], ({ str }) => str)
+astParsers.Integer = checkProps(['ival'], ({ ival }) => ival)
+astParsers.Float = checkProps(['str'], ({ str }) => Number(str))
+astParsers.Null = checkProps([], () => null)
+astParsers.RangeVar = checkProps(
+  ['relname', 'alias', 'inh', 'relpersistence'],
+  ({ relname: view, alias: { aliasname: as } = {} }) => ({ type: expTypes.VIEW, view, as }),
+)
+astParsers.RangeSubselect = checkProps(
+  ['subquery', 'lateral', 'alias'],
+  ({ subquery, lateral, alias: { aliasname: as } = {} }, context) => {
+    const select = parseASTNode(subquery, context)
+    if (lateral) {
+      select.type = expTypes.SELECT_RANGE_LATERAL
     }
-  }
-  throw sqlParserError({ message: 'Subselect query not supported', location })
-}
-// top level
-astParsers.RawStmt = ({ stmt }, context) => parseASTNode(stmt, context)
+    return Object.assign(select, { as })
+  },
+)
 
-astParsers.SelectStmt = (exp, context) => {
+astParsers.SubLink = checkProps(
+  ['testexpr', 'subselect', 'subLinkType', 'operName'],
+  ({ testexpr, subselect, subLinkType, operName, location }, context) => {
+    // subLinkType: EXISTS_SUBLINK, ALL_SUBLINK, ANY_SUBLINK, ROWCOMPARE_SUBLINK,
+    // EXPR_SUBLINK, ARRAY_SUBLINK, CTE_SUBLINK
+    const type = subLinkType.slice(0, -8).toLowerCase()
+    const operator = operName ? parseASTNode(operName[0], context) : undefined
+    const value = testexpr ? parseASTNode(testexpr, context) : undefined
+    const subquery = parseASTNode(subselect, context)
+    if (type === 'expr') {
+      return subquery
+    }
+    if (type === 'exists') {
+      return { type: expTypes.OPERATOR, values: [type, subquery] }
+    }
+    if (['any', 'all'].includes(type)) {
+      return {
+        type: expTypes.OPERATOR,
+        values: [[operator || '=', type], value, subquery],
+      }
+    }
+    throw sqlParserError({ message: 'Subselect query not supported', location })
+  },
+)
+// top level
+astParsers.RawStmt = checkProps(
+  ['stmt', 'stmt_len'],
+  ({ stmt }, context) => parseASTNode(stmt, context),
+)
+
+astParsers.SelectStmt = checkProps([
+  'distinctClause',
+  'targetList',
+  'fromClause',
+  'whereClause',
+  'groupClause',
+  'havingClause',
+  'sortClause',
+  'limitOption',
+  'limitCount',
+  'limitOffset',
+  'withClause',
+  'valuesLists',
+  'op',
+  'all',
+  'larg',
+  'rarg',
+  'lockingClause',
+
+], (exp, context) => {
   const {
     distinctClause,
     targetList,
@@ -219,9 +267,9 @@ astParsers.SelectStmt = (exp, context) => {
     limit,
     offset,
   }
-}
+})
 
-astParsers.ResTarget = ({ name: as, val }, context) => {
+astParsers.ResTarget = checkProps(['name', 'val'], ({ name: as, val }, context) => {
   const value = parseASTNode(val, context)
   if (!as) {
     return value
@@ -230,34 +278,40 @@ astParsers.ResTarget = ({ name: as, val }, context) => {
     return Object.assign(value, { as })
   }
   return { type: expTypes.PRIMITIVE, value, as }
-}
+})
 
-astParsers.JoinExpr = (exp, context) => {
-  const { jointype, larg, rarg, quals, usingClause } = exp
-  if (usingClause) {
-    throw sqlParserError({ message: '"using" not supported in join expression', expression: exp })
-  }
-  if (!['JOIN_INNER', 'JOIN_LEFT', 'JOIN_RIGHT'].includes(jointype)) {
-    throw sqlParserError({ message: 'Join type not supported', expression: exp })
-  }
-  let joinType = jointype.slice(5).toLowerCase()
-  const right = parseASTNode(rarg, context)
-  if (joinType === 'inner' && !quals) {
-    joinType = right.type === expTypes.SELECT_RANGE_LATERAL ? 'lateral' : 'cross'
-  }
-  return {
-    type: expTypes.JOIN,
-    joinType,
-    on: quals ? parseASTNode(quals, context) : undefined,
-    left: parseASTNode(larg, context),
-    right,
-  }
-}
+astParsers.JoinExpr = checkProps(
+  ['jointype', 'larg', 'rarg', 'quals', 'usingClause'],
+  (exp, context) => {
+    const { jointype, larg, rarg, quals, usingClause } = exp
+    if (usingClause) {
+      throw sqlParserError({ message: '"using" not supported in join expression', expression: exp })
+    }
+    if (!['JOIN_INNER', 'JOIN_LEFT', 'JOIN_RIGHT'].includes(jointype)) {
+      throw sqlParserError({ message: 'Join type not supported', expression: exp })
+    }
+    let joinType = jointype.slice(5).toLowerCase()
+    const right = parseASTNode(rarg, context)
+    if (joinType === 'inner' && !quals) {
+      joinType = right.type === expTypes.SELECT_RANGE_LATERAL ? 'lateral' : 'cross'
+    }
+    return {
+      type: expTypes.JOIN,
+      joinType,
+      on: quals ? parseASTNode(quals, context) : undefined,
+      left: parseASTNode(larg, context),
+      right,
+    }
+  },
+)
 
-astParsers.CommonTableExpr = ({ ctename: as, ctequery }, context) =>
-  Object.assign(parseASTNode(ctequery, context), { as })
+astParsers.CommonTableExpr = checkProps(
+  ['ctename', 'ctequery', 'ctematerialized'],
+  ({ ctename: as, ctequery }, context) =>
+    Object.assign(parseASTNode(ctequery, context), { as }),
+)
 
-astParsers.SortBy = (exp, context) => {
+astParsers.SortBy = checkProps(['node', 'sortby_dir', 'sortby_nulls'], (exp, context) => {
   const { node, sortby_dir, sortby_nulls } = exp
   const value = parseASTNode(node, context)
   let direction = sortby_dir.slice(7).toLowerCase()
@@ -271,33 +325,59 @@ astParsers.SortBy = (exp, context) => {
   let nulls = sortby_nulls.slice(13).toLowerCase()
   nulls = nulls !== 'default' ? nulls : undefined
   return { type: expTypes.SORT, value, direction, nulls }
-}
+})
 
-astParsers.CaseExpr = ({ args, defresult }, context) => {
+astParsers.CaseExpr = checkProps(['args', 'defresult'], ({ args, defresult }, context) => {
   const defaultRes = defresult ? parseASTNode(defresult, context) : undefined
   const cases = args.map(e => parseASTNode(e, context))
   return {
     type: expTypes.CASE,
     values: defaultRes !== undefined ? [defaultRes, ...cases] : cases,
   }
-}
+})
 
-astParsers.CaseWhen = ({ expr, result }, context) =>
-  [parseASTNode(expr, context), parseASTNode(result, context)]
+astParsers.CaseWhen = checkProps(['expr', 'result'], ({ expr, result }, context) =>
+  [parseASTNode(expr, context), parseASTNode(result, context)])
 
-astParsers.FuncCall = ({ funcname, args, over, agg_distinct, location }, context) => {
-  if (over) {
-    throw sqlParserError({ message: 'Window function not supported', location })
-  }
-  const name = parseASTNode(funcname[0], context).toLowerCase()
-  const parsedArgs = args ? args.map(e => parseASTNode(e, context)) : []
-  return { type: expTypes.FUNCTION, values: [name, ...parsedArgs], distinct: agg_distinct }
-}
+astParsers.FuncCall = checkProps(
+  ['funcname', 'args', 'agg_distinct', 'agg_filter', 'agg_order', 'agg_within_group', 'over'],
+  (
+    {
+      funcname, args, agg_distinct: distinct,
+      agg_filter, agg_order, agg_within_group, over, location,
+    },
+    context,
+  ) => {
+    // window
+    if (over) {
+      throw sqlParserError({ message: 'Window function not supported', location })
+    }
+    // filter (where ...)
+    let where
+    if (agg_filter) {
+      const value = parseASTNode(agg_filter, context)
+      if (isObjectExpression(value, 'operator') && value.values[0] === 'and') {
+        where = value.values.slice(1)
+      } else {
+        where = [value]
+      }
+    }
+    // order by
+    if (agg_within_group) {
+      // within group (order by ...)
+      throw sqlParserError({ message: 'Within group not supported', location })
+    }
+    const orderBy = agg_order ? agg_order.map(e => parseASTNode(e, context)) : undefined
+    const name = parseASTNode(funcname[0], context).toLowerCase()
+    const parsedArgs = args ? args.map(e => parseASTNode(e, context)) : []
+    return { type: expTypes.FUNCTION, values: [name, ...parsedArgs], distinct, where, orderBy }
+  },
+)
 
-astParsers.CoalesceExpr = ({ args }, context) => ({
+astParsers.CoalesceExpr = checkProps(['args'], ({ args }, context) => ({
   type: expTypes.FUNCTION,
   values: ['coalesce', ...args.map(e => parseASTNode(e, context))],
-})
+}))
 
 const sqlCastTypes = {
   // numeric/float
@@ -331,7 +411,7 @@ const sqlCastTypes = {
   jsonb: castTypes.JSON,
 }
 
-astParsers.TypeCast = (exp, context) => {
+astParsers.TypeCast = checkProps(['arg', 'typeName'], (exp, context) => {
   const { arg, typeName } = exp
   const value = parseASTNode(arg, context)
   let cast = parseASTNode(typeName.names.slice(-1)[0], context).toLowerCase()
@@ -405,9 +485,9 @@ astParsers.TypeCast = (exp, context) => {
     return Object.assign(value, { cast })
   }
   return { type: expTypes.CAST, value, cast }
-}
+})
 
-astParsers.ColumnRef = ({ fields }, context) => {
+astParsers.ColumnRef = checkProps(['fields'], ({ fields }, context) => {
   let view
   let column
   if (fields.length === 1) {
@@ -417,103 +497,122 @@ astParsers.ColumnRef = ({ fields }, context) => {
     column = parseASTNode(fields[1], context)
   }
   return { type: expTypes.COLUMN, view, column }
-}
+})
 
 // used for shorts
-astParsers.ParamRef = ({ number, location }, context) => {
+astParsers.ParamRef = checkProps(['number'], ({ number, location }, context) => {
   // shorts does not exist i.e. param ref came from user
   if (number > context.shorts.length) {
     throw sqlParserError({ message: 'Invalid parameter reference or short expression', location })
   }
   return { type: expTypes.SHORT, value: context.shorts[number - 1] }
-}
+})
 
-astParsers.List = ({ items }, context) =>
-  ({ type: expTypes.LIST, values: items.map(e => parseASTNode(e, context)) })
+astParsers.List = checkProps(['items'], ({ items }, context) =>
+  ({ type: expTypes.LIST, values: items.map(e => parseASTNode(e, context)) }))
 
-astParsers.A_ArrayExpr = ({ elements }, context) =>
-  ({ type: expTypes.ARRAY, values: elements.map(e => parseASTNode(e, context)) })
+astParsers.A_ArrayExpr = checkProps(['elements'], ({ elements }, context) =>
+  ({ type: expTypes.ARRAY, values: elements.map(e => parseASTNode(e, context)) }))
 
-astParsers.A_Const = ({ val }, context) => parseASTNode(val, context)
-astParsers.A_Star = () => '*'
-astParsers.A_Indices = (exp, context) => {
+astParsers.A_Const = checkProps(['val'], ({ val }, context) => parseASTNode(val, context))
+astParsers.A_Star = checkProps([], () => '*')
+astParsers.A_Indices = checkProps(['is_slice', 'uidx'], (exp, context) => {
   const { is_slice, uidx } = exp
   if (is_slice) {
     throw sqlParserError({ message: 'Slice operation not supported', expression: exp })
   }
   return parseASTNode(uidx, context)
-}
-astParsers.A_Expr = ({ kind, name, lexpr, rexpr, location }, context) => {
-  // kind: AEXPR_OP, AEXPR_AND, AEXPR_OR, AEXPR_NOT,
-  // AEXPR_OP_ANY, AEXPR_OP_ALL, AEXPR_DISTINCT, AEXPR_NULLIF,
-  // AEXPR_OF, AEXPR_IN
-  const safeKind = kind.slice(6).toLowerCase()
-  let operator = parseASTNode(name[0], context).toLowerCase()
-  const left = lexpr ? parseASTNode(lexpr, context) : undefined
-  const right = parseASTNode(rexpr, context)
+})
+astParsers.A_Expr = checkProps(
+  ['kind', 'name', 'lexpr', 'rexpr'],
+  ({ kind, name, lexpr, rexpr, location }, context) => {
+    // kind: AEXPR_OP, AEXPR_AND, AEXPR_OR, AEXPR_NOT,
+    // AEXPR_OP_ANY, AEXPR_OP_ALL, AEXPR_DISTINCT, AEXPR_NULLIF,
+    // AEXPR_OF, AEXPR_IN
+    const safeKind = kind.slice(6).toLowerCase()
+    let operator = parseASTNode(name[0], context).toLowerCase()
+    const left = lexpr ? parseASTNode(lexpr, context) : undefined
+    const right = parseASTNode(rexpr, context)
 
-  switch (safeKind) {
-    case 'op':
-      break
+    switch (safeKind) {
+      case 'op':
+        break
 
-    case 'nullif':
-      return { type: expTypes.FUNCTION, values: [safeKind, left, right] }
+      case 'nullif':
+        return { type: expTypes.FUNCTION, values: [safeKind, left, right] }
 
-    case 'and':
-    case 'or':
-    case 'not':
-    case 'like':
-      operator = safeKind
-      break
+      case 'and':
+      case 'or':
+      case 'not':
+        operator = safeKind
+        break
 
-    case 'op_any':
-    case 'op_all':
-      // left operator kind (right)
-      operator = [operator, safeKind.slice(3)]
-      break
+      case 'like':
+        operator = operator === '!~~' ? ['not ', 'like'] : 'like'
+        break
 
-    case 'of':
-      // left IS [operator - NOT] OF right
-      operator = `is${operator === '<>' ? ' not' : ''} of`
-      break
+      case 'op_any':
+      case 'op_all':
+        // left operator kind (right)
+        operator = [operator, safeKind.slice(3)]
+        break
 
-    case 'in':
-      // left [operator - NOT] in right
-      operator = operator === '<>' ? ['not', 'in'] : 'in'
-      break
+      case 'of':
+        // left IS [operator - NOT] OF right
+        operator = `is${operator === '<>' ? ' not' : ''} of`
+        break
 
-    case 'distinct':
-      // left is distinct from right
-      operator = 'is distinct from'
-      break
+      case 'in':
+        // left [operator - NOT] in right
+        operator = operator === '<>' ? ['not', 'in'] : 'in'
+        break
 
-    default:
-      throw sqlParserError({ message: 'Operation not supported', location })
-  }
+      case 'distinct':
+      case 'not_distinct':
+        // left is distinct from right
+        operator = `is${safeKind === 'not_distinct' ? ' not' : ''} distinct from`
+        break
 
-  return {
-    type: expTypes.OPERATOR,
-    values: left !== undefined ? [operator, left, right] : [operator, right],
-  }
-}
+      case 'between':
+      case 'not_between':
+        return {
+          type: expTypes.OPERATOR,
+          values: [
+            safeKind === 'not_between' ? ['not', 'between'] : 'between',
+            left,
+            right.values[0],
+            right.values[1],
+          ],
+        }
 
-astParsers.A_Indirection = (exp, context) => {
+      default:
+        throw sqlParserError({ message: 'Operation not supported', location })
+    }
+
+    return {
+      type: expTypes.OPERATOR,
+      values: left !== undefined ? [operator, left, right] : [operator, right],
+    }
+  },
+)
+
+astParsers.A_Indirection = checkProps(['arg', 'indirection'], (exp, context) => {
   const { arg, indirection } = exp
   return {
     type: expTypes.OPERATOR,
     values: ['[]', parseASTNode(arg, context), ...indirection.map(e => parseASTNode(e, context))],
   }
-}
-
-astParsers.BoolExpr = ({ boolop, args }, context) => ({
-  type: expTypes.OPERATOR,
-  values: [boolop.slice(0, -5).toLowerCase(), ...args.map(e => parseASTNode(e, context))],
 })
 
-astParsers.NullTest = ({ arg, nulltesttype }, context) => {
+astParsers.BoolExpr = checkProps(['boolop', 'args'], ({ boolop, args }, context) => ({
+  type: expTypes.OPERATOR,
+  values: [boolop.slice(0, -5).toLowerCase(), ...args.map(e => parseASTNode(e, context))],
+}))
+
+astParsers.NullTest = checkProps(['arg', 'nulltesttype'], ({ arg, nulltesttype }, context) => {
   const operator = nulltesttype === 'IS_NOT_NULL' ? 'IS NOT' : 'IS'
   return { type: expTypes.OPERATOR, values: [operator, parseASTNode(arg, context), null] }
-}
+})
 
 const parseASTNode = (node, context = { shorts: [] }) => {
   const type = Object.keys(node)[0] // ast node type

@@ -29,6 +29,9 @@ const isArray = (val, { minLength, maxLength, length } = {}) => {
   return (!minLength || val.length >= minLength)
     && (maxLength === undefined || val.length <= maxLength)
 }
+// [] or [null]
+const isEmptyOrNullArray = val =>
+  isArray(val, { maxLength: 1 }) && [undefined, null].includes(val[0])
 const isNonArrayObject = val => typeof val === 'object' && val !== null && !isArray(val)
 // const isBool = (val) => typeof val === 'boolean'
 // const isNumber = (val, minVal) => typeof val === 'number' && (!minVal || val >= minVal)
@@ -355,6 +358,7 @@ module.exports = {
   isNonNull,
   isString,
   isArray,
+  isEmptyOrNullArray,
   isNonArrayObject,
   isInt,
   isObjectExpression,
