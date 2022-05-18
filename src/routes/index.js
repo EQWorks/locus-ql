@@ -35,6 +35,7 @@ const usage = require('./usage')
 const locussdk = require('./locussdk')
 const facebook = require('./facebook')
 const insights = require('./insights')
+const cox = require('./cox')
 
 
 const nonMobileSDKRouter = express.Router()
@@ -68,6 +69,7 @@ nonMobileSDKRouter.use('/dataset', dataset)
 nonMobileSDKRouter.use('/usage', usage)
 nonMobileSDKRouter.use('/facebook', facebook)
 nonMobileSDKRouter.use('/insights', insights)
+nonMobileSDKRouter.use('/cox', cox)
 nonMobileSDKRouter.use(api)
 
 const rootRouter = express.Router()
