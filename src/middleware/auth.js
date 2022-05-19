@@ -385,12 +385,18 @@ const popularTimesAuth = (req, res, next) => {
   return next(apiError('Access not allowed', 403))
 }
 
-const hubAuth = (req, _, next) => {
-  const { whitelabel, customers, prefix } = req.access
+const hubAuth = ({ requireWrite = false }) => (req, _, next) => {
+  const { whitelabel, customers, prefix, version, policies = [] } = req.access
   const internal = whitelabel === -1 && customers === -1
   const prefixes = ['dev', 'tester']
   const byPrefix = prefixes.includes(prefix)
-  if (internal || byPrefix) {
+  let pass = false
+  const policy = version && policies.find(p => p.match(/^hub/))
+  if (policy) {
+    const [, read, write] = policy.split(':')
+    pass = (!requireWrite && read) || write
+  }
+  if (internal || byPrefix || pass) {
     return next()
   }
   return next(apiError(`Only internal or one of ${prefixes.toString()} are allowed`, 403))
