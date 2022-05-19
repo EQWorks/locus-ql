@@ -25,7 +25,7 @@ const policyCompare = (policy, targetPolicy) => {
 
 // check if user policies match at least 1 required policies for a particular prefix
 const checkRequiredPolicies = (user, target) => (
-  user.every(p => target.some(tp => policyCompare(p, tp)))
+  user.some(p => target.some(tp => policyCompare(p, tp)))
 )
 
 const confirmAccess = (...access) => (req, _, next) => {
@@ -59,4 +59,17 @@ const confirmAccess = (...access) => (req, _, next) => {
   }
 }
 
-module.exports = { confirmAccess }
+const confirmAccessRoleCheck = (...access) => (req, _, next) => {
+  const { whitelabel, customers, prefix, version } = req.access
+  const internal = whitelabel === -1 && customers === -1
+  const prefixes = ['dev', 'tester']
+  const byPrefix = prefixes.includes(prefix)
+  // allow access if it is v0 user for backward compatibility
+  // Internal, dev, tester is not restricted by policy
+  if (!version || internal || byPrefix) {
+    return next()
+  }
+  confirmAccess(...access)(req, _, next)
+}
+
+module.exports = { confirmAccess, confirmAccessRoleCheck }
