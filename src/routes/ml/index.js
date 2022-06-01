@@ -32,6 +32,16 @@ const {
 const { validateQueryMW } = require('../../ml/engine')
 const { accessHasSingleCustomer } = require('../../middleware/validation')
 const { confirmAccessRoleCheck } = require('../../middleware/policies')
+const {
+  POLICY_QL_READ,
+  POLICY_QL_WRITE,
+  POLICY_QL_BETA_READ,
+  POLICY_QL_BETA_WRITE,
+  POLICY_QL_EXECUTIONS_READ,
+  POLICY_QL_EXECUTIONS_WRITE,
+  POLICY_QL_QUERIES_READ,
+  POLICY_QL_QUERIES_WRITE,
+} = require('../constants')
 
 
 const router = express.Router()
@@ -112,7 +122,11 @@ router.get('/views/:viewID', getViewMW)
 */
 router.get(
   '/executions/:id(\\d+)',
-  confirmAccessRoleCheck('ql:executions:read', 'ql:read'),
+  confirmAccessRoleCheck(
+    POLICY_QL_READ,
+    POLICY_QL_BETA_READ,
+    POLICY_QL_EXECUTIONS_READ,
+  ),
   loadExecution(true),
   respondWithExecution,
 )
@@ -128,7 +142,11 @@ router.get(
 */
 router.get(
   '/executions/:id(\\d+)/results(/:part(\\d+))?',
-  confirmAccessRoleCheck('ql:executions:read', 'ql:read'),
+  confirmAccessRoleCheck(
+    POLICY_QL_READ,
+    POLICY_QL_BETA_READ,
+    POLICY_QL_EXECUTIONS_READ,
+  ),
   loadExecution(true),
   respondWithOrRedirectToExecutionResultsURL,
 )
@@ -142,7 +160,11 @@ router.get(
 */
 router.put(
   '/executions/:id(\\d+)',
-  confirmAccessRoleCheck('ql:executions:read:write', 'ql:read:write'),
+  confirmAccessRoleCheck(
+    POLICY_QL_WRITE,
+    POLICY_QL_BETA_WRITE,
+    POLICY_QL_EXECUTIONS_WRITE,
+  ),
   loadExecution(true),
   cancelExecution,
 )
@@ -163,7 +185,15 @@ router.put(
  * @apiParam (query) {number} [end] End Unix timestamp in seconds
  * @apiParam (query) {string} [token] Client token
 */
-router.get('/executions/', confirmAccessRoleCheck('ql:executions:read', 'ql:read'), listExecutions)
+router.get(
+  '/executions/',
+  confirmAccessRoleCheck(
+    POLICY_QL_READ,
+    POLICY_QL_BETA_READ,
+    POLICY_QL_EXECUTIONS_READ,
+  ),
+  listExecutions,
+)
 
 /**
  * @api {post} /executions
@@ -188,7 +218,11 @@ router.get('/executions/', confirmAccessRoleCheck('ql:executions:read', 'ql:read
 */
 router.post(
   '/executions/',
-  confirmAccessRoleCheck('ql:executions:read:write', 'ql:read:write'),
+  confirmAccessRoleCheck(
+    POLICY_QL_WRITE,
+    POLICY_QL_BETA_WRITE,
+    POLICY_QL_EXECUTIONS_WRITE,
+  ),
   loadQuery(false), // run saved query
   loadExecution(false), // duplicate execution (superseded by saved query)
   accessHasSingleCustomer,
@@ -212,7 +246,11 @@ router.post(
 */
 router.get(
   '/queries/:id(\\d+)',
-  confirmAccessRoleCheck('ql:queries:read', 'ql:read'),
+  confirmAccessRoleCheck(
+    POLICY_QL_READ,
+    POLICY_QL_BETA_READ,
+    POLICY_QL_QUERIES_READ,
+  ),
   loadQuery(true),
   respondWithQuery,
 )
@@ -234,7 +272,11 @@ router.get(
 */
 router.put(
   '/queries/:id(\\d+)',
-  confirmAccessRoleCheck('ql:queries:read:write', 'ql:read:write'),
+  confirmAccessRoleCheck(
+    POLICY_QL_WRITE,
+    POLICY_QL_BETA_WRITE,
+    POLICY_QL_QUERIES_WRITE,
+  ),
   loadQuery(true),
   parseQueryToTreeMW({ onlyUseBodyQuery: true, useBodyParameters: false }),
   loadQueryViews,
@@ -252,7 +294,11 @@ router.put(
 */
 router.delete(
   '/queries/:id(\\d+)',
-  confirmAccessRoleCheck('ql:queries:read:write', 'ql:read:write'),
+  confirmAccessRoleCheck(
+    POLICY_QL_WRITE,
+    POLICY_QL_BETA_WRITE,
+    POLICY_QL_QUERIES_WRITE,
+  ),
   loadQuery(true),
   deleteQuery,
 )
@@ -266,7 +312,15 @@ router.delete(
  * @apiParam (query) {string} [qhash] Query hash
  * @apiParam (query) {string} [chash] Column hash
 */
-router.get('/queries/', confirmAccessRoleCheck('ql:queries:read', 'ql:read'), listQueries)
+router.get(
+  '/queries/',
+  confirmAccessRoleCheck(
+    POLICY_QL_READ,
+    POLICY_QL_BETA_READ,
+    POLICY_QL_QUERIES_READ,
+  ),
+  listQueries,
+)
 
 /**
  * @api {post} /queries
@@ -288,7 +342,11 @@ router.get('/queries/', confirmAccessRoleCheck('ql:queries:read', 'ql:read'), li
 */
 router.post(
   '/queries/',
-  confirmAccessRoleCheck('ql:queries:read:write', 'ql:read:write'),
+  confirmAccessRoleCheck(
+    POLICY_QL_WRITE,
+    POLICY_QL_BETA_WRITE,
+    POLICY_QL_QUERIES_WRITE,
+  ),
   loadQuery(false), // use saved query as template
   loadExecution(false), // use execution as template (superseded by saved query)
   accessHasSingleCustomer,
@@ -311,7 +369,11 @@ router.post(
 */
 router.get(
   '/queries/:id(\\d+)/schedules/',
-  confirmAccessRoleCheck('ql:queries:read', 'ql:read'),
+  confirmAccessRoleCheck(
+    POLICY_QL_READ,
+    POLICY_QL_BETA_READ,
+    POLICY_QL_QUERIES_READ,
+  ),
   loadQuery(true),
   listQuerySchedules,
 )
@@ -330,7 +392,11 @@ router.get(
 */
 router.post(
   '/queries/:id(\\d+)/schedules/',
-  confirmAccessRoleCheck('ql:queries:read:write', 'ql:read:write'),
+  confirmAccessRoleCheck(
+    POLICY_QL_WRITE,
+    POLICY_QL_BETA_WRITE,
+    POLICY_QL_QUERIES_WRITE,
+  ),
   loadQuery(true),
   putQuerySchedule,
 )
@@ -345,7 +411,11 @@ router.post(
 */
 router.delete(
   '/queries/:id(\\d+)/schedules/',
-  confirmAccessRoleCheck('ql:queries:read:write', 'ql:read:write'),
+  confirmAccessRoleCheck(
+    POLICY_QL_WRITE,
+    POLICY_QL_BETA_WRITE,
+    POLICY_QL_EXECUTIONS_WRITE,
+  ),
   loadQuery(true),
   deleteQueryScheduleMW,
 )
