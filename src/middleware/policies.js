@@ -59,14 +59,14 @@ const confirmAccess = (...access) => (req, _, next) => {
   }
 }
 
+// TODO: take prefixes as an argument to make this more flexible
 const confirmAccessRoleCheck = (...access) => (req, _, next) => {
-  const { whitelabel, customers, prefix, version } = req.access
-  const internal = whitelabel === -1 && customers === -1
-  const prefixes = ['dev', 'tester']
+  const { prefix, version } = req.access
+  const prefixes = ['dev']
   const byPrefix = prefixes.includes(prefix)
   // allow access if it is v0 user for backward compatibility
-  // Internal, dev, tester is not restricted by policy
-  if (!version || internal || byPrefix) {
+  // dev is not restricted by policy
+  if (!version || byPrefix) {
     return next()
   }
   confirmAccess(...access)(req, _, next)
