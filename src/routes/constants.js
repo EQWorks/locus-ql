@@ -1,0 +1,22 @@
+/* POLICIES CONSTANTS */
+module.exports = {
+  // cox
+  POLICY_COX: 'cox:*:*',
+
+  // connection hub
+  POLICY_HUB_READ: 'hub:read',
+  POLICY_HUB_WRITE: 'hub:read:write',
+
+  // ql
+  POLICY_QL_READ: 'ql:read',
+  POLICY_QL_WRITE: 'ql:read:write',
+  // ql beta stage
+  POLICY_QL_BETA_READ: 'ql:beta:read',
+  POLICY_QL_BETA_WRITE: 'ql:beta:read:write',
+  // executions
+  POLICY_QL_EXECUTIONS_READ: 'ql:executions:read',
+  POLICY_QL_EXECUTIONS_WRITE: 'ql:executions:read:write',
+  // queries
+  POLICY_QL_QUERIES_READ: 'ql:queries:read',
+  POLICY_QL_QUERIES_WRITE: 'ql:queries:read:write',
+}
