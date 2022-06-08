@@ -127,9 +127,10 @@ functions.geo_intersection_area = { // geo_intersection_area(geoStringA, geoStri
 functions.geo_area = { // geo_area(geoStringA)
   argsLength: 1,
 }
-functions.geo_json = { // geo_json(geoStringA)
-  argsLength: 1,
-}
+// geo_json deactivated at this time
+// functions.geo_json = { // geo_json(geoStringA)
+//   argsLength: 1,
+// }
 functions.geo_distance = { // geo_distance(geoStringA, geoStringB)
   argsLength: 2,
 }
