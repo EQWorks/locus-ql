@@ -80,6 +80,7 @@ const getExecutionMetas = async ({
       e.is_internal AS "isInternal",
       e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
       e.cost,
+      e.client_token AS "clientToken",
       CASE WHEN e.results_parts IS NOT NULL THEN
         ARRAY(
           SELECT
