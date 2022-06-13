@@ -4,7 +4,7 @@ const { useAPIErrorOptions } = require('../util/api-error')
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'policies' } })
 
 // categorize policies by prefix
-const parsePolicies = policies => (policies.reduce((acc, p) => {
+const parsePolicies = policies => policies.reduce((acc, p) => {
   const [prefix, ...rest] = p.split(':')
   if (acc[prefix]) {
     acc[prefix].push(rest.join(':'))
@@ -12,7 +12,7 @@ const parsePolicies = policies => (policies.reduce((acc, p) => {
     acc[prefix] = [rest.join(':')]
   }
   return acc
-}, {}))
+}, {})
 
 // match policies
 const policyCompare = (policy, targetPolicy) => {
@@ -41,7 +41,6 @@ const confirmAccess = (...access) => (req, _, next) => {
 
     const userPolicies = parsePolicies(policies)
     const targetPolicies = parsePolicies(access)
-
     for (const [prefix, tp] of Object.entries(targetPolicies)) {
       // high-level check if user has all required policy categories
       if (!userPolicies[prefix]) {

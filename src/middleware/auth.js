@@ -79,6 +79,7 @@ const loadUserAccess = async (req, _, next) => {
       version,
       ...(policies ? { policies } : {}),
     }
+
     next()
   } catch (err) {
     next(getSetAPIError(err, 'Failed to authenticate user', 401))
