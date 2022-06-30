@@ -103,6 +103,10 @@ functions.lpad = { argsLength: 3 }
 functions.rpad = { argsLength: 3 }
 functions.length = { argsLength: 1 }
 functions.replace = { argsLength: 3 }
+functions.substr = {
+  minArgsLength: 2,
+  maxArgsLength: 3,
+}
 
 // Date/time functions
 functions.date = { argsLength: 1 }
