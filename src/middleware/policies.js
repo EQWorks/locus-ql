@@ -4,12 +4,22 @@ const { useAPIErrorOptions } = require('../util/api-error')
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'policies' } })
 
 // categorize policies by prefix
-const parsePolicies = policies => policies.reduce((acc, p) => {
-  const [prefix, ...rest] = p.split(':')
-  if (acc[prefix]) {
-    acc[prefix].push(rest.join(':'))
+const parsePolicies = policies => policies.reduce((acc, policy) => {
+  const splitPolicy = (p) => {
+    const [prefix, ...rest] = p.split(':')
+    if (acc[prefix]) {
+      acc[prefix].push(rest.join(':'))
+    } else {
+      acc[prefix] = [rest.join(':')]
+    }
+  }
+
+  if (Array.isArray(policy)) {
+    for (const p of policy) {
+      splitPolicy(p)
+    }
   } else {
-    acc[prefix] = [rest.join(':')]
+    splitPolicy(policy)
   }
   return acc
 }, {})
