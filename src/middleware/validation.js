@@ -20,12 +20,34 @@ class OneOf {
 }
 module.exports.oneOf = (...params) => new OneOf(...params)
 
-const _hasParams = target => (...params) => (req, _, next) => {
+const isParamMissing = (params, obj) => {
+  if (!params) return false
+
   for (const param of params) {
-    if (!new OneOf(param).validate(req[target])) {
-      return next(apiError(`Missing ${param.toString()} in ${target}`, 400))
+    if (!new OneOf(param).validate(obj)) {
+      return param
     }
   }
+  return ''
+}
+
+const _hasParams = target => (...params) => (req, _, next) => {
+  if (params[0] && typeof params[0] === 'object') {
+    const { required, preferred } = params[0]
+
+    if (isParamMissing(required, req[target])) {
+      return next(apiError(`Missing one or more params([${required.join(',')}]) in ${target}`, 400))
+    }
+    if (isParamMissing(preferred, req[target])) {
+      console.log(`Expecting [${preferred.join(',')}] in ${target}`)
+    }
+    return next()
+  }
+  const missingParam = isParamMissing(params, req[target])
+  if (missingParam) {
+    return next(apiError(`Missing ${missingParam} in ${target}`, 400))
+  }
+
   return next()
 }
 module.exports.hasQueryParams = _hasParams('query')
