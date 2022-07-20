@@ -45,7 +45,7 @@ const _hasParams = target => (...params) => (req, _, next) => {
   }
   const missingParam = isParamMissing(params, req[target])
   if (missingParam) {
-    next(apiError(`Missing ${missingParam} in ${target}`, 400))
+    return next(apiError(`Missing ${missingParam} in ${target}`, 400))
   }
 
   return next()
