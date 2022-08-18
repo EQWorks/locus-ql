@@ -80,14 +80,14 @@ const typeToCatMap = new Map([
 ])
 
 const typeToPrqMap = new Map([
-  // CAT_STRING
+  // PRQ_STRING
   ['text', PRQ_STRING],
   ['character varying', PRQ_STRING],
   [types.builtins.CHAR, PRQ_STRING],
   [types.builtins.TEXT, PRQ_STRING],
   [types.builtins.VARCHAR, PRQ_STRING],
 
-  // CAT_NUMERIC
+  // NUMERIC
   ['integer', PRQ_INT],
   ['money', PRQ_DOUBLE],
   ['numeric', PRQ_DOUBLE],
@@ -109,19 +109,19 @@ const typeToPrqMap = new Map([
   [types.builtins.NUMERIC, PRQ_DOUBLE],
   [types.builtins.OID, PRQ_DOUBLE],
 
-  // CAT_DATE
+  // PRQ_DATE
   ['date', PRQ_DATE],
   [types.builtins.DATE, PRQ_DATE],
   [types.builtins.TIMESTAMP, PRQ_DATE],
   [types.builtins.TIMESTAMPTZ, PRQ_DATE],
 
-  // CAT_JSON
+  // PRQ_JSON
   ['json', PRQ_JSON],
   ['jsonb', PRQ_JSON],
   [types.builtins.JSON, PRQ_JSON],
   [types.builtins.JSONB, PRQ_JSON],
 
-  // CAT_BOOL
+  // PRQ_BOOL
   ['boolean', PRQ_BOOL],
   [types.builtins.BOOL, PRQ_BOOL],
 

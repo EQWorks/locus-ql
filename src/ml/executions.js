@@ -25,6 +25,7 @@ const {
   // RESULTS_PART_SIZE_FIRST,
   MAX_LENGTH_EXECUTION_TOKEN,
   MAX_LENGTH_STATUS_REASON,
+  FILE_TYPE_PRQ,
 } = require('./constants')
 
 
@@ -81,6 +82,7 @@ const getExecutionMetas = async ({
       e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
       e.cost,
       e.client_token AS "clientToken",
+      e.file_type AS "fileType",
       CASE WHEN e.results_parts IS NOT NULL THEN
         ARRAY(
           SELECT
@@ -292,7 +294,7 @@ const createExecution = async (
   columns,
   isInternal,
   dependencies,
-  { queryID, status, scheduleJobID, clientToken, knexClient = knex } = {},
+  { queryID, status, scheduleJobID, clientToken, fileType, knexClient = knex } = {},
 ) => {
   const cols = [
     ['customer_id', ':customerID'],
@@ -337,6 +339,11 @@ const createExecution = async (
   if (clientToken) {
     cols.push(['client_token', ':clientToken'])
     values.clientToken = clientToken.slice(0, MAX_LENGTH_EXECUTION_TOKEN)
+  }
+
+  if (fileType) {
+    cols.push(['file_type', ':fileType'])
+    values.fileType = fileType
   }
 
   // unique constraints:
@@ -524,7 +531,7 @@ const queueExecution = async (
     columns,
     isInternal,
     dependencies,
-    { queryID, status, scheduleJobID, clientToken },
+    { queryID, status, scheduleJobID, clientToken, fileType: toParquet ? FILE_TYPE_PRQ : '' },
   )
   // trigger execution when no deps
   if (isCreated && status === STATUS_RUNNING) {
@@ -663,7 +670,7 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
     if (!execution) {
       throw apiError('Invalid execution ID')
     }
-    const { whitelabelID, customerID, query, columns, isInternal, status } = execution
+    const { whitelabelID, customerID, query, columns, isInternal, status, fileType } = execution
     if (status !== STATUS_RUNNING) {
       // don't run unless the status was set to running beforehand
       return
@@ -700,7 +707,12 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
           { gzip: true, json: true, bucket: EXECUTION_BUCKET },
         )
       },
-      { engine, executionID, maxAge: 900, toParquet }, // 15 mins cache ttl
+      {
+        engine,
+        executionID,
+        maxAge: 900,
+        toParquet: fileType === FILE_TYPE_PRQ || toParquet,
+      }, // 15 mins cache ttl
     )
     const resultsParts = Object.entries(partLengths)
       .sort(([a], [b]) => a - b)
@@ -794,12 +806,23 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
 const respondWithExecution = async (req, res, next) => {
   try {
     const { execution } = req.ql
-    const { executionID, customerID, status, viewIDs, query, columns, resultsParts } = execution
+    const {
+      executionID,
+      customerID,
+      status,
+      viewIDs,
+      query,
+      columns,
+      resultsParts,
+      fileType,
+    } = execution
     const { results } = req.query
     // attach results
-    // TODO: if type is parquet don't attach the results
+    // if fileType is parquet don't attach the results
     // TODO: deprecate - retrieve results via results route
-    if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
+    if (['1', 'true'].includes((results || '').toLowerCase())
+    && status === STATUS_SUCCEEDED
+    && fileType !== FILE_TYPE_PRQ) {
       // multi-part
       execution.results = await getAllExecutionResults(
         customerID,
