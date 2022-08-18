@@ -2,6 +2,8 @@
 const { gzip } = require('zlib')
 
 const Cursor = require('pg-cursor')
+const fs = require('fs')
+const parquet = require('parquetjs')
 
 const { mlPool, fdwConnectByName, newPGClientFromPoolConfig } = require('../util/db')
 const { parseQueryTreeToEngine } = require('./parser')
@@ -15,6 +17,7 @@ const {
   putToS3Cache,
 } = require('../util/cache')
 const { getObjectHash } = require('./utils')
+const { typeToPrqMap, PRQ_STRING } = require('./type')
 
 
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
@@ -168,7 +171,7 @@ const makeResultsPartIter = (cursor, { partSizeBytes = 10000, cursorSizeRows = 5
 // calls cb with each results part
 const executeQueryInStreamMode = async (
   whitelabelID, customerID, views, tree, columns, callback,
-  { engine = 'pg', executionID, maxAge },
+  { engine = 'pg', executionID, maxAge, toParquet = false },
 ) => {
   if (engine !== 'pg') {
     throw apiError('Failed to execute the query', 500)
@@ -190,6 +193,14 @@ const executeQueryInStreamMode = async (
   const pgClient = newPGClientFromPoolConfig(mlPool, { application_name: pgClientName })
   let cursor
   let getNextPart
+  let schema
+  if (toParquet) {
+    const parquetSchema = columns.reduce((obj, [name, pgType]) => ({
+      ...obj,
+      [name]: { type: typeToPrqMap.get(pgType) } || PRQ_STRING,
+    }), {})
+    schema = new parquet.ParquetSchema(parquetSchema)
+  }
   try {
     for (let i = 0; ; i += 1) {
       let rows
@@ -225,6 +236,12 @@ const executeQueryInStreamMode = async (
           break
         }
         rows = part.rows
+        if (toParquet) {
+          const writer = await parquet.ParquetWriter.openFile(schema, 'results.parquet')
+          rows.forEach(row => writer.appendRow(row))
+          writer.close()
+          rows = fs.createReadStream('results.parquet')
+        }
         // push to cache
         promises.push(putToS3Cache([query, i], rows, { bucket: QUERY_BUCKET }))
         if (!rows.length) {

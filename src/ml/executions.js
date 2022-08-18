@@ -449,7 +449,7 @@ const updateExecution = async (
  * Triggers the execution's execution step
  * @param {number} executionID Execution ID
  */
-const triggerExecution = async (executionID) => {
+const triggerExecution = async (executionID, toParquet = false) => {
   try {
     if (!LAMBDA_EXECUTOR_ARN) {
       throw new Error('Lambda executor env variable not set')
@@ -457,7 +457,7 @@ const triggerExecution = async (executionID) => {
     const res = await lambda.invoke({
       FunctionName: LAMBDA_EXECUTOR_ARN,
       InvocationType: 'Event',
-      Payload: JSON.stringify({ execution_id: executionID }),
+      Payload: JSON.stringify({ execution_id: executionID, toParquet }),
     }).promise()
     if (res.StatusCode !== 202) {
       throw new Error(`Lambda responded with status code: ${res.StatusCode}`)
@@ -505,6 +505,7 @@ const queueExecution = async (
   views,
   columns,
   { queryID, scheduleJobID, clientToken } = {},
+  toParquet = false,
 ) => {
   const viewIDs = Object.keys(views)
   const dependencies = sortViewDependencies(views)
@@ -527,7 +528,7 @@ const queueExecution = async (
   )
   // trigger execution when no deps
   if (isCreated && status === STATUS_RUNNING) {
-    await triggerExecution(executionID)
+    await triggerExecution(executionID, toParquet)
   }
   return executionID
 }
@@ -535,6 +536,7 @@ const queueExecution = async (
 // extracts async and saved queries and queues them as executions
 const queueExecutionMW = async (req, res, next) => {
   try {
+    const { toParquet = false } = req.query
     const { queryID } = req.ql.query || req.ql.execution || {}
     const {
       access,
@@ -564,6 +566,7 @@ const queueExecutionMW = async (req, res, next) => {
       views,
       mlQueryColumns,
       { queryID, clientToken },
+      toParquet,
     )
     res.json({ executionID })
   } catch (err) {
@@ -654,7 +657,7 @@ const previewExecutionMW = async (req, res, next) => {
 // }
 
 // let errors bubble up so the query can be retried
-const runExecution = async (executionID, engine = 'pg') => {
+const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
   try {
     const [execution] = await getExecutionMetas({ executionID })
     if (!execution) {
@@ -697,7 +700,7 @@ const runExecution = async (executionID, engine = 'pg') => {
           { gzip: true, json: true, bucket: EXECUTION_BUCKET },
         )
       },
-      { engine, executionID, maxAge: 900 }, // 15 mins cache ttl
+      { engine, executionID, maxAge: 900, toParquet }, // 15 mins cache ttl
     )
     const resultsParts = Object.entries(partLengths)
       .sort(([a], [b]) => a - b)
@@ -732,7 +735,7 @@ const runExecution = async (executionID, engine = 'pg') => {
 }
 
 // lambda handler
-const executionHandler = ({ execution_id, engine = 'pg' }) => {
+const executionHandler = ({ execution_id, engine = 'pg', toParquet = false }) => {
   // eslint-disable-next-line radix
   const id = parseInt(execution_id, 10)
   if (Number.isNaN(id)) {
@@ -742,7 +745,7 @@ const executionHandler = ({ execution_id, engine = 'pg' }) => {
     throw apiError(`Invalid engine: ${engine}`)
   }
   console.log('execution id', id, 'engine', engine)
-  return runExecution(id, engine)
+  return runExecution(id, engine, toParquet)
 }
 
 // isRequired flags whether or not 'execution' is a mandatory route/query param
@@ -794,6 +797,7 @@ const respondWithExecution = async (req, res, next) => {
     const { executionID, customerID, status, viewIDs, query, columns, resultsParts } = execution
     const { results } = req.query
     // attach results
+    // TODO: if type is parquet don't attach the results
     // TODO: deprecate - retrieve results via results route
     if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
       // multi-part
