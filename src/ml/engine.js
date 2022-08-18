@@ -167,6 +167,13 @@ const makeResultsPartIter = (cursor, { partSizeBytes = 10000, cursorSizeRows = 5
   }
 }
 
+const convertToParquet = async (rows, schema) => {
+  const writer = await parquet.ParquetWriter.openFile(schema, '/tmp/results.parquet')
+  rows.forEach(row => writer.appendRow(row))
+  writer.close()
+  return fs.createReadStream('/tmp/results.parquet')
+}
+
 // runs query with cache
 // calls cb with each results part
 const executeQueryInStreamMode = async (
@@ -236,17 +243,14 @@ const executeQueryInStreamMode = async (
           break
         }
         rows = part.rows
-        if (toParquet) {
-          const writer = await parquet.ParquetWriter.openFile(schema, 'results.parquet')
-          rows.forEach(row => writer.appendRow(row))
-          writer.close()
-          rows = fs.createReadStream('results.parquet')
-        }
         // push to cache
         promises.push(putToS3Cache([query, i], rows, { bucket: QUERY_BUCKET }))
         if (!rows.length) {
           break
         }
+      }
+      if (toParquet && !Buffer.isBuffer(rows)) {
+        rows = await convertToParquet(rows, schema)
       }
       // send rows to cb
       const res = callback(rows, i)
