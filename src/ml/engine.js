@@ -249,11 +249,12 @@ const executeQueryInStreamMode = async (
           break
         }
       }
+      const { length } = rows || {}
       if (toParquet && !Buffer.isBuffer(rows)) {
         rows = await convertToParquet(rows, schema)
       }
       // send rows to cb
-      const res = callback(rows, i)
+      const res = callback(rows, i, length)
       if (res instanceof Promise) {
         promises.push(res)
       }

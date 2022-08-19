@@ -543,7 +543,8 @@ const queueExecution = async (
 // extracts async and saved queries and queues them as executions
 const queueExecutionMW = async (req, res, next) => {
   try {
-    const { toParquet = false } = req.query
+    let { toParquet } = req.query
+    toParquet = ['1', 'true'].includes((`${toParquet}` || '').toLowerCase())
     const { queryID } = req.ql.query || req.ql.execution || {}
     const {
       access,
@@ -699,8 +700,8 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
       views,
       tree,
       columns,
-      (rows, i) => {
-        partLengths[i] = rows.length
+      (rows, i, length) => {
+        partLengths[i] = length
         return putToS3Cache(
           getExecutionResultsKey(customerID, executionID, i + 1),
           rows,
