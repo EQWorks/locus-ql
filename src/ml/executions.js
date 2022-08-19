@@ -142,8 +142,9 @@ const getExecutionMetas = async ({
  * @param {number} [part] Results part number
  * @returns {string} Cache key
  */
-const getExecutionResultsKey = (customerID, executionID, part) =>
-  `${customerID}/${executionID}${part ? `/${part}` : ''}`
+const getExecutionResultsKey = (customerID, executionID, part, fileType = '') =>
+  `${customerID}/${executionID}${part ? `/${part}` : ''}${
+    fileType === FILE_TYPE_PRQ ? '.parquet' : ''}`
 
 /**
  * Pulls the execution results from storage
@@ -250,11 +251,11 @@ const getAllExecutionResults = (
  * @param {number} [options.part] Results part number
  * @returns {Promise<string|undefined>} URL to the query results or undefined if not found
  */
-const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part } = {}) =>
+const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part, fileType = '' } = {}) =>
   queryWithCache( // cache pre-signed url for ttl seconds
-    ['execution-results', executionID, part],
+    ['execution-results', executionID, part, fileType],
     () => getS3CacheURL(
-      getExecutionResultsKey(customerID, executionID, part),
+      getExecutionResultsKey(customerID, executionID, part, fileType),
       { bucket: EXECUTION_BUCKET, ttl },
     ),
     { ttl, maxAge: ttl, gzip: false, json: false },
@@ -873,7 +874,7 @@ const respondWithExecution = async (req, res, next) => {
 
 const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
   try {
-    const { executionID, customerID, status, resultsParts } = req.ql.execution
+    const { executionID, customerID, status, resultsParts, fileType } = req.ql.execution
     const { redirect } = req.query
     const { part } = req.params
     if (status !== STATUS_SUCCEEDED) {
@@ -894,7 +895,7 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
       }
     }
     // generate/retrieve URL to results in storage
-    const url = await getExecutionResultsURL(customerID, executionID, { part: safePart })
+    const url = await getExecutionResultsURL(customerID, executionID, { part: safePart, fileType })
     if (['1', 'true'].includes((redirect || '').toLowerCase())) {
       return res.redirect(302, url)
     }
