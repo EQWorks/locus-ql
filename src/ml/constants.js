@@ -27,4 +27,7 @@ module.exports = {
   MAX_LENGTH_QUERY_DESCRIPTION: 255,
   MAX_LENGTH_EXECUTION_TOKEN: 255,
   MAX_LENGTH_STATUS_REASON: 255,
+
+  // file types
+  FILE_TYPE_PRQ: 'parquet',
 }

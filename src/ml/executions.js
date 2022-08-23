@@ -25,6 +25,7 @@ const {
   // RESULTS_PART_SIZE_FIRST,
   MAX_LENGTH_EXECUTION_TOKEN,
   MAX_LENGTH_STATUS_REASON,
+  FILE_TYPE_PRQ,
 } = require('./constants')
 
 
@@ -81,6 +82,7 @@ const getExecutionMetas = async ({
       e.query_id IS NOT NULL AND q.query_id IS NULL AS "isOrphaned",
       e.cost,
       e.client_token AS "clientToken",
+      e.file_type AS "fileType",
       CASE WHEN e.results_parts IS NOT NULL THEN
         ARRAY(
           SELECT
@@ -140,8 +142,9 @@ const getExecutionMetas = async ({
  * @param {number} [part] Results part number
  * @returns {string} Cache key
  */
-const getExecutionResultsKey = (customerID, executionID, part) =>
-  `${customerID}/${executionID}${part ? `/${part}` : ''}`
+const getExecutionResultsKey = (customerID, executionID, part, fileType = '') =>
+  `${customerID}/${executionID}${part ? `/${part}` : ''}${
+    fileType === FILE_TYPE_PRQ ? '.parquet' : ''}`
 
 /**
  * Pulls the execution results from storage
@@ -248,11 +251,11 @@ const getAllExecutionResults = (
  * @param {number} [options.part] Results part number
  * @returns {Promise<string|undefined>} URL to the query results or undefined if not found
  */
-const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part } = {}) =>
+const getExecutionResultsURL = (customerID, executionID, { ttl = 900, part, fileType = '' } = {}) =>
   queryWithCache( // cache pre-signed url for ttl seconds
-    ['execution-results', executionID, part],
+    ['execution-results', executionID, part, fileType],
     () => getS3CacheURL(
-      getExecutionResultsKey(customerID, executionID, part),
+      getExecutionResultsKey(customerID, executionID, part, fileType),
       { bucket: EXECUTION_BUCKET, ttl },
     ),
     { ttl, maxAge: ttl, gzip: false, json: false },
@@ -292,7 +295,7 @@ const createExecution = async (
   columns,
   isInternal,
   dependencies,
-  { queryID, status, scheduleJobID, clientToken, knexClient = knex } = {},
+  { queryID, status, scheduleJobID, clientToken, fileType, knexClient = knex } = {},
 ) => {
   const cols = [
     ['customer_id', ':customerID'],
@@ -337,6 +340,11 @@ const createExecution = async (
   if (clientToken) {
     cols.push(['client_token', ':clientToken'])
     values.clientToken = clientToken.slice(0, MAX_LENGTH_EXECUTION_TOKEN)
+  }
+
+  if (fileType) {
+    cols.push(['file_type', ':fileType'])
+    values.fileType = fileType
   }
 
   // unique constraints:
@@ -449,7 +457,7 @@ const updateExecution = async (
  * Triggers the execution's execution step
  * @param {number} executionID Execution ID
  */
-const triggerExecution = async (executionID) => {
+const triggerExecution = async (executionID, toParquet = false) => {
   try {
     if (!LAMBDA_EXECUTOR_ARN) {
       throw new Error('Lambda executor env variable not set')
@@ -457,7 +465,7 @@ const triggerExecution = async (executionID) => {
     const res = await lambda.invoke({
       FunctionName: LAMBDA_EXECUTOR_ARN,
       InvocationType: 'Event',
-      Payload: JSON.stringify({ execution_id: executionID }),
+      Payload: JSON.stringify({ execution_id: executionID, toParquet }),
     }).promise()
     if (res.StatusCode !== 202) {
       throw new Error(`Lambda responded with status code: ${res.StatusCode}`)
@@ -505,6 +513,7 @@ const queueExecution = async (
   views,
   columns,
   { queryID, scheduleJobID, clientToken } = {},
+  toParquet = false,
 ) => {
   const viewIDs = Object.keys(views)
   const dependencies = sortViewDependencies(views)
@@ -523,11 +532,11 @@ const queueExecution = async (
     columns,
     isInternal,
     dependencies,
-    { queryID, status, scheduleJobID, clientToken },
+    { queryID, status, scheduleJobID, clientToken, fileType: toParquet ? FILE_TYPE_PRQ : '' },
   )
   // trigger execution when no deps
   if (isCreated && status === STATUS_RUNNING) {
-    await triggerExecution(executionID)
+    await triggerExecution(executionID, toParquet)
   }
   return executionID
 }
@@ -535,6 +544,8 @@ const queueExecution = async (
 // extracts async and saved queries and queues them as executions
 const queueExecutionMW = async (req, res, next) => {
   try {
+    let { toParquet } = req.query
+    toParquet = ['1', 'true'].includes((`${toParquet}` || '').toLowerCase())
     const { queryID } = req.ql.query || req.ql.execution || {}
     const {
       access,
@@ -564,6 +575,7 @@ const queueExecutionMW = async (req, res, next) => {
       views,
       mlQueryColumns,
       { queryID, clientToken },
+      toParquet,
     )
     res.json({ executionID })
   } catch (err) {
@@ -654,13 +666,13 @@ const previewExecutionMW = async (req, res, next) => {
 // }
 
 // let errors bubble up so the query can be retried
-const runExecution = async (executionID, engine = 'pg') => {
+const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
   try {
     const [execution] = await getExecutionMetas({ executionID })
     if (!execution) {
       throw apiError('Invalid execution ID')
     }
-    const { whitelabelID, customerID, query, columns, isInternal, status } = execution
+    const { whitelabelID, customerID, query, columns, isInternal, status, fileType } = execution
     if (status !== STATUS_RUNNING) {
       // don't run unless the status was set to running beforehand
       return
@@ -689,15 +701,20 @@ const runExecution = async (executionID, engine = 'pg') => {
       views,
       tree,
       columns,
-      (rows, i) => {
-        partLengths[i] = rows.length
+      (rows, i, length) => {
+        partLengths[i] = length
         return putToS3Cache(
           getExecutionResultsKey(customerID, executionID, i + 1),
           rows,
           { gzip: true, json: true, bucket: EXECUTION_BUCKET },
         )
       },
-      { engine, executionID, maxAge: 900 }, // 15 mins cache ttl
+      {
+        engine,
+        executionID,
+        maxAge: 900,
+        toParquet: fileType === FILE_TYPE_PRQ || toParquet,
+      }, // 15 mins cache ttl
     )
     const resultsParts = Object.entries(partLengths)
       .sort(([a], [b]) => a - b)
@@ -732,7 +749,7 @@ const runExecution = async (executionID, engine = 'pg') => {
 }
 
 // lambda handler
-const executionHandler = ({ execution_id, engine = 'pg' }) => {
+const executionHandler = ({ execution_id, engine = 'pg', toParquet = false }) => {
   // eslint-disable-next-line radix
   const id = parseInt(execution_id, 10)
   if (Number.isNaN(id)) {
@@ -742,7 +759,7 @@ const executionHandler = ({ execution_id, engine = 'pg' }) => {
     throw apiError(`Invalid engine: ${engine}`)
   }
   console.log('execution id', id, 'engine', engine)
-  return runExecution(id, engine)
+  return runExecution(id, engine, toParquet)
 }
 
 // isRequired flags whether or not 'execution' is a mandatory route/query param
@@ -791,11 +808,23 @@ const loadExecution = (isRequired = true) => async (req, _, next) => {
 const respondWithExecution = async (req, res, next) => {
   try {
     const { execution } = req.ql
-    const { executionID, customerID, status, viewIDs, query, columns, resultsParts } = execution
+    const {
+      executionID,
+      customerID,
+      status,
+      viewIDs,
+      query,
+      columns,
+      resultsParts,
+      fileType,
+    } = execution
     const { results } = req.query
     // attach results
+    // if fileType is parquet don't attach the results
     // TODO: deprecate - retrieve results via results route
-    if (['1', 'true'].includes((results || '').toLowerCase()) && status === STATUS_SUCCEEDED) {
+    if (['1', 'true'].includes((results || '').toLowerCase())
+    && status === STATUS_SUCCEEDED
+    && fileType !== FILE_TYPE_PRQ) {
       // multi-part
       execution.results = await getAllExecutionResults(
         customerID,
@@ -845,7 +874,7 @@ const respondWithExecution = async (req, res, next) => {
 
 const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
   try {
-    const { executionID, customerID, status, resultsParts } = req.ql.execution
+    const { executionID, customerID, status, resultsParts, fileType } = req.ql.execution
     const { redirect } = req.query
     const { part } = req.params
     if (status !== STATUS_SUCCEEDED) {
@@ -866,7 +895,7 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
       }
     }
     // generate/retrieve URL to results in storage
-    const url = await getExecutionResultsURL(customerID, executionID, { part: safePart })
+    const url = await getExecutionResultsURL(customerID, executionID, { part: safePart, fileType })
     if (['1', 'true'].includes((redirect || '').toLowerCase())) {
       return res.redirect(302, url)
     }

@@ -2,6 +2,8 @@
 const { gzip } = require('zlib')
 
 const Cursor = require('pg-cursor')
+const fs = require('fs')
+const parquet = require('parquetjs')
 
 const { mlPool, fdwConnectByName, newPGClientFromPoolConfig } = require('../util/db')
 const { parseQueryTreeToEngine } = require('./parser')
@@ -15,6 +17,7 @@ const {
   putToS3Cache,
 } = require('../util/cache')
 const { getObjectHash } = require('./utils')
+const { typeToPrqMap, PRQ_STRING } = require('./type')
 
 
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
@@ -164,11 +167,18 @@ const makeResultsPartIter = (cursor, { partSizeBytes = 10000, cursorSizeRows = 5
   }
 }
 
+const convertToParquet = async (rows, schema) => {
+  const writer = await parquet.ParquetWriter.openFile(schema, '/tmp/results.parquet')
+  rows.forEach(row => writer.appendRow(row))
+  writer.close()
+  return fs.createReadStream('/tmp/results.parquet')
+}
+
 // runs query with cache
 // calls cb with each results part
 const executeQueryInStreamMode = async (
   whitelabelID, customerID, views, tree, columns, callback,
-  { engine = 'pg', executionID, maxAge },
+  { engine = 'pg', executionID, maxAge, toParquet = false },
 ) => {
   if (engine !== 'pg') {
     throw apiError('Failed to execute the query', 500)
@@ -190,6 +200,14 @@ const executeQueryInStreamMode = async (
   const pgClient = newPGClientFromPoolConfig(mlPool, { application_name: pgClientName })
   let cursor
   let getNextPart
+  let schema
+  if (toParquet) {
+    const parquetSchema = columns.reduce((obj, [name, pgType]) => ({
+      ...obj,
+      [name]: { type: typeToPrqMap.get(pgType) } || PRQ_STRING,
+    }), {})
+    schema = new parquet.ParquetSchema(parquetSchema)
+  }
   try {
     for (let i = 0; ; i += 1) {
       let rows
@@ -231,8 +249,12 @@ const executeQueryInStreamMode = async (
           break
         }
       }
+      const { length } = rows || {}
+      if (toParquet && !Buffer.isBuffer(rows)) {
+        rows = await convertToParquet(rows, schema)
+      }
       // send rows to cb
-      const res = callback(rows, i)
+      const res = callback(rows, i, length)
       if (res instanceof Promise) {
         promises.push(res)
       }

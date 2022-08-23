@@ -1,6 +1,7 @@
 const { createHash } = require('crypto')
 const { gzip, gunzip } = require('zlib')
 const { promisify } = require('util')
+const stream = require('stream')
 
 const { s3 } = require('./aws')
 const { client: redis } = require('./redis')
@@ -187,7 +188,9 @@ const getFromS3Cache = async (
     if (ContentEncoding === 'gzip') {
       value = await gunzipAsync(value)
     }
-    value = value.toString('utf8')
+    if (ContentType !== 'application/octet-stream') {
+      value = value.toString('utf8')
+    }
     if (ContentType === 'application/json' && parseFromJson) {
       return JSON.parse(value)
     }
@@ -219,22 +222,33 @@ const putToS3Cache = async (
   { gzip = true, json = true, bucket = API_CACHE_BUCKET, metadata = {} } = {},
 ) => {
   let cacheValue = value
-  if (typeof value === 'object') {
+  const key = getCacheKey(keys)
+  if (Buffer.isBuffer(value) || value instanceof stream.Stream) {
+    await s3.upload({
+      Bucket: bucket,
+      Key: `${key}.parquet`,
+      Body: cacheValue,
+      ContentType: 'application/octet-stream',
+      Metadata: metadata,
+    }).promise()
+  } else {
+    if (typeof value === 'object') {
     // eslint-disable-next-line no-param-reassign
-    json = true
-    cacheValue = JSON.stringify(value)
+      json = true
+      cacheValue = JSON.stringify(value)
+    }
+    if (gzip) {
+      cacheValue = await gzipAsync(cacheValue)
+    }
+    await s3.putObject({
+      Bucket: bucket,
+      Key: key,
+      Body: cacheValue,
+      ContentType: json ? 'application/json' : 'text/plain',
+      ContentEncoding: gzip ? 'gzip' : 'identity',
+      Metadata: metadata,
+    }).promise()
   }
-  if (gzip) {
-    cacheValue = await gzipAsync(cacheValue)
-  }
-  await s3.putObject({
-    Bucket: bucket,
-    Key: getCacheKey(keys),
-    Body: cacheValue,
-    ContentType: json ? 'application/json' : 'text/plain',
-    ContentEncoding: gzip ? 'gzip' : 'identity',
-    Metadata: metadata,
-  }).promise()
 }
 
 /**
