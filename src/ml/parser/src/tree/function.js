@@ -1,4 +1,11 @@
-const { isArray, isNonNull, isEmptyOrNullArray, sanitizeString, parserError } = require('../utils')
+const {
+  isArray,
+  isNonNull,
+  isEmptyOrNullArray,
+  isEmptyObject,
+  sanitizeString,
+  parserError,
+} = require('../utils')
 const { expressionTypes } = require('../types')
 const functions = require('../functions')
 const { parseExpression } = require('./expression')
@@ -11,13 +18,21 @@ class FunctionNode extends BaseNode {
     if (!isArray(exp.values, { minLength: 1 })) {
       throw parserError(`Invalid function syntax: ${JSON.stringify(exp)}`)
     }
-    const { values: [name, ...args], distinct, where, orderBy } = exp
+    const { values: [name, ...args], distinct, where, orderBy, over } = exp
     this.name = sanitizeString(name)
     const fn = functions[this.name]
     if (!fn) {
       throw parserError(`Invalid function: ${name}`)
     }
-    const { argsLength, minArgsLength, maxArgsLength, defaultCast, validate, isAggregate } = fn
+    const {
+      argsLength,
+      minArgsLength,
+      maxArgsLength,
+      defaultCast,
+      validate,
+      isAggregate,
+      isWindow,
+    } = fn
     // function arguments
     this.args = (args || []).map((e) => {
       const arg = parseExpression(e, this._context)
@@ -71,6 +86,34 @@ class FunctionNode extends BaseNode {
         return value
       })
     }
+    // aggregate function, window function - over
+    this.over = {
+      partitionBy: [],
+      orderBy: [],
+    }
+    if (isNonNull(over) && !isEmptyObject(over)) {
+      if (!isAggregate && !isWindow) {
+        throw parserError(`Invalid over syntax in function: ${this.name}`)
+      }
+      if (isNonNull(over.partitionBy) && !isEmptyOrNullArray(over.partitionBy)) {
+        this.over.partitionBy = over.partitionBy.map((e) => {
+          const value = parseExpression(e, this._context)
+          if (value.as || value._as) {
+            throw parserError(`Invalid alias in partitionBy expression: ${value.as || value._as}`)
+          }
+          return value
+        })
+      }
+      if (isNonNull(over.orderBy) && !isEmptyOrNullArray(over.orderBy)) {
+        this.over.orderBy = over.orderBy.map((e) => {
+          const value = parseExpression(e, this._context)
+          if (value.as || value._as) {
+            throw parserError(`Invalid alias in orderBy expression: ${value.as || value._as}`)
+          }
+          return value
+        })
+      }
+    }
     // illegal to use distinct and order by clause together
     if (this.distinct && this.orderBy.length) {
       throw parserError(`Cannot use distinct with orderBy in function: ${this.name}`)
@@ -90,7 +133,13 @@ class FunctionNode extends BaseNode {
     const orderBy = this.orderBy.length
       ? ` ORDER BY ${this.orderBy.map(e => e.toSQL(options)).join(', ')}`
       : ''
-    const sql = `${this.name}(${distinct}${args}${orderBy})${where}`
+    const over = this.over.partitionBy.length || this.over.orderBy.length
+      ? ` OVER(${this.over.partitionBy.length ?
+        `PARTITION BY ${this.over.partitionBy.map(e => e.toSQL(options)).join(', ')}` : ''} ${
+        this.over.orderBy.length ?
+          `ORDER BY ${this.over.orderBy.map(e => e.toSQL(options)).join(', ')}` : ''})`
+      : ''
+    const sql = `${this.name}(${distinct}${args}${orderBy})${over}${where}`
     // return block
     return !where || (this.isRoot() && !this.as && !this.cast) ? sql : `(${sql})`
   }
@@ -107,6 +156,11 @@ class FunctionNode extends BaseNode {
       distinct: this.distinct,
       where: this.where.length ? this.where.map(e => e.toQL(options)) : undefined,
       orderBy: this.orderBy.length ? this.orderBy.map(e => e.toQL(options)) : undefined,
+      over: {
+        partitionBy: this.over.partitionBy.length ?
+          this.over.partitionBy.map(e => e.toQL(options)) : undefined,
+        orderBy: this.over.orderBy.length ? this.over.orderBy.map(e => e.toQL(options)) : undefined,
+      },
     }
   }
 
@@ -119,6 +173,7 @@ class FunctionNode extends BaseNode {
         distinct: this.distinct,
         where: this.where.length ? this.where.map(e => e.toShort(options)) : undefined,
         order_by: this.orderBy.length ? this.orderBy.map(e => e.toShort(options)) : undefined,
+        over: this.over,
         as: this.as,
         cast: this.cast,
       },

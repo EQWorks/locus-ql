@@ -78,7 +78,13 @@ const functionParser = engine => withOptions((node, options) => {
     const orderBy = node.orderBy.length
       ? ` ORDER BY ${node.orderBy.map(e => e.to(engine, options)).join(', ')}`
       : ''
-    sql = `${name}(${distinct}${args}${orderBy})${where}`
+    const over = node.over.partitionBy.length || node.over.orderBy.length
+      ? ` OVER(${node.over.partitionBy.length ?
+        `PARTITION BY ${node.over.partitionBy.map(e => e.to(engine, options)).join(', ')}` : ''} ${
+        node.over.orderBy.length ?
+          `ORDER BY ${node.over.orderBy.map(e => e.to(engine, options)).join(', ')}` : ''})`
+      : ''
+    sql = `${name}(${distinct}${args}${orderBy})${over}${where}`
     if (name !== node.name && !node.as) {
       // return as subquery to hide underlying implementation (column name)
       sql = `(SELECT ${sql} AS ${node.name})`
