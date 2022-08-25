@@ -45,6 +45,12 @@ const functions = {
   //   category: CAT_NUMERIC,
   //   defaultCast: 'date',
   // },
+
+  // window functions
+  rank: {
+    argsLength: 0,
+    isWindow: true,
+  },
 }
 
 // math functions
