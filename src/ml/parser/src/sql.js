@@ -348,9 +348,13 @@ astParsers.FuncCall = checkProps(
     },
     context,
   ) => {
-    // window
+    // Window function
+    const overClauses = {}
     if (over) {
-      throw sqlParserError({ message: 'Window function not supported', location })
+      overClauses.partitionBy = over.partitionClause ?
+        over.partitionClause.map(e => parseASTNode(e, context)) : undefined
+      overClauses.orderBy = over.orderClause ?
+        over.orderClause.map(e => parseASTNode(e, context)) : undefined
     }
     // filter (where ...)
     let where
@@ -370,7 +374,14 @@ astParsers.FuncCall = checkProps(
     const orderBy = agg_order ? agg_order.map(e => parseASTNode(e, context)) : undefined
     const name = parseASTNode(funcname[0], context).toLowerCase()
     const parsedArgs = args ? args.map(e => parseASTNode(e, context)) : []
-    return { type: expTypes.FUNCTION, values: [name, ...parsedArgs], distinct, where, orderBy }
+    return {
+      type: expTypes.FUNCTION,
+      values: [name, ...parsedArgs],
+      distinct,
+      where,
+      orderBy,
+      over: overClauses,
+    }
   },
 )
 
