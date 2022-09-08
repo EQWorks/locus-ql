@@ -5,21 +5,24 @@ const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'poli
 
 // categorize policies by prefix
 const parsePolicies = policies => policies.reduce((acc, policy) => {
-  const splitPolicy = (p) => {
+  const splitPolicy = (p, obj) => {
     const [prefix, ...rest] = p.split(':')
-    if (acc[prefix]) {
-      acc[prefix].push(rest.join(':'))
+    if (obj[prefix]) {
+      obj[prefix].push(rest.join(':'))
     } else {
-      acc[prefix] = [rest.join(':')]
+      obj[prefix] = [rest.join(':')]
     }
   }
 
   if (Array.isArray(policy)) {
+    const obj = {}
     for (const p of policy) {
-      splitPolicy(p)
+      splitPolicy(p, obj)
     }
+    const key = `one-of-${Object.keys(obj).join('-')}`
+    acc[key] = obj
   } else {
-    splitPolicy(policy)
+    splitPolicy(policy, acc)
   }
   return acc
 }, {})
@@ -53,12 +56,22 @@ const confirmAccess = (...access) => (req, _, next) => {
     const targetPolicies = parsePolicies(access)
     for (const [prefix, tp] of Object.entries(targetPolicies)) {
       // high-level check if user has all required policy categories
-      if (!userPolicies[prefix]) {
-        throw apiError(`Invalid access, missing required policies for ${prefix}`, 403)
-      }
-      const pass = checkRequiredPolicies(userPolicies[prefix], tp)
-      if (!pass) {
-        throw apiError(`Invalid access, missing required policies for ${prefix}`, 403)
+      if (prefix.startsWith('one-of-')) {
+        const allPrefixes = Object.keys(tp)
+        const found = Object.keys(userPolicies).filter(prefix => allPrefixes.includes(prefix))
+        const pass = found.some(prefix => checkRequiredPolicies(userPolicies[prefix], tp[prefix]))
+        if (!pass) {
+          throw apiError(`Invalid access, should have one of ${
+            allPrefixes.join(', ')} policies`, 403)
+        }
+      } else {
+        if (!userPolicies[prefix]) {
+          throw apiError(`Invalid access, missing required policies for ${prefix}`, 403)
+        }
+        const pass = checkRequiredPolicies(userPolicies[prefix], tp)
+        if (!pass) {
+          throw apiError(`Invalid access, missing required policies for ${prefix}`, 403)
+        }
       }
     }
 
