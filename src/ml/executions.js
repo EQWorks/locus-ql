@@ -208,6 +208,45 @@ const getExecutionResultsParts = async (customerID, executionID, parts, parseFro
 }
 
 /**
+ * Pulls multi-part execution results that are stored in parquet format
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {number} executionID Execution ID
+ * @param {{part: number, firstIndex: number, lastIndex: number}[]} [resultsParts] List of
+ * the execution's results parts. Required for queries with multi-part results
+ * @param {Object} options
+ * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an object
+ * @returns {string|Object[]} Query results
+ */
+const getExecutionResultsParquet = async (
+  customerID,
+  executionID,
+  resultsParts,
+  { parseFromJson = true },
+) => {
+  const uri = resultsParts.map(p =>
+    `'s3://${EXECUTION_BUCKET}/${customerID}/${executionID}/${p.part}.parquet'`).join(', ')
+  const query = `
+  SELECT
+      *
+  FROM read_parquet([${uri}]);
+  `
+  const { FunctionError, Payload } = await lambda.invoke({
+    FunctionName: 'ql-hifi-dev-query',
+    InvocationType: 'RequestResponse',
+    Payload: JSON.stringify({ query }),
+  }).promise()
+  if (FunctionError) {
+    const { errorMessage } = JSON.parse(Payload)
+    throw apiError(errorMessage)
+  }
+  const { body = '' } = JSON.parse(Payload)
+  if (parseFromJson) {
+    return JSON.parse(body)
+  }
+  return body
+}
+
+/**
  * Pulls the execution results from storage
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
@@ -215,19 +254,23 @@ const getExecutionResultsParts = async (customerID, executionID, parts, parseFro
  * @param {{part: number, firstIndex: number, lastIndex: number}[]} [options.resultsParts] List of
  * the execution's results parts. Required for queries with multi-part results
  * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an object
+ * @param {string} [options.fileType] File type of the results
  * @returns {Promise<string|Object[]|undefined>} Query results or undefined if not found
  * or too large
  */
 const getAllExecutionResults = (
   customerID,
   executionID,
-  { resultsParts, parseFromJson = true },
+  { resultsParts, parseFromJson = true, fileType },
 ) => {
   // multi-part
   if (resultsParts) {
     // too large
     if (resultsParts.length > 3) {
       return
+    }
+    if (fileType === FILE_TYPE_PRQ) {
+      return getExecutionResultsParquet(customerID, executionID, resultsParts, { parseFromJson })
     }
     return resultsParts.length
       ? getExecutionResultsParts(
@@ -820,16 +863,14 @@ const respondWithExecution = async (req, res, next) => {
     } = execution
     const { results } = req.query
     // attach results
-    // if fileType is parquet don't attach the results
     // TODO: deprecate - retrieve results via results route
     if (['1', 'true'].includes((results || '').toLowerCase())
-    && status === STATUS_SUCCEEDED
-    && fileType !== FILE_TYPE_PRQ) {
+    && status === STATUS_SUCCEEDED) {
       // multi-part
       execution.results = await getAllExecutionResults(
         customerID,
         executionID,
-        { resultsParts },
+        { resultsParts, fileType },
       )
     }
     // convert columns from array to object
