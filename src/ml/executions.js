@@ -221,7 +221,7 @@ const getExecutionResultsParquet = async (
   customerID,
   executionID,
   resultsParts,
-  { parseFromJson = true },
+  { parseFromJson = true } = {},
 ) => {
   const uri = resultsParts.map(p =>
     `'s3://${EXECUTION_BUCKET}/${customerID}/${executionID}/${p.part}.parquet'`).join(', ')
@@ -916,7 +916,7 @@ const respondWithExecution = async (req, res, next) => {
 const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
   try {
     const { executionID, customerID, status, resultsParts, fileType } = req.ql.execution
-    const { redirect } = req.query
+    const { redirect, toJson = true } = req.query
     const { part } = req.params
     if (status !== STATUS_SUCCEEDED) {
       throw apiError(`The execution is not in '${STATUS_SUCCEEDED}' status`, 400)
@@ -936,7 +936,20 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
       }
     }
     // generate/retrieve URL to results in storage
-    const url = await getExecutionResultsURL(customerID, executionID, { part: safePart, fileType })
+    let url = await getExecutionResultsURL(customerID, executionID, { part: safePart, fileType })
+    if (['1', 'true'].includes((`${toJson}` || '').toLowerCase())) {
+      const rows = await getFromS3Cache([customerID, executionID, safePart])
+      if (!rows) {
+        const result = await getExecutionResultsParquet(
+          customerID,
+          executionID,
+          [{ part: safePart }],
+          { parseFromJson: false },
+        )
+        await putToS3Cache([customerID, executionID, safePart], result)
+      }
+      url = await getS3CacheURL([customerID, executionID, safePart])
+    }
     if (['1', 'true'].includes((redirect || '').toLowerCase())) {
       return res.redirect(302, url)
     }
