@@ -937,7 +937,7 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
     }
     // generate/retrieve URL to results in storage
     let url = await getExecutionResultsURL(customerID, executionID, { part: safePart, fileType })
-    if (['1', 'true'].includes((`${toJson}` || '').toLowerCase())) {
+    if (['1', 'true'].includes((`${toJson}` || '').toLowerCase()) && fileType === FILE_TYPE_PRQ) {
       const rows = await getFromS3Cache([customerID, executionID, safePart])
       if (!rows) {
         const result = await getExecutionResultsParquet(
