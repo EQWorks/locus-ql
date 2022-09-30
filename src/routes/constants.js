@@ -21,4 +21,5 @@ module.exports = {
   POLICY_QL_QUERIES_WRITE: 'ql:queries:read:write',
 
   QL_SCHEMA: process.env.ML_SCHEMA,
+  COX_CU: 27848,
 }
