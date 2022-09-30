@@ -19,4 +19,6 @@ module.exports = {
   // queries
   POLICY_QL_QUERIES_READ: 'ql:queries:read',
   POLICY_QL_QUERIES_WRITE: 'ql:queries:read:write',
+
+  QL_SCHEMA: process.env.ML_SCHEMA,
 }
