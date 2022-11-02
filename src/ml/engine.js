@@ -204,7 +204,7 @@ const executeQueryInStreamMode = async (
   if (toParquet) {
     const parquetSchema = columns.reduce((obj, [name, pgType]) => ({
       ...obj,
-      [name]: { type: typeToPrqMap.get(pgType) } || PRQ_STRING,
+      [name]: { type: (typeToPrqMap.get(pgType) || PRQ_STRING), optional: true },
     }), {})
     schema = new parquet.ParquetSchema(parquetSchema)
   }
