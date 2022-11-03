@@ -708,6 +708,25 @@ const previewExecutionMW = async (req, res, next) => {
 //   return resultsParts
 // }
 
+
+const convertToParquet = async (
+  customerID,
+  executionID,
+  resultsParts,
+) => {
+  const keys = resultsParts.map((_, i) => `${customerID}/${executionID}/${i + 1}`)
+  const { FunctionError, Payload } = await lambda.invoke({
+    FunctionName: 'ql-hifi-dev-to_parquet',
+    InvocationType: 'RequestResponse',
+    Payload: JSON.stringify({ bucket: EXECUTION_BUCKET, keys }),
+  }).promise()
+  if (FunctionError) {
+    const { errorMessage } = JSON.parse(Payload)
+    throw apiError(`Failed to convert to parquet - ${errorMessage}`)
+  }
+}
+
+
 // let errors bubble up so the query can be retried
 const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
   try {
@@ -756,7 +775,7 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
         engine,
         executionID,
         maxAge: 900,
-        toParquet: fileType === FILE_TYPE_PRQ || toParquet,
+        // toParquet: fileType === FILE_TYPE_PRQ || toParquet,
       }, // 15 mins cache ttl
     )
     const resultsParts = Object.entries(partLengths)
@@ -767,7 +786,9 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
         acc.push(previousPartEnd + partLength)
         return acc
       }, [])
-
+    if (fileType === FILE_TYPE_PRQ || toParquet) {
+      await convertToParquet(customerID, executionID, resultsParts)
+    }
     // update status to succeeded + breakdown of parts
     await updateExecution(
       executionID,
