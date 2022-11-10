@@ -1,5 +1,5 @@
-/* POLICIES CONSTANTS */
 module.exports = {
+  /* POLICIES CONSTANTS */
   // cox
   POLICY_COX: 'cox:*:*',
 
@@ -22,4 +22,13 @@ module.exports = {
 
   QL_SCHEMA: process.env.ML_SCHEMA,
   COX_CU: 27848,
+
+  /* WIDGET CONSTANTS */
+  WIDGET_TYPE: { map: 'map' },
+
+  /* GEO CONSTANTS */
+  GEO_LEVEL: {
+    fsa: ['fsa'],
+    pc: ['postalcode', 'pc'],
+  },
 }
