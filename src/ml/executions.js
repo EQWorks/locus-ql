@@ -7,7 +7,14 @@ const { insertGeoIntersectsInTree } = require('./geo-intersects')
 const { parseQueryToTree, ParserError } = require('./parser')
 const { executeQueryInStreamMode } = require('./engine')
 // const { executeQuery } = require('./engine')
-const { putToS3Cache, getFromS3Cache, getS3CacheURL, queryWithCache } = require('../util/cache')
+const {
+  putToS3Cache,
+  getFromS3Cache,
+  getS3CacheURL,
+  queryWithCache,
+  getCacheKey,
+  API_CACHE_BUCKET,
+} = require('../util/cache')
 const { typeToCatMap, CAT_STRING } = require('./type')
 const { isInternalUser, sortViewDependencies } = require('./utils')
 const {
@@ -167,16 +174,64 @@ const getExecutionResults = (
 )
 
 /**
+ * Pulls multi-part execution results that are stored in parquet format
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {number} executionID Execution ID
+ * @param {number} part Results part number
+ * the execution's results parts. Required for queries with multi-part results
+ * @param {Object} options
+ * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an object
+ * @returns {string|Object[]} Query results
+ */
+const getExecutionResultsParquet = async (
+  customerID,
+  executionID,
+  part,
+  { parseFromJson = true } = {},
+) => {
+  const uri = `'s3://${EXECUTION_BUCKET}/${customerID}/${executionID}/${part}.parquet'`
+  const query = `
+  SELECT
+      *
+  FROM read_parquet([${uri}]);
+  `
+  const key = getCacheKey([customerID, executionID, part])
+
+  const { FunctionError, Payload } = await lambda.invoke({
+    FunctionName: 'ql-hifi-dev-query',
+    InvocationType: 'RequestResponse',
+    Payload: JSON.stringify({ query, bucket: API_CACHE_BUCKET, key }),
+  }).promise()
+  if (FunctionError) {
+    const { errorMessage } = JSON.parse(Payload)
+    throw apiError(errorMessage)
+  }
+  const { body = '' } = JSON.parse(Payload)
+  if (parseFromJson) {
+    return JSON.parse(body)
+  }
+  return body
+}
+
+
+/**
  * Pulls multi-part execution results from storage given an array of part numbers
  * Parts are concatenated in accordance with their part number in ascending order
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
  * @param {number[]} parts Results parts to pull from cache
  * @param {boolean} [parseFromJson=true] Whether or not to parse the results into an object
+ * @param {string} fileType File type of the results
  * @returns {Promise<string|Object[]|undefined>} Query results or undefined if not found
  */
-const getExecutionResultsParts = async (customerID, executionID, parts, parseFromJson = true) => {
-  const rawParts = (await Promise
+const getExecutionResultsParts = async (
+  customerID,
+  executionID,
+  parts,
+  parseFromJson = true,
+  fileType,
+) => {
+  let rawParts = (await Promise
     // get all parts from s3
     .all(parts
       .sort((a, b) => a - b)
@@ -184,8 +239,21 @@ const getExecutionResultsParts = async (customerID, executionID, parts, parseFro
         getExecutionResultsKey(customerID, executionID, p),
         { bucket: EXECUTION_BUCKET, parseFromJson },
       ))))
-    // filter out undefined (part does not exist)
-    .filter(p => p)
+  if (fileType === FILE_TYPE_PRQ) {
+    rawParts = (await Promise
+      .all(parts.map((p, i) => {
+        let result = rawParts[i]
+        if (!result) {
+          result = getExecutionResultsParquet(customerID, executionID, p, { parseFromJson })
+          // eslint-disable-next-line no-unused-vars
+            .then(_ =>
+              getFromS3Cache([customerID, executionID, p]))
+        }
+        return result
+      })))
+  }
+  // filter out undefined (part does not exist)
+  rawParts.filter(p => p)
     .reduce((acc, p, i, allParts) => {
       // if json, push individual objects in acc
       if (parseFromJson) {
@@ -207,44 +275,6 @@ const getExecutionResultsParts = async (customerID, executionID, parts, parseFro
   return parseFromJson ? rawParts : rawParts.join(', ')
 }
 
-/**
- * Pulls multi-part execution results that are stored in parquet format
- * @param {number} customerID Customer ID (agency ID)
- * @param {number} executionID Execution ID
- * @param {{part: number, firstIndex: number, lastIndex: number}[]} [resultsParts] List of
- * the execution's results parts. Required for queries with multi-part results
- * @param {Object} options
- * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an object
- * @returns {string|Object[]} Query results
- */
-const getExecutionResultsParquet = async (
-  customerID,
-  executionID,
-  resultsParts,
-  { parseFromJson = true } = {},
-) => {
-  const uri = resultsParts.map(p =>
-    `'s3://${EXECUTION_BUCKET}/${customerID}/${executionID}/${p.part}.parquet'`).join(', ')
-  const query = `
-  SELECT
-      *
-  FROM read_parquet([${uri}]);
-  `
-  const { FunctionError, Payload } = await lambda.invoke({
-    FunctionName: 'ql-hifi-dev-query',
-    InvocationType: 'RequestResponse',
-    Payload: JSON.stringify({ query }),
-  }).promise()
-  if (FunctionError) {
-    const { errorMessage } = JSON.parse(Payload)
-    throw apiError(errorMessage)
-  }
-  const { body = '' } = JSON.parse(Payload)
-  if (parseFromJson) {
-    return JSON.parse(body)
-  }
-  return body
-}
 
 /**
  * Pulls the execution results from storage
@@ -269,15 +299,13 @@ const getAllExecutionResults = (
     if (resultsParts.length > 3) {
       return
     }
-    if (fileType === FILE_TYPE_PRQ) {
-      return getExecutionResultsParquet(customerID, executionID, resultsParts, { parseFromJson })
-    }
     return resultsParts.length
       ? getExecutionResultsParts(
         customerID,
         executionID,
         resultsParts.map(({ part }) => part),
         parseFromJson,
+        fileType,
       )
       : []
   }
@@ -959,17 +987,18 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
     // generate/retrieve URL to results in storage
     let url = await getExecutionResultsURL(customerID, executionID, { part: safePart, fileType })
     if (['1', 'true'].includes((`${toJson}` || '').toLowerCase()) && fileType === FILE_TYPE_PRQ) {
-      const rows = await getFromS3Cache([customerID, executionID, safePart])
+      const key = [customerID, executionID, safePart]
+      const rows = await getFromS3Cache(key)
       if (!rows) {
-        const result = await getExecutionResultsParquet(
+        url = await getExecutionResultsParquet(
           customerID,
           executionID,
-          [{ part: safePart }],
+          safePart,
           { parseFromJson: false },
         )
-        await putToS3Cache([customerID, executionID, safePart], result)
+      } else {
+        url = await getS3CacheURL(key)
       }
-      url = await getS3CacheURL([customerID, executionID, safePart])
     }
     if (['1', 'true'].includes((redirect || '').toLowerCase())) {
       return res.redirect(302, url)

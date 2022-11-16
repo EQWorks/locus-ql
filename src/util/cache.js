@@ -482,5 +482,6 @@ module.exports = {
   pgWithCache,
   useCacheOptions,
   cacheTypes,
+  getCacheKey,
   API_CACHE_BUCKET,
 }
