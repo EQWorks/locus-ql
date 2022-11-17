@@ -253,7 +253,7 @@ const getExecutionResultsParts = async (
       })))
   }
   // filter out undefined (part does not exist)
-  rawParts.filter(p => p)
+  rawParts = rawParts.filter(p => p)
     .reduce((acc, p, i, allParts) => {
       // if json, push individual objects in acc
       if (parseFromJson) {
