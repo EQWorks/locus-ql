@@ -373,19 +373,6 @@ const hhSegmentAuth = (req, res, next) => {
   return next(apiError('Access not allowed', 403))
 }
 
-
-const popularTimesAuth = (req, res, next) => {
-  // Accepted whitelables are internal, OPTA and ConscientAI
-  const acceptedWhitelabels = [1202, 1697]
-
-  if (req.access.whitelabel === -1 ||
-      req.access.whitelabel.some(wl => acceptedWhitelabels.includes(wl))) {
-    return next()
-  }
-
-  return next(apiError('Access not allowed', 403))
-}
-
 const hubAuth = ({ requireWrite = false }) => (req, _, next) => {
   const { whitelabel, customers, prefix, version, policies = [] } = req.access
   const internal = whitelabel === -1 && customers === -1
@@ -420,7 +407,6 @@ module.exports = {
   whitelabel: whitelabelAuth,
   layerAccess: haveLayerAccess,
   hhSegments: hhSegmentAuth,
-  popularTimes: popularTimesAuth,
   hub: hubAuth,
   includeMobileSDK,
   excludeMobileSDK,
