@@ -81,3 +81,6 @@ old
 
 # redis snapshot
 *.rdb
+
+# Desktop Services Store
+.DS_Store
