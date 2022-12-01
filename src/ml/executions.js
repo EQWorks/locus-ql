@@ -237,7 +237,7 @@ const getExecutionResultsParts = async (
       .all(parts.map((p, i) => {
         let result = rawParts[i]
         if (!result) {
-          result = getExecutionResultsParquet(customerID, executionID, p, { parseFromJson })
+          result = getExecutionResultsParquet(customerID, executionID, p)
           // eslint-disable-next-line no-unused-vars
             .then(_ =>
               getFromS3Cache([customerID, executionID, p]))
@@ -987,7 +987,6 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
           customerID,
           executionID,
           safePart,
-          { parseFromJson: false },
         )
       } else {
         url = await getS3CacheURL(key)
