@@ -178,16 +178,12 @@ const getExecutionResults = (
  * @param {number} customerID Customer ID (agency ID)
  * @param {number} executionID Execution ID
  * @param {number} part Results part number
- * the execution's results parts. Required for queries with multi-part results
- * @param {Object} options
- * @param {boolean} [options.parseFromJson=true] Whether or not to parse the results into an object
- * @returns {string|Object[]} Query results
+ * @returns {string} URL to the query results
  */
 const getExecutionResultsParquet = async (
   customerID,
   executionID,
   part,
-  { parseFromJson = true } = {},
 ) => {
   const uri = `'s3://${EXECUTION_BUCKET}/${customerID}/${executionID}/${part}.parquet'`
   const query = `
@@ -207,9 +203,6 @@ const getExecutionResultsParquet = async (
     throw apiError(errorMessage)
   }
   const { body = '' } = JSON.parse(Payload)
-  if (parseFromJson) {
-    return JSON.parse(body)
-  }
   return body
 }
 
@@ -244,7 +237,7 @@ const getExecutionResultsParts = async (
       .all(parts.map((p, i) => {
         let result = rawParts[i]
         if (!result) {
-          result = getExecutionResultsParquet(customerID, executionID, p, { parseFromJson })
+          result = getExecutionResultsParquet(customerID, executionID, p)
           // eslint-disable-next-line no-unused-vars
             .then(_ =>
               getFromS3Cache([customerID, executionID, p]))
@@ -994,7 +987,6 @@ const respondWithOrRedirectToExecutionResultsURL = async (req, res, next) => {
           customerID,
           executionID,
           safePart,
-          { parseFromJson: false },
         )
       } else {
         url = await getS3CacheURL(key)
