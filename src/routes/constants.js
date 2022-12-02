@@ -21,6 +21,7 @@ module.exports = {
   POLICY_QL_QUERIES_WRITE: 'ql:queries:read:write',
 
   QL_SCHEMA: process.env.ML_SCHEMA,
+  COX_WL: 2456,
   COX_CU: 27848,
 
   /* WIDGET CONSTANTS */
