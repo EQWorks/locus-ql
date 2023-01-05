@@ -3,7 +3,7 @@ const logger = require('morgan')
 const cors = require('cors')
 const compression = require('compression')
 
-const rootRouter = require('./routes/')
+const rootRouter = require('./routes')
 const { initRequestContext, logError } = require('./middleware/errorlog')
 
 

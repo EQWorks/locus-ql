@@ -221,8 +221,8 @@ const getExecutionResultsParts = async (
   customerID,
   executionID,
   parts,
-  parseFromJson = true,
   fileType,
+  parseFromJson = true,
 ) => {
   let rawParts = (await Promise
     // get all parts from s3
@@ -297,8 +297,8 @@ const getAllExecutionResults = (
         customerID,
         executionID,
         resultsParts.map(({ part }) => part),
-        parseFromJson,
         fileType,
+        parseFromJson,
       )
       : []
   }

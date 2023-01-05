@@ -13,7 +13,7 @@ const { expressionTypes } = require('../types')
 const { isShortExpression } = require('../short')
 
 
-const addToViewColumns = (viewColumns = {}, columnOrColumns) => {
+const addToViewColumns = (columnOrColumns, viewColumns = {}) => {
   const columns = isString(columnOrColumns) ? { [columnOrColumns]: true } : columnOrColumns
   if (!('*' in viewColumns || '*' in columns)) {
     return Object.assign(viewColumns, columns)
@@ -154,7 +154,7 @@ class BaseNode {
       }
       if (key === 'views') {
         Object.entries(context.views).forEach(([view, cols]) => {
-          parentContext.views[view] = addToViewColumns(parentContext.views[view], cols)
+          parentContext.views[view] = addToViewColumns(cols, parentContext.views[view])
         })
       } else {
         // extends parent context with child values, overrides parent when conflicting keys
@@ -216,11 +216,11 @@ class BaseNode {
   _registerViewColumn(view, column) {
     if (!this.hasSelectAncestor()) {
       // expression evaluated in isolation
-      this._context.views[view] = addToViewColumns(this._context.views[view], column)
+      this._context.views[view] = addToViewColumns(column, this._context.views[view])
     } else {
       const { view: viewRef } = this._context.refs[view]
       if (viewRef) {
-        this._context.views[viewRef] = addToViewColumns(this._context.views[viewRef], column)
+        this._context.views[viewRef] = addToViewColumns(column, this._context.views[viewRef])
       }
     }
     this._propagateContext('views', -1)

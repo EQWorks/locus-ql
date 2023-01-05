@@ -53,6 +53,16 @@ module.exports = {
         }, {
           "enforceForRenamedProperties": false
         }],
-        "consistent-return": "off"
+        "consistent-return": "off",
+        "no-multiple-empty-lines": ["error", { "max": 2, "maxEOF": 1 }],
+        "no-promise-executor-return": "off",
+        "no-constructor-return": "off",
+        "no-else-return": "off",
+        "implicit-arrow-linebreak": "off",
+        "arrow-parens": "off",
+        "comma-style": ["error", "last"],
+        "operator-linebreak": "off",
+        "function-paren-newline": "off",
+        "max-classes-per-file": "off",
     }
 };

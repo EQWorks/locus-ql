@@ -8,9 +8,11 @@ class OneOf {
     }
     this.params = params
   }
+
   validate(obj) {
     return this.params.some(p => Object.prototype.hasOwnProperty.call(obj, p))
   }
+
   toString() {
     if (this.params.length > 1) {
       return `one of ${this.params.toString()}`

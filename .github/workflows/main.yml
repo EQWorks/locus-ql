@@ -1,0 +1,31 @@
+name: Main
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set Node.js version
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Cache Node Modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.OS }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-yarn-${{ env.cache-name }}-
+            ${{ runner.OS }}-yarn-
+            ${{ runner.OS }}-
+
+      - run: yarn install
+      - run: yarn lint
