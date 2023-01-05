@@ -50,5 +50,4 @@ module.exports = {
   hasContext,
   ERROR_CTX: ['error', 'main'],
   ERROR_QL_CTX: ['error', 'ql'],
-  GEOCOHORT_CTX: ['builder', 'geoCohort'],
 }

@@ -4,7 +4,7 @@ const Knex = require('knex')
 const config = require('../../config')
 
 
-const applicationName = process.env.PGAPPNAME || `firstorder-${process.env.STAGE || 'dev'}`
+const applicationName = process.env.PGAPPNAME || `locus-ql-${process.env.STAGE || 'dev'}`
 const pool = new Pool({ ...config.pg, max: 1, application_name: applicationName })
 const mlPool = new Pool({ ...config.pgML, max: 1, application_name: applicationName })
 const atomPool = new Pool({ ...config.pgAtom, max: 1, application_name: applicationName })

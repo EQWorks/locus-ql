@@ -1,12 +1,5 @@
 module.exports = {
   /* POLICIES CONSTANTS */
-  // cox
-  POLICY_COX: 'cox:*:*',
-
-  // connection hub
-  POLICY_HUB_READ: 'hub:read',
-  POLICY_HUB_WRITE: 'hub:read:write',
-
   // ql
   POLICY_QL_READ: 'ql:read',
   POLICY_QL_WRITE: 'ql:read:write',
@@ -21,15 +14,4 @@ module.exports = {
   POLICY_QL_QUERIES_WRITE: 'ql:queries:read:write',
 
   QL_SCHEMA: process.env.ML_SCHEMA,
-  COX_WL: 2456,
-  COX_CU: 27848,
-
-  /* WIDGET CONSTANTS */
-  WIDGET_TYPE: { map: 'map' },
-
-  /* GEO CONSTANTS */
-  GEO_LEVEL: {
-    fsa: ['fsa'],
-    pc: ['postalcode', 'pc'],
-  },
 }
