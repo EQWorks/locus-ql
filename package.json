@@ -1,0 +1,65 @@
+{
+  "name": "@eqworks/locus-ql",
+  "version": "0.1.0-alpha.1",
+  "author": "EQ Inc.",
+  "private": true,
+  "main": "dist/ql.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "18.x"
+  },
+  "scripts": {
+    "start": "env $(print-env) nodemon src/index.js",
+    "build": "babel src --out-dir dist --copy-files",
+    "prepublishOnly": "yarn lint && yarn build",
+    "offline": "env $(print-env) API_VER=offline sls offline start",
+    "tag": "./scripts/tag",
+    "deploy": "env $(print-env) sls deploy",
+    "deploy-dev": "env $(print-env) sls deploy --stage dev",
+    "serve": "env $(print-env) node src/index.js",
+    "lint": "eslint -c .eslintrc.js --ext .js ./src/.",
+    "lint:fix": "eslint -c .eslintrc.js --ext .js ./src/. --fix",
+    "lint:nowarn": "eslint -c .eslintrc.js --ext .js ./src/. --quiet",
+    "lint:watch": "esw -c .eslintrc.js --ext .js ./src/. --watch",
+    "lint:watch:fix": "esw -c .eslintrc.js --ext .js ./src/. --fix --watch",
+    "lint:watch:nowarn": "esw -c .eslintrc.js --ext .js ./src/. --quiet --watch",
+    "lint:watch:nowarn:fix": "esw -c .eslintrc.js --ext .js ./src/. --quiet --watch --fix"
+  },
+  "dependencies": {
+    "@sentry/node": "^6.12.0",
+    "async": "^3.1.0",
+    "axios": "^0.18.1",
+    "compression": "^1.7.3",
+    "cors": "^2.8.4",
+    "cron-parser": "^3.5.0",
+    "express": "^4.16.3",
+    "knex": "^0.21.12",
+    "morgan": "^1.9.0",
+    "parquetjs": "^0.11.2",
+    "pg": "^8.0.0",
+    "pg-cursor": "^2.7.3",
+    "pgsql-parser": "13.1.13",
+    "redis": "^2.8.0",
+    "serverless-http": "^1.5.5"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.20.7",
+    "@babel/core": "^7.20.12",
+    "aws-sdk": "^2.293.0",
+    "eslint": "^8.31.0",
+    "eslint-config-airbnb": "^19.0.4",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-watch": "^8.0.0",
+    "nodemon": "^1.12.1",
+    "serverless-domain-manager": "^3.3.1",
+    "serverless-offline": "^6.7.0"
+  },
+  "peerDependencies": {
+    "aws-sdk": "^2.293.0"
+  }
+}
