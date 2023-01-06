@@ -1,12 +1,21 @@
 {
-  "name": "locus-ql",
-  "version": "0.0.1",
+  "name": "@eqworks/locus-ql",
+  "version": "0.1.0-alpha.1",
+  "author": "EQ Inc.",
   "private": true,
+  "main": "dist/ql.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": "18.x"
   },
   "scripts": {
     "start": "env $(print-env) nodemon src/index.js",
+    "build": "babel src --out-dir dist --copy-files",
+    "prepublishOnly": "yarn lint && yarn build",
     "offline": "env $(print-env) API_VER=offline sls offline start",
     "tag": "./scripts/tag",
     "deploy": "env $(print-env) sls deploy",
@@ -38,6 +47,8 @@
     "serverless-http": "^1.5.5"
   },
   "devDependencies": {
+    "@babel/cli": "^7.20.7",
+    "@babel/core": "^7.20.12",
     "aws-sdk": "^2.293.0",
     "eslint": "^8.31.0",
     "eslint-config-airbnb": "^19.0.4",
