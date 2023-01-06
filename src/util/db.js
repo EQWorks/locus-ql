@@ -1,7 +1,7 @@
 const { Client, Pool, types } = require('pg')
 const Knex = require('knex')
 
-const config = require('../../config')
+const config = require('../config')
 
 
 const applicationName = process.env.PGAPPNAME || `locus-ql-${process.env.STAGE || 'dev'}`
