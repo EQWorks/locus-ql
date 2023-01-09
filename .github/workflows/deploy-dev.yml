@@ -1,0 +1,60 @@
+name: Serverless deployment - DEV stage
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'dev-*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set Node.js version
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Set Python version
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Cache Node Modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.OS }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.OS }}-yarn-${{ env.cache-name }}-
+            ${{ runner.OS }}-yarn-
+            ${{ runner.OS }}-
+
+      - run: python -m pip install print-env
+      - run: npm install -g serverless
+
+      - run: yarn install
+
+      - run: |
+          echo "PORTUNUS_TOKEN=${{ secrets.PORTUNUS_TOKEN_JWT }}/${GITHUB_REPOSITORY##*/}/$PORTUNUS_STAGE" > .env
+          yarn deploy --stage dev
+        env:
+          # aws creds for deployment
+          AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
+          # stage for portunus token
+          PORTUNUS_STAGE: dev
+          # API version, passthrough
+          API_VER: ${{ github.sha }}
+
+      - name: Notify on deployment status
+        if: ${{ always() }}
+        run: npx @eqworks/notify deployment $GITHUB_REPOSITORY --commit=$GITHUB_SHA --stage=dev --status=$JOB_STATUS
+        env:
+          SLACK_HOOK: ${{ secrets.CD_SLACK_HOOK }}
+          JOB_STATUS: ${{ job.status }}
