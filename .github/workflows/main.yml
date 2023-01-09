@@ -29,3 +29,28 @@ jobs:
 
       - run: yarn install
       - run: yarn lint
+
+  scan-env:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+
+      - run: npx @eqworks/scan-env --strict
+
+  commit-watch:
+    runs-on: ubuntu-latest
+    if: contains(github.event_name, 'pull_request')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+
+      - run: npx @eqworks/commit-watch -b ${{ github.event.pull_request.base.sha }} -h ${{ github.event.pull_request.head.sha }} -v
