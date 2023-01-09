@@ -1,0 +1,45 @@
+name: Publish NPM package - alpha tag
+
+on:
+  push:
+    tags:
+      - 'v*-alpha*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout designated tagged commit
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+          registry-url: https://npm.pkg.github.com/
+          scope: '@eqworks'
+          always-auth: true
+      - run: yarn install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.CD_GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+          registry-url: https://registry.npmjs.org/
+          scope: '@eqworks'
+          always-auth: true
+      - run: yarn publish --tag alpha
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.CD_NPM_TOKEN_PUBLISH }}
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+          registry-url: https://npm.pkg.github.com/
+          scope: '@eqworks'
+          always-auth: true
+      - run: yarn publish --tag alpha
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
