@@ -183,3 +183,8 @@ resources:
         RestApiId:
           Ref: ApiGatewayRestApi # implied resource created by serverless
         StatusCode: '403'
+
+custom:
+  serverless-offline:
+    noPrependStageInUrl: true
+    printOutput: true
