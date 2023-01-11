@@ -5,67 +5,61 @@ on:
     tags:
       - 'prod-*'
 
+env:
+  NODE_VERSION: 18.x
+  DEPLOY_STAGE: prod
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout designated tagged commit
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Set Node.js version
+      - name: Set Node.js version and cache yarn dependencies
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
 
-      - name: Set Python version
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+      - name: Install print-env
+        run: python -m pip install print-env
 
-      - name: Cache Node Modules
-        uses: actions/cache@v3
-        with:
-          path: node_modules
-          key: ${{ runner.OS }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.OS }}-yarn-${{ env.cache-name }}-
-            ${{ runner.OS }}-yarn-
-            ${{ runner.OS }}-
+      - name: Install serverless
+        run:  npm install -g serverless
 
-      - run: python -m pip install print-env
-      - run: npm install -g serverless
+      - name: Install packages
+        run: yarn install
 
-      - run: yarn install
-
-      - run: |
-          echo "PORTUNUS_TOKEN=${{ secrets.PORTUNUS_TOKEN_JWT }}/${GITHUB_REPOSITORY##*/}/$PORTUNUS_STAGE" > .env
-          yarn deploy --stage prod
+      - name: Deploy
+        run: yarn deploy --stage ${{ env.DEPLOY_STAGE }}
         env:
           # aws creds for deployment
           AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
-          # stage for portunus token
-          PORTUNUS_STAGE: prod
+          # portunus token
+          PORTUNUS_TOKEN: ${{secrets.CD_PORTUNUS_TOKEN_JWT}}/${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}
           # API version, passthrough
           API_VER: ${{ github.sha }}
 
       - name: Notify on deployment status
         if: ${{ always() }}
-        run: npx @eqworks/notify deployment $GITHUB_REPOSITORY --commit=$GITHUB_SHA --stage=prod --status=$JOB_STATUS
+        run: npx @eqworks/notify deployment $GITHUB_REPOSITORY --commit=$GITHUB_SHA --stage=${{ env.DEPLOY_STAGE }} --status=$JOB_STATUS
         env:
           SLACK_HOOK: ${{ secrets.CD_SLACK_HOOK }}
           JOB_STATUS: ${{ job.status }}
 
       - name: Generate tag associated release notes
-        run: npx @eqworks/release notes -v --pattern="prod-*" --head ${GITHUB_REF##*/} --github
+        run: npx @eqworks/release notes -v --pattern="${{ env.DEPLOY_STAGE }}-*" --head ${GITHUB_REF##*/} --github
         env:
-          GITHUB_OWNER: EQWorks
+          GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify on release notes update
         if: ${{ success() }}
-        run: npx @eqworks/notify send "Release notes updated for ${GITHUB_REPOSITORY} ${GITHUB_REF##*/}" --link "https://github.com/EQWorks/firstorder/releases/tag/${GITHUB_REF##*/}" --status $JOB_STATUS
+        run: npx @eqworks/notify send "Release notes updated for ${GITHUB_REPOSITORY} ${GITHUB_REF##*/}" --link "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF##*/}" --status $JOB_STATUS
         env:
           SLACK_HOOK: ${{ secrets.CD_SLACK_HOOK }}
           JOB_STATUS: ${{ job.status }}

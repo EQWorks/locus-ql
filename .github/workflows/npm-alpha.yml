@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*-alpha*'
 
+env:
+  NODE_VERSION: 18.x
+  DIST_TAG: alpha
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -14,32 +18,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v3
+      - name: Set Node.js version and .npmrc file to publish to GitHub Packages
+        uses: actions/setup-node@v3
         with:
-          node-version: 18.x
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
           registry-url: https://npm.pkg.github.com/
           scope: '@eqworks'
           always-auth: true
-      - run: yarn install
+
+      - name: Install packages
+        run: yarn install
         env:
           NODE_AUTH_TOKEN: ${{ secrets.CD_GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v3
+      - name: Publishing packages to the npm registry
+        run: yarn publish --tag ${{ env.DIST_TAG }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Node.js version and .npmrc file to publish to npm
+        uses: actions/setup-node@v3
         with:
-          node-version: 18.x
+          node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org/
           scope: '@eqworks'
           always-auth: true
-      - run: yarn publish --tag alpha
+
+      - name: Publishing packages to GitHub Packages
+        run: yarn publish --tag ${{ env.DIST_TAG }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.CD_NPM_TOKEN_PUBLISH }}
-
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 18.x
-          registry-url: https://npm.pkg.github.com/
-          scope: '@eqworks'
-          always-auth: true
-      - run: yarn publish --tag alpha
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
