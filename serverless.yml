@@ -39,8 +39,8 @@ provider:
           "Fn::Join": [
             ":",
             [
-              "Fn::GetAtt": [AnubisRedisCluster, RedisEndpoint.Address],
-              "Fn::GetAtt": [AnubisRedisCluster, RedisEndpoint.Port]
+              "Fn::GetAtt": [LocusQLRedisCluster, RedisEndpoint.Address],
+              "Fn::GetAtt": [LocusQLRedisCluster, RedisEndpoint.Port]
             ]
           ]
         ]
@@ -141,7 +141,7 @@ plugins:
 resources:
   Resources:
     # redis resource configured through cloudformation, without explicit manual work
-    AnubisRedisCluster:
+    LocusQLRedisCluster:
       Type: AWS::ElastiCache::CacheCluster
       Properties:
         ClusterName: ${self:service}-${env:REDIS_STAGE}
