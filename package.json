@@ -2,7 +2,7 @@
   "name": "@eqworks/locus-ql",
   "version": "0.1.0-alpha.1",
   "author": "EQ Inc.",
-  "private": true,
+  "private": false,
   "main": "dist/ql.js",
   "files": [
     "dist",
