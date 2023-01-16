@@ -73,6 +73,8 @@ provider:
           - arn:aws:s3:::ml-execution-cache-dev/*
           - arn:aws:s3:::locus-api-cache-${self:provider.stage}
           - arn:aws:s3:::locus-api-cache-${self:provider.stage}/*
+          - arn:aws:s3:::locus-ql-${self:provider.stage}-serverlessdeploymentbucket
+          - arn:aws:s3:::locus-ql-${self:provider.stage}-serverlessdeploymentbucket/*
 
   vpc: # vpc-70658509 | EQ-DC-Tunnel
     securityGroupIds:
