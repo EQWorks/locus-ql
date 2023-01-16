@@ -7,6 +7,9 @@ provider:
   timeout: 30
   stage: ${opt:stage, 'dev'}
   versionFunctions: false
+  deploymentBucket:
+    name: ${self:service}-${self:provider.stage}-serverlessdeploymentbucket
+    serverSideEncryption: AES256
   environment:
     STAGE: ${self:provider.stage}
     PG_HOST: ${env:PG_HOST}
@@ -136,6 +139,7 @@ functions:
 
 plugins:
   - serverless-offline
+  - serverless-deployment-bucket
 
 resources:
   Resources:
@@ -187,3 +191,11 @@ custom:
   serverless-offline:
     noPrependStageInUrl: true
     printOutput: true
+
+  deploymentBucket:
+    versioning: true
+    accelerate: true
+    blockPublicAccess: true
+    tags:
+      - Key: Environment
+        Value: ${self:provider.stage}
