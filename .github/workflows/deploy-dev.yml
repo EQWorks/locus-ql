@@ -38,14 +38,13 @@ jobs:
         run: yarn install
 
       - name: Deploy
-        run: |
-          env $(print-env) npx serverless deploy --stage=${{ env.DEPLOY_STAGE }}
+        run: yarn deploy --stage ${{ env.DEPLOY_STAGE }}
         env:
           # aws creds for deployment
           AWS_ACCESS_KEY_ID: ${{ secrets.EQ_PROD_CD_LOCUS_QL_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.EQ_PROD_CD_LOCUS_QL_AWS_SECRET_ACCESS_KEY }}
           # portunus token
-          PORTUNUS_TOKEN: ${{secrets.CD_PORTUNUS_TOKEN_JWT}}/${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}
+          PORTUNUS_TOKEN: ${{ secrets.CD_PORTUNUS_TOKEN_JWT }}/${{ github.event.repository.name }}/${{ env.DEPLOY_STAGE }}
           # API version, passthrough
           API_VER: ${{ github.sha }}
 
