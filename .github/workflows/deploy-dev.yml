@@ -39,7 +39,8 @@ jobs:
 
       - name: Deploy
         run: |
-          echo "${{secrets.CD_PORTUNUS_TOKEN_JWT}}/${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}"
+          echo "${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}"
+          echo "PORTUNUS_TOKEN=${{ secrets.PORTUNUS_TOKEN_JWT }}/${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}" > .env
           yarn deploy --stage ${{ env.DEPLOY_STAGE }}
         env:
           # aws creds for deployment
