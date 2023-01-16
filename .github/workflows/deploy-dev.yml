@@ -38,7 +38,9 @@ jobs:
         run: yarn install
 
       - name: Deploy
-        run: yarn deploy --stage ${{ env.DEPLOY_STAGE }}
+        run: |
+          echo "${{secrets.CD_PORTUNUS_TOKEN_JWT}}/${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}"
+          yarn deploy --stage ${{ env.DEPLOY_STAGE }}
         env:
           # aws creds for deployment
           AWS_ACCESS_KEY_ID: ${{ secrets.EQ_PROD_CD_LOCUS_QL_AWS_ACCESS_KEY_ID }}
