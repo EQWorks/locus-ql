@@ -39,9 +39,7 @@ jobs:
 
       - name: Deploy
         run: |
-          echo "${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}"
-          echo "PORTUNUS_TOKEN=${{ secrets.PORTUNUS_TOKEN_JWT }}/${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE }}" > .env
-          yarn deploy --stage ${{ env.DEPLOY_STAGE }}
+          env $(print-env --token ${{secrets.CD_PORTUNUS_TOKEN_JWT}}/${GITHUB_REPOSITORY##*/}/${{ env.DEPLOY_STAGE}}) npx serverless deploy --stage=dev
         env:
           # aws creds for deployment
           AWS_ACCESS_KEY_ID: ${{ secrets.EQ_PROD_CD_LOCUS_QL_AWS_ACCESS_KEY_ID }}
