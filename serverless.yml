@@ -135,7 +135,6 @@ functions:
       service: locus-ql
 
 plugins:
-  - serverless-domain-manager
   - serverless-offline
 
 resources:
