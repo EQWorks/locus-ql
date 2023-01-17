@@ -54,8 +54,6 @@ provider:
       - Effect: Allow
         Action:
           - lambda:InvokeFunction
-          - s3:PutObject
-          - s3:ListBucket
         Resource: "*"
       - Effect: Allow
         Action:
