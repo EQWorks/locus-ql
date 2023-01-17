@@ -54,6 +54,7 @@ provider:
       - Effect: Allow
         Action:
           - lambda:InvokeFunction
+          - lambda:InvokeFunctionConfiguration
           - lambda:GetFunction
           - lambda:GetFunctionConfiguration
           - s3:PutObject
