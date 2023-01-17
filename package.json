@@ -49,18 +49,18 @@
   "devDependencies": {
     "@babel/cli": "^7.20.7",
     "@babel/core": "^7.20.12",
-    "aws-sdk": "^2.293.0",
+    "aws-sdk": "^2.1295.0",
     "eslint": "^8.31.0",
     "eslint-config-airbnb": "^19.0.4",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.26.0",
     "eslint-watch": "^8.0.0",
     "nodemon": "^2.0.20",
-    "serverless-domain-manager": "^3.3.1",
     "serverless-deployment-bucket": "^1.6.0",
+    "serverless-domain-manager": "^3.3.1",
     "serverless-offline": "^12.0.4"
   },
   "peerDependencies": {
-    "aws-sdk": "^2.293.0"
+    "aws-sdk": "^2.1295.0"
   }
 }
