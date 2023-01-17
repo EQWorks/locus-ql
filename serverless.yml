@@ -196,7 +196,6 @@ custom:
 
   deploymentBucket:
     versioning: true
-    accelerate: true
     blockPublicAccess: true
     tags:
       - Key: Environment
