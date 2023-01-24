@@ -6,26 +6,53 @@ on:
     branches:
       - main
 
+env:
+  NODE_VERSION: 18.x
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout designated tagged commit
+        uses: actions/checkout@v3
+
+      - name: Set Node.js version and cache yarn dependencies
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+
+      - name: Install packages
+        run: yarn install
+
+      - name: Lint code
+        run: yarn lint
+
+  scan-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout designated tagged commit
+        uses: actions/checkout@v3
 
       - name: Set Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Cache Node Modules
-        uses: actions/cache@v3
+      - run: npx @eqworks/scan-env --strict
+
+  commit-watch:
+    runs-on: ubuntu-latest
+    if: contains(github.event_name, 'pull_request')
+    steps:
+      - name: Checkout designated tagged commit
+        uses: actions/checkout@v3
         with:
-          path: node_modules
-          key: ${{ runner.OS }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.OS }}-yarn-${{ env.cache-name }}-
-            ${{ runner.OS }}-yarn-
-            ${{ runner.OS }}-
+          fetch-depth: 0
 
-      - run: yarn install
-      - run: yarn lint
+      - name: Set Node.js version and cache yarn dependencies
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: npx @eqworks/commit-watch -b ${{ github.event.pull_request.base.sha }} -h ${{ github.event.pull_request.head.sha }} -v

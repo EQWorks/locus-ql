@@ -1,0 +1,58 @@
+name: Publish NPM package
+
+on:
+  push:
+    tags:
+      - 'v*' # proceeds eg: v1.0
+      - '!v*-*' # skips eg: v1.2.99-beta1, v3.5.0-test, etc.
+
+env:
+  NODE_VERSION: 18.x
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout designated tagged commit
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set Node.js version and .npmrc file to publish to GitHub Packages
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+          registry-url: https://npm.pkg.github.com/
+          scope: '@eqworks'
+          always-auth: true
+
+      - name: Install packages
+        run: yarn install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.CD_GITHUB_TOKEN }}
+
+      - name: Publishing packages to the npm registry
+        run: yarn publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # this is the normal way (without local .npmrc)
+
+      - name: Set Node.js version and .npmrc file to publish to npm
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org/
+          scope: '@eqworks'
+          always-auth: true
+
+      - name: Publishing packages to GitHub Packages
+        run: yarn publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.CD_NPM_TOKEN_PUBLISH }}
+
+      - name: Generate tag associated release notes
+        if: ${{ success() }}
+        run: npx @eqworks/release changelog -v --head ${GITHUB_REF##*/} --github --skip alpha --skip beta --skip test
+        env:
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

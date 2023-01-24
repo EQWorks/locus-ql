@@ -8,10 +8,6 @@ const lambda = new AWS.Lambda({
 
 const s3 = new AWS.S3({ region: 'us-east-1' })
 
-const firehose = new AWS.Firehose({
-  apiVersion: '2015-08-04',
-  region: 'us-east-1',
-})
 
 async function invokeLambda(params) {
   const response = { statusCode: 200 }
@@ -83,6 +79,5 @@ module.exports = {
   lambda,
   listS3Objects,
   getS3PresignedURL,
-  firehose,
   checkS3ObjectExist,
 }

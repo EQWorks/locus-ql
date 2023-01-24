@@ -1,0 +1,56 @@
+name: Serverless deployment - DEV stage
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'dev-*'
+    paths-ignore:
+      - "README.md"
+
+env:
+  NODE_VERSION: 18.x
+  DEPLOY_STAGE: dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout designated tagged commit
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set Node.js version and cache yarn dependencies
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+
+      - name: Install print-env
+        run: python -m pip install print-env
+
+      - name: Install serverless
+        run:  npm install -g serverless
+
+      - name: Install packages
+        run: yarn install
+
+      - name: Deploy
+        run: yarn deploy --stage ${{ env.DEPLOY_STAGE }}
+        env:
+          # aws creds for deployment
+          AWS_ACCESS_KEY_ID: ${{ secrets.EQ_PROD_CD_LOCUS_QL_DEV_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.EQ_PROD_CD_LOCUS_QL_DEV_AWS_SECRET_ACCESS_KEY }}
+          # portunus token
+          PORTUNUS_TOKEN: ${{ secrets.CD_PORTUNUS_TOKEN_JWT }}/${{ github.event.repository.name }}/${{ env.DEPLOY_STAGE }}
+          # API version, passthrough
+          API_VER: ${{ github.sha }}
+
+      - name: Notify on deployment status
+        if: ${{ always() }}
+        run: npx @eqworks/notify deployment $GITHUB_REPOSITORY --commit=$GITHUB_SHA --stage=${{ env.DEPLOY_STAGE }} --status=$JOB_STATUS
+        env:
+          SLACK_HOOK: ${{ secrets.CD_SLACK_HOOK }}
+          JOB_STATUS: ${{ job.status }}
