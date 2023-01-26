@@ -113,6 +113,7 @@ functions.substr = {
   minArgsLength: 2,
   maxArgsLength: 3,
 }
+functions.to_char = { argsLength: 2 }
 
 // Date/time functions
 functions.date = { argsLength: 1 }
