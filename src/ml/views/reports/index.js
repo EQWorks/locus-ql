@@ -63,22 +63,33 @@ const reportViewCategories = {
 }
 
 const parseViewID = (viewID) => {
-  const [, type, aoi, layerIDStr, reportIDStr] =
+  const [, type, aoi] =
+    viewID.match(/^report(wi|vwi|xwi)(aoi)?_/) || []
+  const [, , , layerIDStr, reportIDStr] =
     viewID.match(/^report(wi|vwi|xwi)(aoi)?_(\d+)_(\d+)$/) || []
   // eslint-disable-next-line radix
   const layerID = parseInt(layerIDStr, 10)
   // eslint-disable-next-line radix
   const reportID = parseInt(reportIDStr, 10)
+  let poiID
+  if (!layerID || !reportID) {
+    const [, , , poiIDStr] =
+    viewID.match(/^report(wi|vwi|xwi)(aoi)?_(\d+)$/) || []
+    poiID = parseInt(poiIDStr)
+  }
   const reportType = reportTypes[type.toUpperCase()]
   const isAOI = aoi === 'aoi'
-  if (!layerID || !reportID || (isAOI && !(reportType in AOITables))) {
+  if (((!layerID || !reportID) && !poiID) || (isAOI && !(reportType in AOITables))) {
     throw apiError(`Invalid view: ${viewID}`, 400)
   }
-  return { layerID, reportID, reportType, isAOI }
+  return { layerID, reportID, reportType, isAOI, poiID }
 }
 
-const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, hasAOI }) => {
+const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, hasAOI, poiID }) => {
   const whereFilters = { 'report.type': reportType }
+  if (poiID) {
+    whereFilters['rt.poi_id'] = poiID
+  }
   if (reportID) {
     whereFilters['rt.report_id'] = reportID
   }
@@ -89,20 +100,27 @@ const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, ha
     return
   }
   const groupByCols = [
-    'layer.name',
     'layer.customer',
     'layer.whitelabel',
-    'layer.layer_id',
     { layer_type_name: 'layer_type.name' },
-    'layer.report_id',
     'report.type',
-    { report_name: 'report.name' },
-    { report_created: 'report.created' },
-    { report_updated: 'report.updated' },
-    { report_description: 'report.description' },
-    'report.tld',
-    'report.poi_list_id',
   ]
+  if (poiID) {
+    groupByCols.push({ poi_id: 'rt.poi_id' })
+  } else {
+    groupByCols.push(
+      'layer.name',
+      'layer.layer_id',
+      { layer_type_name: 'layer_type.name' },
+      'layer.report_id',
+      { report_name: 'report.name' },
+      { report_created: 'report.created' },
+      { report_updated: 'report.updated' },
+      { report_description: 'report.description' },
+      'report.tld',
+      'report.poi_list_id',
+    )
+  }
   const reportQuery = knex('public.layer')
   reportQuery.column(groupByCols)
   reportQuery.select(knex.raw(`
@@ -162,7 +180,8 @@ const getReports = (wl, cu, { layerID, reportID, reportType = reportTypes.WI, ha
         SELECT 1
         FROM public.${AOITables[reportType]} aoi
         WHERE
-          aoi.report_id = layer.report_id
+          ${poiID ? 'aoi.poi_id = rt.poi_id' :
+    'aoi.report_id = layer.report_id'}
           AND aoi.aoi_id IS NOT NULL
         LIMIT 1
       )
@@ -196,13 +215,15 @@ const getViewObject = ({
   report_description,
   tld,
   poi_list_id,
+  poi_id,
   has_aoi: hasAOI,
 }, { inclMeta = true, isAOI = false }) => {
   const type = (isAOI ? AOIViewTypes : reportViewTypes)[report_type]
+  const viewID = poi_id ? `${type}_${poi_id}` : `${type}_${layer_id}_${report_id}`
   const view = {
-    name: `${name} (${layer_type_name}${isAOI ? ' AOI' : ''})`,
+    name: `${poi_id || name} (${layer_type_name}${isAOI ? ' AOI' : ''})`,
     view: {
-      id: `${type}_${layer_id}_${report_id}`,
+      id: viewID,
       type,
       category: reportViewCategories[report_type],
       report_id,
@@ -254,11 +275,11 @@ const getView = async (access, viewID) => {
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
   }
-  const { layerID, reportID, reportType, isAOI } = parseViewID(viewID)
+  const { layerID, reportID, reportType, isAOI, poiID } = parseViewID(viewID)
   const [report] = await getReports(
     whitelabel,
     customers,
-    { layerID, reportID, reportType, hasAOI: isAOI },
+    { layerID, reportID, reportType, hasAOI: isAOI, poiID },
   )
   if (!report) {
     throw apiError('Report not found', 404)
@@ -271,11 +292,11 @@ const getQueryView = async (access, viewID, queryColumns, engine) => {
   if (whitelabel !== -1 && (!whitelabel.length || (customers !== -1 && !customers.length))) {
     throw apiError('Invalid access permissions', 403)
   }
-  const { layerID, reportID, reportType, isAOI } = parseViewID(viewID)
+  const { layerID, reportID, reportType, isAOI, poiID } = parseViewID(viewID)
   const [report] = await getReports(
     whitelabel,
     customers,
-    { layerID, reportID, reportType, hasAOI: isAOI },
+    { layerID, reportID, reportType, hasAOI: isAOI, poiID },
   )
   if (!report) {
     throw apiError('Report not found', 404)
@@ -288,10 +309,12 @@ const getQueryView = async (access, viewID, queryColumns, engine) => {
     throw apiError(`No column selected from view: ${viewID}`, 400)
   }
   // all values are safe
-  const where = [
-    `r.type = '${reportType}'`,
-    `r.report_id = ${reportID}`,
-    `layer.layer_id = ${layerID}`]
+  const where = [`r.type = '${reportType}'`]
+  if (poiID) {
+    where.push(`poi.poi_id = ${poiID}`)
+  } else {
+    where.push(`r.report_id = ${reportID}`, `layer.layer_id = ${layerID}`)
+  }
   // const whereValues = [reportType, reportID, layerID]
   if (whitelabel !== -1) {
     // whereValues.push(whitelabel)
