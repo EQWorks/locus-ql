@@ -938,10 +938,10 @@
     "@babel/helper-validator-identifier" "^7.19.1"
     to-fast-properties "^2.0.0"
 
-"@eqworks/trino-client-node@^0.0.1":
-  version "0.0.1"
-  resolved "https://npm.pkg.github.com/download/@eqworks/trino-client-node/0.0.1/ab005936fa5c82e6357f54775a49ba6cf90f7f81#ab005936fa5c82e6357f54775a49ba6cf90f7f81"
-  integrity sha512-nMJjGqn/3oCwW5OqJVnRaG87vTRWO7vzlAz32HA1q0e8n/PkEnDeAr1T6f4Dlw2HqNwDQKGrtchaRLG0W5EkLA==
+"@eqworks/trino-client-node@^0.0.2":
+  version "0.0.2"
+  resolved "https://registry.yarnpkg.com/@eqworks/trino-client-node/-/trino-client-node-0.0.2.tgz#3d71fabf1754ab39ef815ccb58b0ecdff23de971"
+  integrity sha512-ZThjUj/zuku9jmioc/maqUG+NAhL8dSp21pXfJM/0omkM0szfHa0cR8cFsQEycXXzVbVYi62td+MRIJPaRiutA==
   dependencies:
     stream-json "^1.7.4"
 
