@@ -938,6 +938,13 @@
     "@babel/helper-validator-identifier" "^7.19.1"
     to-fast-properties "^2.0.0"
 
+"@eqworks/trino-client-node@^0.0.1":
+  version "0.0.1"
+  resolved "https://npm.pkg.github.com/download/@eqworks/trino-client-node/0.0.1/ab005936fa5c82e6357f54775a49ba6cf90f7f81#ab005936fa5c82e6357f54775a49ba6cf90f7f81"
+  integrity sha512-nMJjGqn/3oCwW5OqJVnRaG87vTRWO7vzlAz32HA1q0e8n/PkEnDeAr1T6f4Dlw2HqNwDQKGrtchaRLG0W5EkLA==
+  dependencies:
+    stream-json "^1.7.4"
+
 "@eslint/eslintrc@^1.4.1":
   version "1.4.1"
   resolved "https://registry.yarnpkg.com/@eslint/eslintrc/-/eslintrc-1.4.1.tgz#af58772019a2d271b7e2d4c23ff4ddcba3ccfb3e"
@@ -6290,6 +6297,18 @@ static-extend@^0.1.1:
   version "1.5.0"
   resolved "https://registry.yarnpkg.com/statuses/-/statuses-1.5.0.tgz#161c7dac177659fd9811f43771fa99381478628c"
   integrity sha1-Fhx9rBd2Wf2YEfQ3cfqZOBR4Yow=
+
+stream-chain@^2.2.5:
+  version "2.2.5"
+  resolved "https://registry.yarnpkg.com/stream-chain/-/stream-chain-2.2.5.tgz#b30967e8f14ee033c5b9a19bbe8a2cba90ba0d09"
+  integrity sha512-1TJmBx6aSWqZ4tx7aTpBDXK0/e2hhcNSTV8+CbFJtDjbb+I1mZ8lHit0Grw9GRT+6JbIrrDd8esncgBi8aBXGA==
+
+stream-json@^1.7.4:
+  version "1.7.5"
+  resolved "https://registry.yarnpkg.com/stream-json/-/stream-json-1.7.5.tgz#2ff0563011f22cea4f6a28dbfc0344a53c761fe4"
+  integrity sha512-NSkoVduGakxZ8a+pTPUlcGEeAGQpWL9rKJhOFCV+J/QtdQUEU5vtBgVg6eJXn8JB8RZvpbJWZGvXkhz70MLWoA==
+  dependencies:
+    stream-chain "^2.2.5"
 
 "string-width@^1.0.2 || 2 || 3 || 4", string-width@^4.2.3:
   version "4.2.3"

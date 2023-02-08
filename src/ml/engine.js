@@ -4,6 +4,9 @@ const { gzip } = require('zlib')
 const Cursor = require('pg-cursor')
 const fs = require('fs')
 const parquet = require('parquetjs')
+const { pipeline } = require('stream')
+const { promisify } = require('util')
+const { PartStreamer } = require('@eqworks/trino-client-node')
 
 const { mlPool, fdwConnectByName, newPGClientFromPoolConfig } = require('../util/db')
 const { parseQueryTreeToEngine } = require('./parser')
@@ -16,11 +19,16 @@ const {
   getFromS3Cache,
   putToS3Cache,
 } = require('../util/cache')
+const { s3 } = require('../util/aws')
+const trino = require('../util/trino')
 const { getObjectHash } = require('./utils')
 const { typeToPrqMap, PRQ_STRING } = require('./type')
+const { getExecutionResultsKey } = require('./executions')
+const { EXECUTION_BUCKET } = require('./constants')
 
 
 const { apiError, getSetAPIError } = useAPIErrorOptions({ tags: { service: 'ql' } })
+const pipelineAsync = promisify(pipeline)
 
 /**
  * Establishes connections with foreign databases
@@ -273,6 +281,42 @@ const executeQueryInStreamMode = async (
   }
 }
 
+const executeQueryInStreamModeTrino = async (
+  whitelabelID, customerID, views, tree,
+  { engine = 'trino', executionID, partLengths },
+) => {
+  if (engine !== 'trino') {
+    throw apiError('Failed to execute the query', 500)
+  }
+  // get view queries
+  const { viewQueries } = Object.entries(views)
+    .reduce((acc, [id, { query }]) => {
+      acc.viewQueries[id] = query
+      return acc
+    }, { viewQueries: {} })
+  const query = parseQueryTreeToEngine(tree, { engine, viewQueries, whitelabelID, customerID })
+  const queryStream = trino.query(query)
+
+  // split results into parts of ~20MB compressed and stream to S3
+  const parts = []
+  const partHandler = (partIndex, partStream) => {
+    partLengths[partIndex] = 1 // TODO: get part length
+    parts.push(
+      s3.upload({
+        Bucket: EXECUTION_BUCKET,
+        Key: getExecutionResultsKey(customerID, executionID, partIndex + 1),
+        Body: partStream,
+        ContentEncoding: 'gzip',
+        ContentType: 'application/json',
+      }).promise(),
+    )
+  }
+
+  await pipelineAsync(queryStream, new PartStreamer({ partSizeMB: 20, partHandler }))
+  await Promise.all(parts)
+  return parts.length
+}
+
 /**
  * Parses and validates query by running it with a limit of 0
  * @param {number} whitelabelID Whitelabel ID
@@ -346,5 +390,6 @@ module.exports = {
   validateQuery,
   validateQueryMW,
   establishFdwConnections,
+  executeQueryInStreamModeTrino,
 }
 
