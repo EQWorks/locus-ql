@@ -1,6 +1,6 @@
 {
   "name": "@eqworks/locus-ql",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "author": "EQ Inc.",
   "private": false,
   "main": "dist/ql.js",
@@ -30,6 +30,7 @@
     "lint:watch:nowarn:fix": "esw -c .eslintrc.js --ext .js ./src/. --quiet --watch --fix"
   },
   "dependencies": {
+    "@eqworks/trino-client-node": "^0.0.2",
     "@sentry/node": "^6.12.0",
     "async": "^3.1.0",
     "axios": "^0.18.1",

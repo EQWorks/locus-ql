@@ -5,7 +5,7 @@ const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { getView, getQueryViews } = require('./views')
 const { insertGeoIntersectsInTree } = require('./geo-intersects')
 const { parseQueryToTree, ParserError } = require('./parser')
-const { executeQueryInStreamMode } = require('./engine')
+const { executeQueryInStreamMode, executeQueryInStreamModeTrino } = require('./engine')
 // const { executeQuery } = require('./engine')
 const {
   putToS3Cache,
@@ -778,27 +778,33 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
     // const resultsParts = await writeExecutionResults(customerID, executionID, res)
 
     const partLengths = {}
-    await executeQueryInStreamMode(
-      whitelabelID,
-      customerID,
-      views,
-      tree,
-      columns,
-      (rows, i, length) => {
-        partLengths[i] = length
-        return putToS3Cache(
-          getExecutionResultsKey(customerID, executionID, i + 1),
-          rows,
-          { gzip: true, json: true, bucket: EXECUTION_BUCKET },
-        )
-      },
-      {
-        engine,
-        executionID,
-        maxAge: 900,
+    if (engine === 'trino') {
+      await executeQueryInStreamModeTrino(
+        whitelabelID, customerID, views, tree, { engine, executionID, partLengths },
+      )
+    } else {
+      await executeQueryInStreamMode(
+        whitelabelID,
+        customerID,
+        views,
+        tree,
+        columns,
+        (rows, i, length) => {
+          partLengths[i] = length
+          return putToS3Cache(
+            getExecutionResultsKey(customerID, executionID, i + 1),
+            rows,
+            { gzip: true, json: true, bucket: EXECUTION_BUCKET },
+          )
+        },
+        {
+          engine,
+          executionID,
+          maxAge: 900,
         // toParquet: fileType === FILE_TYPE_PRQ || toParquet,
-      }, // 15 mins cache ttl
-    )
+        }, // 15 mins cache ttl
+      )
+    }
     const resultsParts = Object.entries(partLengths)
       .sort(([a], [b]) => a - b)
       .reduce((acc, [, partLength]) => {
@@ -1154,4 +1160,5 @@ module.exports = {
   getExecutionMetas,
   getAllExecutionResults,
   getExecutionResultsURL,
+  getExecutionResultsKey,
 }
