@@ -295,7 +295,10 @@ const executeQueryInStreamModeTrino = async (
       return acc
     }, { viewQueries: {} })
   const query = parseQueryTreeToEngine(tree, { engine, viewQueries, whitelabelID, customerID })
-  const queryStream = trino.query(query)
+  const queryStream = trino.query({
+    query,
+    error(error) { throw apiError(error.message, 400) },
+  })
 
   // split results into parts of ~20MB compressed and stream to S3
   const parts = []
