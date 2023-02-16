@@ -72,10 +72,7 @@ const syncMetadata = () => {
   })
 }
 
-const getQueryView = async (access, viewID, queryColumns, engine) => {
-  if (engine !== 'trino') {
-    throw apiError(`Must use trino engine for view: ${viewID}`, 400)
-  }
+const getQueryView = async (access, viewID, queryColumns) => {
   const { year, month, day } = parseViewID(access, viewID)
   const filteredColumns = filterViewColumns(columns, queryColumns)
   if (!Object.keys(filteredColumns).length) {
@@ -91,13 +88,13 @@ const getQueryView = async (access, viewID, queryColumns, engine) => {
       }
     }
   }
-  // TODO: use queryColumns instead of *
+  // TODO: use filteredColumns instead of *
   const query = `
     SELECT * 
     FROM paymi_hive.paymi_production.normalized_gbq 
     ${whereConditions}
     `
-  return { viewID, query, columns: filteredColumns }
+  return { viewID, query, columns: filteredColumns, engine: 'trino' }
 }
 
 const listViews = async ({ inclMeta = true }) => {

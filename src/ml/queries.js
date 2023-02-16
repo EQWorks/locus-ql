@@ -418,7 +418,7 @@ const deleteQuery = async (req, res, next) => {
  * @param {number} [scheduleJobID] The ID of the schedule job which triggered the execution, if any
  * @returns {number} Execution ID
  */
-const queueQueryExecution = async (queryID, scheduleJobID, engine = 'pg') => {
+const queueQueryExecution = async (queryID, scheduleJobID, defaultEngine = 'pg') => {
   try {
     const [queryMeta] = await getQueryMetas({ queryID })
     if (!queryMeta) {
@@ -434,13 +434,20 @@ const queueQueryExecution = async (queryID, scheduleJobID, engine = 'pg') => {
     const tree = parseQueryToTree(query, { type: 'ql', paramsMustHaveValues: true })
 
     // get query views
-    const views = await getQueryViews(access, tree.viewColumns)
+    const views = await getQueryViews(access, tree.viewColumns, defaultEngine)
+    const engine = Object.keys(views).some(v => views[v].engine === 'trino') ? 'trino' : 'pg'
 
+    let mlQuery = {}
+    if (engine === 'trino') {
+      // TODO: add validateQuery function for trino
+    } else {
+      mlQuery = await validateQuery(whitelabelID, customerID, views, tree, engine)
+    }
     const {
       mlQueryHash,
       mlQueryColumnHash,
       mlQueryColumns,
-    } = await validateQuery(whitelabelID, customerID, views, tree, engine)
+    } = mlQuery
 
     const executionID = await queueExecution(
       whitelabelID,
