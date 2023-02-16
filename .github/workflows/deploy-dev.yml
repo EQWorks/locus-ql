@@ -13,6 +13,10 @@ env:
   NODE_VERSION: 18.x
   DEPLOY_STAGE: dev
 
+permissions:
+  id-token: write   # This is required for requesting the JWT for step AWS Configure
+  contents: read    # This is required for actions/checkout
+
 jobs:
   deploy:
     runs-on: ubuntu-20.04
@@ -37,12 +41,20 @@ jobs:
       - name: Install packages
         run: yarn install
 
+      - name: Setup AWS CLI for "gh actions" user
+        id: ghactions
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: ${{ vars.EQ_PROD_CD_LOCUS_QL_DEV_ROLE }}
+          role-session-name: "${{ github.run_id }}-${{ github.sha }}"
+          aws-region: ${{ vars.AWS_REGION }}
+
       - name: Deploy
         run: yarn deploy --stage ${{ env.DEPLOY_STAGE }}
         env:
           # aws creds for deployment
-          AWS_ACCESS_KEY_ID: ${{ secrets.EQ_PROD_CD_LOCUS_QL_DEV_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.EQ_PROD_CD_LOCUS_QL_DEV_AWS_SECRET_ACCESS_KEY }}
+          # AWS_ACCESS_KEY_ID: ${{ secrets.EQ_PROD_CD_LOCUS_QL_DEV_AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.EQ_PROD_CD_LOCUS_QL_DEV_AWS_SECRET_ACCESS_KEY }}
           # portunus token
           PORTUNUS_TOKEN: ${{ secrets.CD_PORTUNUS_TOKEN_JWT }}/${{ github.event.repository.name }}/${{ env.DEPLOY_STAGE }}
           # API version, passthrough
