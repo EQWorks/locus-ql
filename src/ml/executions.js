@@ -749,7 +749,7 @@ const convertToParquet = async (
 
 
 // let errors bubble up so the query can be retried
-const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
+const runExecution = async (executionID, defaultEngine = 'pg', toParquet = false) => {
   try {
     const [execution] = await getExecutionMetas({ executionID })
     if (!execution) {
@@ -768,7 +768,9 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
     // parse to query tree
     let tree = parseQueryToTree(query, { type: 'ql' })
     // get view queries
-    const views = await getQueryViews(access, tree.viewColumns, engine)
+    const views = await getQueryViews(access, tree.viewColumns, defaultEngine)
+    // if one of the views requires trino, use trino as the engine
+    const engine = Object.keys(views).some(v => views[v].engine === 'trino') ? 'trino' : 'pg'
     // to support legacy geo joins (i.e. strict equality b/w two geo columns)
     tree = insertGeoIntersectsInTree(views, tree)
     // // run query
