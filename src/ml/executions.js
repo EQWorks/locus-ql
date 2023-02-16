@@ -770,7 +770,7 @@ const runExecution = async (executionID, defaultEngine = 'pg', toParquet = false
     // get view queries
     const views = await getQueryViews(access, tree.viewColumns, defaultEngine)
     // if one of the views requires trino, use trino as the engine
-    const engine = Object.keys(views).some(v => views[v].engine === 'trino') ? 'trino' : 'pg'
+    const engine = Object.values(views).some(view => view.engine === 'trino') ? 'trino' : 'pg'
     // to support legacy geo joins (i.e. strict equality b/w two geo columns)
     tree = insertGeoIntersectsInTree(views, tree)
     // // run query

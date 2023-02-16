@@ -3,7 +3,7 @@ const { APIError, useAPIErrorOptions } = require('../util/api-error')
 const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { insertGeoIntersectsInTree } = require('./geo-intersects')
 const { getView, getQueryViews } = require('./views')
-const { validateQuery } = require('./engine')
+const { validateQuery, validateTrinoQuery } = require('./engine')
 const { updateExecution, queueExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
 const { QL_SCHEMA, MAX_LENGTH_QUERY_DESCRIPTION, MAX_LENGTH_QUERY_NAME } = require('./constants')
@@ -435,11 +435,12 @@ const queueQueryExecution = async (queryID, scheduleJobID, defaultEngine = 'pg')
 
     // get query views
     const views = await getQueryViews(access, tree.viewColumns, defaultEngine)
-    const engine = Object.keys(views).some(v => views[v].engine === 'trino') ? 'trino' : 'pg'
+    // if one of the views requires trino, use trino as the engine
+    const engine = Object.values(views).some(view => view.engine === 'trino') ? 'trino' : 'pg'
 
     let mlQuery = {}
     if (engine === 'trino') {
-      // TODO: add validateQuery function for trino
+      mlQuery = await validateTrinoQuery(whitelabelID, customerID, views, tree)
     } else {
       mlQuery = await validateQuery(whitelabelID, customerID, views, tree, engine)
     }
