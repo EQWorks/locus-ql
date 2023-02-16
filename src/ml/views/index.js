@@ -134,6 +134,9 @@ const loadQueryViews = async (req, _, next) => {
     const queryColumns = tree.viewColumns
     // attach views to req object
     req.ql.views = await getQueryViews(access, queryColumns, engine)
+    // if one of the views requires trino, use trino as the engine
+    req.ql.engine =
+    Object.values(req.ql.views).some(view => view.engine === 'trino') ? 'trino' : 'pg'
     next()
   } catch (err) {
     next(getSetAPIError(err, 'Failed to load the query views', 500))
