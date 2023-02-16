@@ -23,6 +23,7 @@ const viewTypesToModules = {
   [viewTypes.REPORT_WI_AOI]: require('./reports'),
   [viewTypes.REPORT_XWI]: require('./reports'),
   [viewTypes.WEATHER]: require('./weather'),
+  [viewTypes.PAYMI]: require('./paymi'),
 }
 
 // returns views subject to type and category filters

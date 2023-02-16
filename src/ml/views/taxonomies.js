@@ -18,6 +18,7 @@ const viewTypes = {
   REPORT_WI_AOI: 'reportwiaoi',
   REPORT_XWI: 'reportxwi',
   WEATHER: 'weather',
+  PAYMI: 'paymi',
 }
 
 // reverse lookup
@@ -58,6 +59,8 @@ const viewCategories = {
   REPORT_WI: 'report_wi',
   REPORT_XWI: 'report_xwi',
   WEATHER: 'weather',
+  PAYMI: 'paymi',
+  PAYMI_PRODUCTION: 'paymi_production',
 }
 
 // reverse lookup
@@ -206,6 +209,14 @@ const viewCategoryDesc = {
   [viewCategories.GEO]: {
     name: 'Geographic',
     types: [viewTypes.GEO],
+  },
+  [viewCategories.PAYMI]: {
+    name: 'Paymi Data',
+    children: [viewCategories.PAYMI_PRODUCTION],
+  },
+  [viewCategories.PAYMI_PRODUCTION]: {
+    name: 'Paymi Production Data',
+    types: [viewTypes.PAYMI],
   },
 }
 
