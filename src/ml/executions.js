@@ -778,9 +778,10 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
     // const resultsParts = await writeExecutionResults(customerID, executionID, res)
 
     const partLengths = {}
+    let resultsParts = []
     if (engine === 'trino') {
-      await executeQueryInStreamModeTrino(
-        whitelabelID, customerID, views, tree, { engine, executionID, partLengths },
+      resultsParts = await executeQueryInStreamModeTrino(
+        whitelabelID, customerID, views, tree, { engine, executionID },
       )
     } else {
       await executeQueryInStreamMode(
@@ -804,18 +805,19 @@ const runExecution = async (executionID, engine = 'pg', toParquet = false) => {
         // toParquet: fileType === FILE_TYPE_PRQ || toParquet,
         }, // 15 mins cache ttl
       )
-    }
-    const resultsParts = Object.entries(partLengths)
-      .sort(([a], [b]) => a - b)
-      .reduce((acc, [, partLength]) => {
+      resultsParts = Object.entries(partLengths)
+        .sort(([a], [b]) => a - b)
+        .reduce((acc, [, partLength]) => {
         // end index relative to the entire result set
-        const previousPartEnd = acc.slice(-1)[0] || -1
-        acc.push(previousPartEnd + partLength)
-        return acc
-      }, [])
-    if (fileType === FILE_TYPE_PRQ || toParquet) {
-      await convertToParquet(customerID, executionID, resultsParts)
+          const previousPartEnd = acc.slice(-1)[0] || -1
+          acc.push(previousPartEnd + partLength)
+          return acc
+        }, [])
+      if (fileType === FILE_TYPE_PRQ || toParquet) {
+        await convertToParquet(customerID, executionID, resultsParts)
+      }
     }
+
     // update status to succeeded + breakdown of parts
     await updateExecution(
       executionID,
