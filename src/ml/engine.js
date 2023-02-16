@@ -283,7 +283,7 @@ const executeQueryInStreamMode = async (
 
 const executeQueryInStreamModeTrino = async (
   whitelabelID, customerID, views, tree,
-  { engine = 'trino', executionID, partLengths },
+  { engine = 'trino', executionID },
 ) => {
   if (engine !== 'trino') {
     throw apiError('Failed to execute the query', 500)
@@ -299,8 +299,9 @@ const executeQueryInStreamModeTrino = async (
 
   // split results into parts of ~20MB compressed and stream to S3
   const parts = []
-  const partHandler = (partIndex, partStream) => {
-    partLengths[partIndex] = 1 // TODO: get part length
+  let resultsParts = []
+  const partHandler = (partIndex, partStream, partSizes) => {
+    resultsParts = partSizes
     parts.push(
       s3.upload({
         Bucket: EXECUTION_BUCKET,
@@ -314,7 +315,7 @@ const executeQueryInStreamModeTrino = async (
 
   await pipelineAsync(queryStream, new PartStreamer({ partSizeMB: 20, partHandler }))
   await Promise.all(parts)
-  return parts.length
+  return resultsParts
 }
 
 /**
