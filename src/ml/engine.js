@@ -23,7 +23,6 @@ const { s3 } = require('../util/aws')
 const trino = require('../util/trino')
 const { getObjectHash } = require('./utils')
 const { typeToPrqMap, PRQ_STRING } = require('./type')
-const { getExecutionResultsKey } = require('./executions')
 const { EXECUTION_BUCKET } = require('./constants')
 
 
@@ -308,7 +307,7 @@ const executeQueryInStreamModeTrino = async (
     parts.push(
       s3.upload({
         Bucket: EXECUTION_BUCKET,
-        Key: getExecutionResultsKey(customerID, executionID, partIndex + 1),
+        Key: `${customerID}/${executionID}/${partIndex + 1}`,
         Body: partStream,
         ContentEncoding: 'gzip',
         ContentType: 'application/json',

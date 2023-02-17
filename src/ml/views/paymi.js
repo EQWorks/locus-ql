@@ -82,16 +82,16 @@ const getQueryView = async (access, viewID, queryColumns) => {
   if (!Number.isNaN(year)) {
     whereConditions += `WHERE year = '${year}'`
     if (!Number.isNaN(month)) {
-      whereConditions += ` AND month = '${month}'`
+      whereConditions += ` AND month = '${String(month).padStart(2, '0')}'`
       if (!Number.isNaN(day)) {
-        whereConditions += ` AND day = '${day}'`
+        whereConditions += ` AND day = '${String(day).padStart(2, '0')}'`
       }
     }
   }
-  // TODO: use filteredColumns instead of *
+
   const query = `
-    SELECT * 
-    FROM paymi_hive.paymi_production.normalized_gbq 
+    SELECT ${Object.keys(filteredColumns).map(col => `gbq.${col}`).join(',')}
+    FROM paymi_hive.paymi_production.normalized_gbq gbq 
     ${whereConditions}
     `
   return { viewID, query, columns: filteredColumns, engine: 'trino' }
