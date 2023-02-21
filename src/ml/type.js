@@ -21,6 +21,8 @@ const typeToCatMap = new Map([
   // CAT_STRING
   ['text', CAT_STRING],
   ['character varying', CAT_STRING],
+  ['varchar', CAT_STRING],
+  ['char', CAT_STRING],
   [types.builtins.CHAR, CAT_STRING],
   [types.builtins.TEXT, CAT_STRING],
   [types.builtins.VARCHAR, CAT_STRING],
@@ -38,6 +40,7 @@ const typeToCatMap = new Map([
   ['bigint', CAT_NUMERIC],
   ['serial', CAT_NUMERIC],
   ['bigserial', CAT_NUMERIC],
+  ['double', CAT_NUMERIC],
   [types.builtins.INT2, CAT_NUMERIC],
   [types.builtins.INT4, CAT_NUMERIC],
   [types.builtins.INT8, CAT_NUMERIC],
@@ -49,6 +52,7 @@ const typeToCatMap = new Map([
 
   // CAT_DATE
   ['date', CAT_DATE],
+  ['timestamp', CAT_DATE],
   [types.builtins.DATE, CAT_DATE],
   [types.builtins.TIMESTAMP, CAT_DATE],
   [types.builtins.TIMESTAMPTZ, CAT_DATE],

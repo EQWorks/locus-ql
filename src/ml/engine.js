@@ -23,7 +23,6 @@ const { s3 } = require('../util/aws')
 const trino = require('../util/trino')
 const { getObjectHash } = require('./utils')
 const { typeToPrqMap, PRQ_STRING } = require('./type')
-const { getExecutionResultsKey } = require('./executions')
 const { EXECUTION_BUCKET } = require('./constants')
 
 
@@ -283,7 +282,7 @@ const executeQueryInStreamMode = async (
 
 const executeQueryInStreamModeTrino = async (
   whitelabelID, customerID, views, tree,
-  { engine = 'trino', executionID, partLengths },
+  { engine = 'trino', executionID },
 ) => {
   if (engine !== 'trino') {
     throw apiError('Failed to execute the query', 500)
@@ -295,16 +294,20 @@ const executeQueryInStreamModeTrino = async (
       return acc
     }, { viewQueries: {} })
   const query = parseQueryTreeToEngine(tree, { engine, viewQueries, whitelabelID, customerID })
-  const queryStream = trino.query(query)
+  const queryStream = trino.query({
+    query,
+    error(error) { throw apiError(error.message, 400) },
+  })
 
   // split results into parts of ~20MB compressed and stream to S3
   const parts = []
-  const partHandler = (partIndex, partStream) => {
-    partLengths[partIndex] = 1 // TODO: get part length
+  let resultsParts = []
+  const partHandler = (partIndex, partStream, partSizes) => {
+    resultsParts = partSizes
     parts.push(
       s3.upload({
         Bucket: EXECUTION_BUCKET,
-        Key: getExecutionResultsKey(customerID, executionID, partIndex + 1),
+        Key: `${customerID}/${executionID}/${partIndex + 1}`,
         Body: partStream,
         ContentEncoding: 'gzip',
         ContentType: 'application/json',
@@ -314,7 +317,7 @@ const executeQueryInStreamModeTrino = async (
 
   await pipelineAsync(queryStream, new PartStreamer({ partSizeMB: 20, partHandler }))
   await Promise.all(parts)
-  return parts.length
+  return resultsParts
 }
 
 /**
@@ -367,6 +370,56 @@ const validateQuery = async (whitelabelID, customerID, views, tree, engine = 'pg
   }
 }
 
+/**
+ * Parses and validates query by running it with a limit of 0
+ * @param {number} whitelabelID Whitelabel ID
+ * @param {number} customerID Customer ID (agency ID)
+ * @param {Object.<string, Object>} views Map of view ID's to query, columns...
+ * @param {Object} tree Query tree
+ * @param {string} [engine='trino'] One of 'pg' or 'trino'
+ * @returns {Promise<Object>} Query and result column hashes along with result schema
+ */
+const validateTrinoQuery = async (whitelabelID, customerID, views, tree, engine = 'trino') => {
+  if (engine !== 'trino') {
+    throw apiError('Failed to validate the query', 500)
+  }
+  // get view queries
+  const { viewQueries } = Object.entries(views)
+    .reduce((acc, [id, { query }]) => {
+      acc.viewQueries[id] = query
+      return acc
+    }, { viewQueries: {} })
+  const query = parseQueryTreeToEngine(
+    tree,
+    { engine, viewQueries, whitelabelID, customerID, limit: 0 },
+  )
+  const queryFn = async () => {
+    const fields = []
+    const queryStream = trino.query({
+      query,
+      columns(col) { fields.push(...col) },
+      error(error) { throw apiError(error.message, 400) },
+    })
+    async function* getData(src) {
+      for await (const data of src) yield data
+    }
+    await pipelineAsync(queryStream, getData)
+    return fields
+  }
+  const columns = await queryWithCache(
+    [query, 'fields'],
+    () => queryFn().then((fields) =>
+      fields.map(({ name, typeSignature: { rawType } }) => [name, rawType])),
+    { ttl: 86400, type: cacheTypes.REDIS }, // 1 day
+  )
+
+  return {
+    mlQueryHash: getObjectHash(tree.toQL({ keepParamRefs: false })),
+    mlQueryColumnHash: getObjectHash(columns),
+    mlQueryColumns: columns,
+  }
+}
+
 // throws an error if the query cannot be parsed
 // attaches queryHash, columnHash and columns to req
 const validateQueryMW = async (req, _, next) => {
@@ -376,7 +429,12 @@ const validateQueryMW = async (req, _, next) => {
     const { tree, views, engine } = req.ql
 
     // get query and column hashes + results schema and attach to req
-    const values = await validateQuery(whitelabelID, customerID, views, tree, engine)
+    let values
+    if (engine === 'trino') {
+      values = await validateTrinoQuery(whitelabelID, customerID, views, tree, engine)
+    } else {
+      values = await validateQuery(whitelabelID, customerID, views, tree, engine)
+    }
     Object.assign(req, values)
     next()
   } catch (err) {
@@ -388,6 +446,7 @@ module.exports = {
   executeQuery,
   executeQueryInStreamMode,
   validateQuery,
+  validateTrinoQuery,
   validateQueryMW,
   establishFdwConnections,
   executeQueryInStreamModeTrino,

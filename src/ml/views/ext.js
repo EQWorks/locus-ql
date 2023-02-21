@@ -96,7 +96,8 @@ const getConnections = ({ whitelabel, customers, conn_id, categories } = {}) => 
           WHEN '1' THEN True
           ELSE False
         END AS is_syncing,
-        dest
+        dest,
+        c.info
       FROM ${CONNECTION_TABLE} AS c
       INNER JOIN ${SETS_TABLE} AS s ON s.id = c.set_id
       INNER JOIN pg_stat_user_tables AS pt
@@ -180,7 +181,7 @@ const getView = async (access, viewID) => {
   return getViewObject(connection, true)
 }
 
-const getQueryView = async (access, viewID, queryColumns, engine) => {
+const getQueryView = async (access, viewID, queryColumns, defaultEngine) => {
   const { whitelabel, customers } = access
   const { conn_id } = parseViewID(viewID)
 
@@ -213,6 +214,7 @@ const getQueryView = async (access, viewID, queryColumns, engine) => {
   //   return `"${column}"`
   // }
 
+  const engine = connection.info === 'trino' ? 'trino' : defaultEngine
   const catalog = engine === 'trino' ? 'locus_place.' : ''
   const columnExp = Object.values(columns)
     .map(({ key, category }) =>
@@ -227,7 +229,7 @@ const getQueryView = async (access, viewID, queryColumns, engine) => {
   `
   const dependencies = [['ext', conn_id]]
 
-  return { viewID, query, columns, dependencies }
+  return { viewID, query, columns, dependencies, engine }
 }
 
 module.exports = {

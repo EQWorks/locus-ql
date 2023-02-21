@@ -3,7 +3,7 @@ const { APIError, useAPIErrorOptions } = require('../util/api-error')
 const { getContext, ERROR_QL_CTX } = require('../util/context')
 const { insertGeoIntersectsInTree } = require('./geo-intersects')
 const { getView, getQueryViews } = require('./views')
-const { validateQuery } = require('./engine')
+const { validateQuery, validateTrinoQuery } = require('./engine')
 const { updateExecution, queueExecution } = require('./executions')
 const { typeToCatMap, CAT_STRING } = require('./type')
 const { QL_SCHEMA, MAX_LENGTH_QUERY_DESCRIPTION, MAX_LENGTH_QUERY_NAME } = require('./constants')
@@ -418,7 +418,7 @@ const deleteQuery = async (req, res, next) => {
  * @param {number} [scheduleJobID] The ID of the schedule job which triggered the execution, if any
  * @returns {number} Execution ID
  */
-const queueQueryExecution = async (queryID, scheduleJobID, engine = 'pg') => {
+const queueQueryExecution = async (queryID, scheduleJobID, defaultEngine = 'pg') => {
   try {
     const [queryMeta] = await getQueryMetas({ queryID })
     if (!queryMeta) {
@@ -434,13 +434,21 @@ const queueQueryExecution = async (queryID, scheduleJobID, engine = 'pg') => {
     const tree = parseQueryToTree(query, { type: 'ql', paramsMustHaveValues: true })
 
     // get query views
-    const views = await getQueryViews(access, tree.viewColumns)
+    const views = await getQueryViews(access, tree.viewColumns, defaultEngine)
+    // if one of the views requires trino, use trino as the engine
+    const engine = Object.values(views).some(view => view.engine === 'trino') ? 'trino' : 'pg'
 
+    let mlQuery = {}
+    if (engine === 'trino') {
+      mlQuery = await validateTrinoQuery(whitelabelID, customerID, views, tree)
+    } else {
+      mlQuery = await validateQuery(whitelabelID, customerID, views, tree, engine)
+    }
     const {
       mlQueryHash,
       mlQueryColumnHash,
       mlQueryColumns,
-    } = await validateQuery(whitelabelID, customerID, views, tree, engine)
+    } = mlQuery
 
     const executionID = await queueExecution(
       whitelabelID,
