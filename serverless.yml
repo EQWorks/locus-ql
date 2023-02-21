@@ -198,6 +198,7 @@ custom:
     stage: ${self:provider.stage}
     certificateName: '*.locus.place'
     createRoute53Record: true
+    autoDomain: true
 
   serverless-offline:
     noPrependStageInUrl: true
