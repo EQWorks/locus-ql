@@ -143,6 +143,7 @@ functions:
 plugins:
   - serverless-offline
   - serverless-deployment-bucket
+  - serverless-domain-manager
 
 resources:
   Resources:
@@ -191,6 +192,14 @@ resources:
         StatusCode: '403'
 
 custom:
+  customDomain:
+    domainName: 'ql.locus.place'
+    basePath: ${self:provider.stage}
+    stage: ${self:provider.stage}
+    certificateName: '*.locus.place'
+    createRoute53Record: true
+    autoDomain: true
+
   serverless-offline:
     noPrependStageInUrl: true
     printOutput: true
