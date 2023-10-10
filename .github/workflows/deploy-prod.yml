@@ -54,6 +54,7 @@ jobs:
       - name: Generate tag associated release notes
         run: npx @eqworks/release notes -v --pattern="${{ env.DEPLOY_STAGE }}-*" --head ${GITHUB_REF##*/} --github
         env:
+          NODE_OPTIONS: --no-experimental-fetch
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

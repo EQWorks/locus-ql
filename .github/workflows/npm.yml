@@ -54,5 +54,6 @@ jobs:
         if: ${{ success() }}
         run: npx @eqworks/release changelog -v --head ${GITHUB_REF##*/} --github --skip alpha --skip beta --skip test
         env:
+          NODE_OPTIONS: --no-experimental-fetch
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
