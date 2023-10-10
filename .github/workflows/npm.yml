@@ -32,8 +32,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.CD_GITHUB_TOKEN }}
 
-      - name: Publishing packages to the npm registry
-        run: yarn publish
+      - name: Publishing packages to GitHub Packages
+        run: yarn publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # this is the normal way (without local .npmrc)
 
@@ -45,8 +45,8 @@ jobs:
           scope: '@eqworks'
           always-auth: true
 
-      - name: Publishing packages to GitHub Packages
-        run: yarn publish
+      - name: Publishing packages to the npm registry
+        run: yarn publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.CD_NPM_TOKEN_PUBLISH }}
 

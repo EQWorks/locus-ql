@@ -1,6 +1,6 @@
 {
   "name": "@eqworks/locus-ql",
-  "version": "0.1.0",
+  "version": "0.1.1-alpha.1",
   "author": "EQ Inc.",
   "private": false,
   "main": "dist/ql.js",
