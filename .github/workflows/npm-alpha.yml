@@ -32,8 +32,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.CD_GITHUB_TOKEN }}
 
-      - name: Publishing packages to the npm registry
-        run: yarn publish --tag ${{ env.DIST_TAG }}
+      - name: Publishing packages to GitHub Packages
+        run: yarn publish --tag ${{ env.DIST_TAG }} --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -45,7 +45,7 @@ jobs:
           scope: '@eqworks'
           always-auth: true
 
-      - name: Publishing packages to GitHub Packages
-        run: yarn publish --tag ${{ env.DIST_TAG }}
+      - name: Publishing packages to the npm registry
+        run: yarn publish --tag ${{ env.DIST_TAG }} --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.CD_NPM_TOKEN_PUBLISH }}
