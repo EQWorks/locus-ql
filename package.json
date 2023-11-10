@@ -1,6 +1,6 @@
 {
   "name": "@eqworks/locus-ql",
-  "version": "0.1.1",
+  "version": "0.1.2-alpha.0",
   "author": "EQ Inc.",
   "private": false,
   "main": "dist/ql.js",
@@ -13,14 +13,14 @@
     "node": ">=12.0.0 <19.0.0"
   },
   "scripts": {
-    "start": "env $(print-env) nodemon src/index.js",
+    "start": "env $(print-env --api https://portunusapiprod.locus.engineering/env) nodemon src/index.js",
     "build": "babel src --out-dir dist --copy-files",
     "prepublishOnly": "yarn lint && yarn build",
-    "offline": "env $(print-env) API_VER=offline sls offline start",
+    "offline": "env $(print-env --api https://portunusapiprod.locus.engineering/env) API_VER=offline sls offline start",
     "tag": "./scripts/tag",
-    "deploy": "env $(print-env) sls deploy",
-    "deploy-dev": "env $(print-env) sls deploy --stage dev",
-    "serve": "env $(print-env) node src/index.js",
+    "deploy": "env $(print-env --api https://portunusapiprod.locus.engineering/env) sls deploy",
+    "deploy-dev": "env $(print-env --api https://portunusapiprod.locus.engineering/env) sls deploy --stage dev",
+    "serve": "env $(print-env --api https://portunusapiprod.locus.engineering/env) node src/index.js",
     "lint": "eslint -c .eslintrc.js --ext .js ./src/.",
     "lint:fix": "eslint -c .eslintrc.js --ext .js ./src/. --fix",
     "lint:nowarn": "eslint -c .eslintrc.js --ext .js ./src/. --quiet",

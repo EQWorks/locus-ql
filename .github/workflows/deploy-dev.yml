@@ -53,7 +53,7 @@ jobs:
         run: yarn deploy --stage ${{ env.DEPLOY_STAGE }}
         env:
           # portunus token
-          PORTUNUS_TOKEN: ${{ secrets.CD_PORTUNUS_TOKEN_JWT }}/${{ github.event.repository.name }}/${{ env.DEPLOY_STAGE }}
+          PORTUNUS_TOKEN: ${{ secrets.CD_PORTUNUS_ADMIN_JWT }}/${{ github.event.repository.name }}/${{ env.DEPLOY_STAGE }}
           # API version, passthrough
           API_VER: ${{ github.sha }}
 
